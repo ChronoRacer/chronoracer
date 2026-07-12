@@ -12,3 +12,5 @@ rdkafka = { version = "0.39.0", features = ["cmake-build", "tokio"] }
 serde = { version =  "1.0.228", features = ["derive"] }
 apache-avro = "0.21.0"
 config = { version = "0.15.25", features = ["yaml"]}
+futures-util = "0.3.32"
+thiserror = "2.0.18"

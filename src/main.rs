@@ -4,6 +4,7 @@ use crate::configuration::CoreConfig;
 
 mod configuration;
 pub mod messaging;
+pub mod persistance;
 
 fn main() {
     let config = CoreConfig::load_from_env()

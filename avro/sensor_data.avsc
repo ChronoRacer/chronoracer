@@ -1,0 +1,45 @@
+{
+  "namespace": "com.chronoracer.sensor",
+  "type": "record",
+  "name": "SensorBatch",
+  "doc": "Batch of sensor readings",
+  "fields": [
+    {
+      "name": "sensor_id",
+      "type": "string",
+      "doc": "Sensor ID"
+    },
+    {
+      "name": "timestamp",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Timestamp of the first read in the batch"
+    },
+    {
+      "name": "readings",
+      "type": {
+        "type": "array",
+        "items": {
+          "type": "record",
+          "name": "SensorReading",
+          "fields": [
+            {
+              "name": "delta",
+              "type":  "int",
+              "doc": "Millisecond offset from the first_read_timestamp. Value < 256"
+            },
+            {
+              "name": "value",
+              "type": "double",
+              "doc": "Reading value"
+            }
+          ]
+        }
+      },
+      "default": [],
+      "doc": "An array of readings collected during the batch window."
+    }
+  ]
+}
