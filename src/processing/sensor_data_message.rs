@@ -1,7 +1,6 @@
-use crate::messaging::avro::TryFromAvro;
+use crate::processing::avro::{AvroErrorExtended, TryFromAvro};
 use apache_avro::Schema;
 use serde::Deserialize;
-use thiserror::Error;
 
 #[derive(Deserialize, Debug)]
 pub struct RelativeSensorReading {
@@ -34,7 +33,7 @@ pub struct SensorDataMessage {
 #[derive(Debug)]
 pub struct UnwoundSensorDataMessage {
     pub sensor_id: String,
-    pub readings: Vec<AbsoluteSensorReading>,
+    pub readings: Box<[AbsoluteSensorReading]>,
 }
 
 impl From<SensorDataMessage> for UnwoundSensorDataMessage {
@@ -45,24 +44,15 @@ impl From<SensorDataMessage> for UnwoundSensorDataMessage {
                 .readings
                 .into_iter()
                 .map(|reading| RelativeSensorReading::to_absolute(&reading, &message.timestamp))
-                .collect(),
+                .collect::<Box<[AbsoluteSensorReading]>>(),
         }
     }
 }
 
-#[derive(Error, Debug)]
-pub enum SensorDataError {
-    #[error("Avro error: {0}")]
-    Avro(#[from] apache_avro::Error),
 
-    #[error("The Avro payload was empty or missing expected data")]
-    EmptyPayload,
-}
 
 impl TryFromAvro for SensorDataMessage {
-    type Error = SensorDataError;
-
-    fn try_from_avro(schema: &Schema, bytes: Option<&[u8]>) -> Result<Self, Self::Error> {
+    fn try_from_avro(schema: &Schema, bytes: Option<&[u8]>) -> Result<Self, AvroErrorExtended> {
         if let Some(avro_value) = bytes {
             let mut reader = apache_avro::Reader::with_schema(schema, avro_value)?;
             if let Some(value_result) = reader.next() {
@@ -71,7 +61,7 @@ impl TryFromAvro for SensorDataMessage {
                 )?);
             }
         }
-        Err(SensorDataError::EmptyPayload)
+        Err(AvroErrorExtended::EmptyPayload)
     }
 }
 
@@ -115,7 +105,7 @@ mod tests {
                 timestamp: 100004,
             },
         ];
-        assert_eq!(unwound_message.readings, expected_unwound_readings);
+        assert_eq!(unwound_message.readings, expected_unwound_readings.into_boxed_slice());
         assert_eq!(unwound_message.sensor_id, sensor_id);
     }
 }

@@ -1,4 +1,5 @@
 use apache_avro::Schema;
+use thiserror::Error;
 
 pub struct SchemaRegistry {
 }
@@ -27,14 +28,22 @@ impl SchemaRegistry {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum AvroErrorExtended {
+    #[error("Avro error: {0}")]
+    Avro(#[from] apache_avro::Error),
+
+    #[error("The Avro payload was empty or missing expected data")]
+    EmptyPayload,
+}
+
 pub trait TryFromAvro: Sized {
-    type Error;
-    fn try_from_avro(schema: &Schema, avro_value: Option<&[u8]>) -> Result<Self, Self::Error>;
+    fn try_from_avro(schema: &Schema, avro_value: Option<&[u8]>) -> Result<Self, AvroErrorExtended>;
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::messaging::avro::{AvroSchema, SchemaRegistry};
+    use crate::processing::avro::{AvroSchema, SchemaRegistry};
     use std::env;
     use std::path::PathBuf;
 

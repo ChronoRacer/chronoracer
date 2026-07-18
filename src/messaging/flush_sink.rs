@@ -1,25 +1,15 @@
 use crate::configuration::CoreConfig;
-use crate::messaging::avro::{AvroSchema, SchemaRegistry, TryFromAvro};
-use crate::messaging::dlq_handler::DLQHandler;
-use crate::messaging::sensor_data_message::{SensorDataMessage, UnwoundSensorDataMessage};
-use crate::persistance::reading_collector::ReadingCollector;
-use apache_avro::Schema;
+use crate::messaging::partial_message::PartialMessage;
 use futures_util::StreamExt;
-use rdkafka::Message;
 use rdkafka::consumer::{Consumer, StreamConsumer};
-use std::sync::Arc;
 
-struct FlushSink {
+pub struct FlushSink {
     consumer: StreamConsumer,
-    dlq_handler: Arc<DLQHandler>,
-    sensor_data_schema: Schema,
-    collector: ReadingCollector,
+    flush_tx: tokio::sync::mpsc::Sender<PartialMessage>,
 }
 
 impl FlushSink {
-    pub fn new(config: &CoreConfig, dlq_handler: DLQHandler, collector: ReadingCollector) -> Self {
-        let sensor_data_schema = SchemaRegistry::load_and_parse_from_env(AvroSchema::SensorData)
-            .expect("Failed to load sensor data schema");
+    pub fn new(config: &CoreConfig, flush_tx: tokio::sync::mpsc::Sender<PartialMessage>) -> Self {
         let kafka_config = &config.kafka;
         let consumer: StreamConsumer = rdkafka::ClientConfig::new()
             .set("group.id", &kafka_config.group_id)
@@ -31,34 +21,24 @@ impl FlushSink {
         consumer
             .subscribe(&[&kafka_config.sensor_data_flush_topic])
             .expect("Failed to subscribe to Flush sensor data topic");
-        Self {
-            consumer,
-            dlq_handler: Arc::new(dlq_handler),
-            sensor_data_schema,
-            collector,
-        }
+        Self { consumer, flush_tx }
     }
 
-    pub async fn process_stream(self: &Self) {
+    pub async fn ingest(self: &Self) {
         let mut message_stream = self.consumer.stream();
         while let Some(message_result) = message_stream.next().await {
             match message_result {
                 Ok(borrowed_message) => {
-                    match SensorDataMessage::try_from_avro(
-                        &self.sensor_data_schema,
-                        borrowed_message.payload(),
-                    ) {
-                        Ok(deserialized_message) => self
-                            .collector
-                            .accept(UnwoundSensorDataMessage::from(deserialized_message)),
-                        Err(deserialization_error) => {
-                            let dlq_ref = self.dlq_handler.clone();
-                            let owned_message = borrowed_message.detach();
-                            let error_str = deserialization_error.to_string();
-                            tokio::spawn(async move {
-                                dlq_ref.redirect_to_dlq(owned_message, &error_str).await
-                            });
-                        }
+                    if self
+                        .flush_tx
+                        .send(PartialMessage::from(borrowed_message))
+                        .await
+                        .is_err()
+                    {
+                        eprintln!(
+                            "Pipeline pipeline pipeline broken downstream. Shutting down consumer."
+                        );
+                        break;
                     }
                 }
                 Err(kafka_error) => {

@@ -19,8 +19,15 @@ pub struct KafkaConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ProcessingConfig {
+    pub message_channel_buffer_size: usize,
+    pub dlq_channel_buffer_size: usize,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CoreConfig {
     pub kafka: KafkaConfig,
+    pub processing: ProcessingConfig,
 }
 
 impl CoreConfig {
