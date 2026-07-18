@@ -1,5 +1,5 @@
-use rdkafka::Message;
 use rdkafka::message::BorrowedMessage;
+use rdkafka::Message;
 
 pub struct PartialMessage {
     pub key: Option<Box<[u8]>>,
@@ -9,7 +9,6 @@ pub struct PartialMessage {
 }
 
 impl From<BorrowedMessage<'_>> for PartialMessage {
-
     fn from(borrowed_message: BorrowedMessage) -> Self {
         Self {
             offset: borrowed_message.offset(),
@@ -18,7 +17,6 @@ impl From<BorrowedMessage<'_>> for PartialMessage {
             payload: borrowed_message.payload().map(|bytes| Box::from(bytes)),
         }
     }
-
 }
 
 pub struct PartialMessageWithError {
@@ -27,9 +25,8 @@ pub struct PartialMessageWithError {
 }
 
 impl PartialMessageWithError {
-
     pub(crate) fn new<E: std::error::Error + 'static>(original: PartialMessage, err: &E) -> Self {
-        Self{
+        Self {
             message: original,
             error_msg: err.to_string(),
         }

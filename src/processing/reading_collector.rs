@@ -20,13 +20,13 @@ impl ReadingCollector {
             .expect("Failed to load sensor data schema");
         Self {
             flush_rx,
-            dlq_tx: Arc::new(dlq_tx),
-            processed_data_tx: Arc::new(processed_data_tx),
-            sensor_data_schema: Arc::new(sensor_data_schema),
+            dlq_tx: Arc::from(dlq_tx),
+            processed_data_tx: Arc::from(processed_data_tx),
+            sensor_data_schema: Arc::from(sensor_data_schema),
         }
     }
 
-    pub async fn ingest(mut self) {
+    pub async fn ingest(&mut self) {
         while let Some(partial_message) = self.flush_rx.recv().await {
             let schema = Arc::clone(&self.sensor_data_schema);
             let success_tx = Arc::clone(&self.processed_data_tx);

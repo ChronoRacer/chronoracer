@@ -5,20 +5,20 @@ use serde::Deserialize;
 #[derive(Deserialize, Debug)]
 pub struct RelativeSensorReading {
     pub value: f64,
-    pub delta: i16,
+    pub delta: u32,
 }
 
 #[derive(Deserialize, Debug, PartialEq)]
 pub struct AbsoluteSensorReading {
     pub value: f64,
-    pub timestamp: i64,
+    pub timestamp: u64,
 }
 
 impl RelativeSensorReading {
-    fn to_absolute(self: &Self, base_timestamp: &i64) -> AbsoluteSensorReading {
+    fn to_absolute(self: &Self, base_timestamp: &u64) -> AbsoluteSensorReading {
         AbsoluteSensorReading {
             value: self.value,
-            timestamp: base_timestamp + self.delta as i64,
+            timestamp: base_timestamp + self.delta as u64,
         }
     }
 }
@@ -26,7 +26,7 @@ impl RelativeSensorReading {
 #[derive(Deserialize, Debug)]
 pub struct SensorDataMessage {
     pub sensor_id: String,
-    pub timestamp: i64,
+    pub timestamp: u64,
     pub readings: Vec<RelativeSensorReading>,
 }
 
@@ -48,7 +48,6 @@ impl From<SensorDataMessage> for UnwoundSensorDataMessage {
         }
     }
 }
-
 
 
 impl TryFromAvro for SensorDataMessage {

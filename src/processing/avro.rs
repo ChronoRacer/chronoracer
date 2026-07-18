@@ -1,8 +1,7 @@
 use apache_avro::Schema;
 use thiserror::Error;
 
-pub struct SchemaRegistry {
-}
+pub struct SchemaRegistry {}
 
 pub enum AvroSchema {
     SensorData,
@@ -24,7 +23,7 @@ impl SchemaRegistry {
         let schema_path = std::env::var(env_var)
             .map_err(|_| format!("Environment variable '{}' not set", env_var))?;
         let schema_string = std::fs::read_to_string(schema_path)?;
-        Schema::parse_str(&schema_string).map_err(|err| {err.into()})
+        Schema::parse_str(&schema_string).map_err(|err| { err.into() })
     }
 }
 

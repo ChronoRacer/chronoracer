@@ -5,7 +5,7 @@ use serde::Deserialize;
 pub struct DLQConfig {
     pub dlq_topic: String,
     pub dlq_unknown_key: String,
-    pub publish_timeout_sec: u16
+    pub publish_timeout_sec: u16,
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,9 +25,24 @@ pub struct ProcessingConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct PersistenceConfig {
+    pub db_host: String,
+    pub db_port: u16,
+    pub db_password: String,
+    pub db_name: String,
+    pub fast_flush_max_combined_batch_size: usize,
+    pub fast_flush_interval_ms: u32,
+    pub fast_flush_sensor_ids: Vec<String>,
+    pub flush_max_combined_batch_size: usize,
+    pub flush_interval_ms: u32,
+    pub max_inflight_db_writes_per_mode: u16
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CoreConfig {
     pub kafka: KafkaConfig,
     pub processing: ProcessingConfig,
+    pub persistence: PersistenceConfig,
 }
 
 impl CoreConfig {
@@ -47,8 +62,8 @@ impl CoreConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
     use crate::configuration::CoreConfig;
+    use std::env;
 
     #[test]
     fn load_from_env__fails_on_missing_env_var() {

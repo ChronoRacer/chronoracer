@@ -10,12 +10,12 @@
       "doc": "Sensor ID"
     },
     {
-      "name": "timestamp",
-      "type": {
-        "type": "long",
-        "logicalType": "timestamp-millis"
-      },
-      "doc": "Timestamp of the first read in the batch"
+        "name": "timestamp",
+        "type": {
+          "type": "long",
+          "logicalType": "timestamp-nanos"
+        }
+        "doc": "Timestamp of the first read in the batch"
     },
     {
       "name": "readings",
@@ -28,7 +28,7 @@
             {
               "name": "delta",
               "type":  "int",
-              "doc": "Millisecond offset from the first_read_timestamp. Value < 256"
+              "doc": "Nanosecond offset from the first_read_timestamp. Must be at most 2 seconds (2000000000 ns)."
             },
             {
               "name": "value",
