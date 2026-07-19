@@ -7,7 +7,7 @@ edition = "2024"
 pedantic = "warn"
 
 [dependencies]
-tokio = { version = "1.52.3", features = ["sync"] }
+tokio = { version = "1.52.3", features = ["sync", "rt", "rt-multi-thread", "macros"] }
 rdkafka = { version = "0.39.0", features = ["cmake-build", "tokio"] }
 serde = { version = "1.0.228", features = ["derive"] }
 apache-avro = "0.21.0"

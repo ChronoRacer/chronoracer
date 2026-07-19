@@ -35,7 +35,7 @@ pub struct PersistenceConfig {
     pub fast_flush_sensor_ids: Vec<String>,
     pub flush_max_combined_batch_size: usize,
     pub flush_interval_ms: u32,
-    pub max_inflight_db_writes_per_mode: u16
+    pub max_inflight_db_writes: u16
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,6 +43,7 @@ pub struct CoreConfig {
     pub kafka: KafkaConfig,
     pub processing: ProcessingConfig,
     pub persistence: PersistenceConfig,
+    pub race_id: String,
 }
 
 impl CoreConfig {

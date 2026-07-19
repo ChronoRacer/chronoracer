@@ -39,9 +39,11 @@ impl MessageSink {
                         .is_err()
                     {
                         eprintln!(
-                            "Pipeline pipeline pipeline broken downstream. Shutting down consumer."
+                            "Pipeline pipeline pipeline broken downstream"
                         );
-                        break;
+                        if self.flush_tx.is_closed() {
+                            break;
+                        }
                     }
                 }
                 Err(kafka_error) => {
