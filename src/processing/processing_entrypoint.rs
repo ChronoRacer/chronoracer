@@ -10,7 +10,7 @@ pub fn setup_processing_pipe(
 
     let (processed_data_tx, processed_data_rx) =
         tokio::sync::mpsc::channel::<UnwoundSensorDataMessage>(
-            10, // TODO
+            10, // TODO size should be equal to rayon processing pool
         );
     let collector = ReadingCollector::new(sink_rx, dlq_tx, processed_data_tx);
     (collector, processed_data_rx)

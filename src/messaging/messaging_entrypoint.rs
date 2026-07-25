@@ -15,6 +15,6 @@ pub fn setup_message_sinks(config: &'_ CoreConfig) -> (MessageSink, PartialMessa
     let (dlq_tx, dlq_rx) = tokio::sync::mpsc::channel::<PartialMessageWithError>(
         config.processing.dlq_channel_buffer_size,
     );
-    let dlq_handler = DLQHandler::new(&config, dlq_rx);
+    let dlq_handler = DLQHandler::new(config, dlq_rx);
     (sink, sink_rx, dlq_handler, dlq_tx)
 }

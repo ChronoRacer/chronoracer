@@ -49,7 +49,7 @@ impl InfluxDbFlusher {
         }
     }
 
-    async fn ingest(&mut self) {
+    pub async fn ingest(&mut self) {
         let max_inflight = self.max_inflight_requests;
 
         let fast_wiring = self
