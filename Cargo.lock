@@ -526,6 +526,7 @@ name = "chronoracer-core"
 version = "0.1.0"
 dependencies = [
  "apache-avro",
+ "async-trait",
  "config",
  "futures-util",
  "influxdb3-client",

@@ -1,3 +1,4 @@
+race_id: "test-race"
 kafka:
   brokers:
     - localhost:9092
@@ -12,3 +13,16 @@ kafka:
 processing:
   message_channel_buffer_size: 5000
   dlq_channel_buffer_size: 10000
+persistence:
+  db_host: "localhost"
+  db_port: 5432
+  db_password: "root"
+  db_name: "chrono_db"
+  fast_flush_max_combined_batch_size: 1000
+  fast_flush_interval_ms: 1500
+  fast_flush_sensor_ids:
+   - "test"
+   - "test2"
+  flush_max_combined_batch_size: 5000
+  flush_interval_ms: 3000
+  max_inflight_db_writes: 7

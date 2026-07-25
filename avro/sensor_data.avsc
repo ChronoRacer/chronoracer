@@ -14,7 +14,7 @@
         "type": {
           "type": "long",
           "logicalType": "timestamp-nanos"
-        }
+        },
         "doc": "Timestamp of the first read in the batch"
     },
     {
