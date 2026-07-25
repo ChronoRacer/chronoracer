@@ -21,8 +21,8 @@ persistence:
   fast_flush_max_combined_batch_size: 1000
   fast_flush_interval_ms: 1500
   fast_flush_sensor_ids:
-   - "test"
-   - "test2"
+    - "test"
+    - "test2"
   flush_max_combined_batch_size: 5000
   flush_interval_ms: 3000
   max_inflight_db_writes: 7

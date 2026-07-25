@@ -79,7 +79,7 @@ impl PersistenceConfig {
             db_name: "chrono_db".to_string(),
             fast_flush_max_combined_batch_size: 1000,
             fast_flush_interval_ms: 1500,
-            fast_flush_sensor_ids: vec!["test".to_string(), "test2".to_string()],
+            fast_flush_sensor_ids: vec![],
             flush_max_combined_batch_size: 5000,
             flush_interval_ms: 3000,
             max_inflight_db_writes: 7,

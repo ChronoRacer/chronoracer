@@ -9,20 +9,17 @@ pub type SensorDataRx = tokio::sync::mpsc::Receiver<UnwoundSensorDataMessage>;
 pub async fn setup_persistence_pipe(
     config: &CoreConfig,
     processed_data_rx: SensorDataRx,
-) -> (SensorDataSplitter, SensorDataBatcher, SensorDataBatcher, InfluxDbFlusher) { //[cite: 2]
-    let persistence_config = &config.persistence; //[cite: 2]
+) -> (SensorDataSplitter, SensorDataBatcher, SensorDataBatcher, InfluxDbFlusher) {
+    let persistence_config = &config.persistence;
 
-    // Wire intra-layer channels here.
-    // This allows the splitter to retain ownership of itself for the ingest() loop.
     let (fast_tx, fast_rx) = tokio::sync::mpsc::channel(10); // TODO size
     let (normal_tx, normal_rx) = tokio::sync::mpsc::channel(10); // TODO size
 
-    // Splitter now takes Tx channels instead of creating them internally
     let splitter = SensorDataSplitter::new(
         processed_data_rx,
         fast_tx,
         normal_tx,
-        persistence_config
+        persistence_config,
     );
 
     let (fast_batcher, fast_batcher_wiring) =

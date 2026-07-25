@@ -107,4 +107,17 @@ mod tests {
         assert_eq!(unwound_message.readings, expected_unwound_readings.into_boxed_slice());
         assert_eq!(unwound_message.sensor_id, sensor_id);
     }
+
+    #[test]
+    fn RelativeSensorReading_to_absolute() {
+        let delta = 7;
+        let relative_reading = RelativeSensorReading {
+            value: 10.0,
+            delta: delta as u32,
+        };
+        let base_timestamp = 100000;
+        let absolute_reading = relative_reading.to_absolute(&base_timestamp);
+        assert_eq!(absolute_reading.value, 10.0);
+        assert_eq!(absolute_reading.timestamp, base_timestamp + delta as u64);
+    }
 }

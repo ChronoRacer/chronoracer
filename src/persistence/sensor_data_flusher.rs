@@ -36,8 +36,8 @@ impl InfluxDbFlusher {
                 .build()
                 .expect("Invalid InfluxDB config"),
         )
-        .await
-        .expect("Failed to create InfluxDb client");
+            .await
+            .expect("Failed to create InfluxDb client");
 
         Self {
             client: Arc::from(client),
