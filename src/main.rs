@@ -1,39 +1,54 @@
 #![warn(clippy::pedantic)]
 
 use crate::configuration::CoreConfig;
-use crate::messaging::messaging_entrypoint::setup_message_sinks;
-use crate::persistence::persistence_entrypoint::setup_persistence_pipe;
-use crate::processing::processing_entrypoint::setup_processing_pipe;
+use crate::messaging::messaging_entrypoint::MessagingLayerEntrypoint;
+use crate::persistence::persistence_entrypoint::PersistanceLayerEntryPoint;
+use crate::processing::processing_entrypoint::ProcessingLayerEntrypoint;
+use crate::runtime_configuration::RetainReadTimeValue;
 
 mod configuration;
 pub mod messaging;
 pub mod persistence;
 pub mod processing;
+pub mod runtime_configuration;
 
 #[tokio::main]
 async fn main() {
+    // Config
     let config_val = CoreConfig::load_from_env()
         .expect("Failed to load configuration. Config file path not set.");
-
     let config: &'static CoreConfig = Box::leak(Box::new(config_val));
+    // Messaging
+    let mut messaging_wrapper = MessagingLayerEntrypoint::init(&config);
+    let current_driver_id_handler = RetainReadTimeValue::new(config.race.initial_driver_id.clone());
 
-    let (mut sink, sink_rx, dlq_handler, dlq_tx) = setup_message_sinks(&config);
-    let (mut collector, processed_data_rx) = setup_processing_pipe(sink_rx, dlq_tx);
+    // Processing
+    let mut processing_layer = ProcessingLayerEntrypoint::init(
+        messaging_wrapper.sensor_sink_rx,
+        messaging_wrapper.control_sink_rx,
+        messaging_wrapper.dlq_tx,
+        current_driver_id_handler.clone(),
+    );
 
-    let (mut splitter, mut fast_batcher, mut normal_batcher, mut flusher) =
-        setup_persistence_pipe(&config, processed_data_rx).await;
+    // Persistence
+    let mut persistance_wrapper = PersistanceLayerEntryPoint::init(
+        &config,
+        processing_layer.processed_data_rx,
+        current_driver_id_handler,
+    )
+        .await;
 
     let mut tasks = tokio::task::JoinSet::new();
 
-    tasks.spawn(async move { sink.ingest().await });
-    tasks.spawn(async move { dlq_handler.ingest().await });
+    tasks.spawn(async move { messaging_wrapper.sensor_data_sink.ingest().await });
+    tasks.spawn(async move { messaging_wrapper.dlq_handler.ingest().await });
 
-    tasks.spawn(async move { collector.ingest().await });
+    tasks.spawn(async move { processing_layer.collector.ingest().await });
 
-    tasks.spawn(async move { splitter.ingest().await });
-    tasks.spawn(async move { fast_batcher.ingest().await });
-    tasks.spawn(async move { normal_batcher.ingest().await });
-    tasks.spawn(async move { flusher.ingest().await });
+    tasks.spawn(async move { persistance_wrapper.splitter.ingest().await });
+    tasks.spawn(async move { persistance_wrapper.fast_batcher.ingest().await });
+    tasks.spawn(async move { persistance_wrapper.normal_batcher.ingest().await });
+    tasks.spawn(async move { persistance_wrapper.flusher.ingest().await });
 
     while let Some(result) = tasks.join_next().await {
         match result {

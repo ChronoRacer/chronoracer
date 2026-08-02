@@ -1,3 +1,4 @@
+use compact_str::CompactString;
 use config::{Config, File};
 use serde::Deserialize;
 
@@ -88,11 +89,28 @@ impl PersistenceConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct RaceConfig {
+    /// Id of current race. Prefered under 24 bytes
+    pub race_id: CompactString,
+    /// Id of starting driver. Prefered under 24 bytes
+    pub initial_driver_id: CompactString,
+}
+
+impl RaceConfig {
+    pub fn mock_config() -> RaceConfig {
+        Self {
+            race_id: CompactString::const_new("race123"),
+            initial_driver_id: CompactString::const_new("driver123"),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CoreConfig {
     pub kafka: KafkaConfig,
     pub processing: ProcessingConfig,
     pub persistence: PersistenceConfig,
-    pub race_id: String,
+    pub race: RaceConfig,
 }
 
 impl CoreConfig {
@@ -118,7 +136,7 @@ impl CoreConfig {
             kafka: KafkaConfig::mock_config(),
             processing: ProcessingConfig::mock_config(),
             persistence: PersistenceConfig::mock_config(),
-            race_id: "test-race".to_string(),
+            race: RaceConfig::mock_config(),
         }
     }
 }

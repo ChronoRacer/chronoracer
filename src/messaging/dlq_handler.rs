@@ -6,6 +6,9 @@ use rdkafka::producer::future_producer::OwnedDeliveryResult;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::time::Duration;
 
+pub type InvalidMessageRx = tokio::sync::mpsc::Receiver<PartialMessageWithError>;
+pub type InvalidMessageTx = tokio::sync::mpsc::Sender<PartialMessageWithError>;
+
 #[async_trait]
 pub trait KafkaProducer: Send + Sync {
     async fn send_record<'a>(
@@ -31,14 +34,11 @@ pub struct DLQHandler<'a, P: KafkaProducer = FutureProducer> {
     unknown_key: &'a [u8],
     dlq_topic: &'a str,
     dlq_timeout: rdkafka::util::Timeout,
-    dlq_rx: tokio::sync::mpsc::Receiver<PartialMessageWithError>,
+    dlq_rx: InvalidMessageRx,
 }
 
 impl<'a> DLQHandler<'a, FutureProducer> {
-    pub fn new(
-        config: &'a CoreConfig,
-        dlq_rx: tokio::sync::mpsc::Receiver<PartialMessageWithError>,
-    ) -> Self {
+    pub fn new(config: &'a CoreConfig, dlq_rx: InvalidMessageRx) -> Self {
         let kafka_config = &config.kafka;
         let producer: FutureProducer = rdkafka::ClientConfig::new()
             .set("group.id", &kafka_config.group_id)
@@ -53,11 +53,7 @@ impl<'a> DLQHandler<'a, FutureProducer> {
 }
 
 impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
-    pub fn with_producer(
-        config: &'a CoreConfig,
-        dlq_rx: tokio::sync::mpsc::Receiver<PartialMessageWithError>,
-        producer: P,
-    ) -> Self {
+    pub fn with_producer(config: &'a CoreConfig, dlq_rx: InvalidMessageRx, producer: P) -> Self {
         let kafka_config = &config.kafka;
         Self {
             producer,

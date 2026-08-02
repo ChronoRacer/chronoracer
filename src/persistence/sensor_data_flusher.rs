@@ -1,5 +1,6 @@
 use crate::configuration::PersistenceConfig;
 use crate::persistence::sensor_data_batcher::SimplePoint;
+use compact_str::CompactString;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
@@ -20,7 +21,7 @@ pub type BatcherWiring = (
 impl InfluxDbFlusher {
     pub async fn from_config(
         persistence: &PersistenceConfig,
-        race_id: String,
+        race_id: CompactString,
         fast_batcher_wiring: BatcherWiring,
         batcher_wiring: BatcherWiring,
     ) -> Self {

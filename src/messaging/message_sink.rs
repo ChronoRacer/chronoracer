@@ -3,21 +3,25 @@ use crate::messaging::partial_message::PartialMessage;
 use futures_util::StreamExt;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 
+pub type SinkRx = tokio::sync::mpsc::Receiver<PartialMessage>;
+pub type SinkTx = tokio::sync::mpsc::Sender<PartialMessage>;
+
+
 pub struct MessageSink {
     consumer: StreamConsumer,
-    flush_tx: tokio::sync::mpsc::Sender<PartialMessage>,
+    flush_tx: SinkTx,
 }
 
 impl MessageSink {
     pub fn new(
         kafka_config: &KafkaConfig,
         topics: &[&str],
-        flush_tx: tokio::sync::mpsc::Sender<PartialMessage>,
+        flush_tx: SinkTx,
     ) -> Self {
         let consumer: StreamConsumer = rdkafka::ClientConfig::new()
             .set("group.id", &kafka_config.group_id)
             .set("bootstrap.servers", &kafka_config.brokers.join(","))
-            .set("enable.auto.commit", "false") // TODO
+            .set("enable.auto.commit", "false")
             .set("session.timeout.ms", "6000")
             .create()
             .expect("Failed to create message sink consumer");

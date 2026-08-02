@@ -1,6 +1,7 @@
 use rdkafka::message::BorrowedMessage;
 use rdkafka::Message;
 
+#[derive(Debug)]
 pub struct PartialMessage {
     pub key: Option<Box<[u8]>>,
     pub offset: i64,

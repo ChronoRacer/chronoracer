@@ -1,4 +1,6 @@
-race_id: "test-race"
+race:
+  race_id: "test-race"
+  initial_driver_id: "test"
 kafka:
   brokers:
     - localhost:9092

@@ -1,25 +1,27 @@
+use crate::messaging::dlq_handler::InvalidMessageTx;
+use crate::messaging::message_sink::SinkRx;
 use crate::messaging::partial_message::{PartialMessage, PartialMessageWithError};
 use crate::processing::avro::{AvroSchema, SchemaRegistry, TryFromAvro};
 use crate::processing::sensor_data_message::{SensorDataMessage, UnwoundSensorDataMessage};
 use std::sync::Arc;
 
 pub struct ReadingCollector {
-    flush_rx: tokio::sync::mpsc::Receiver<PartialMessage>,
-    dlq_tx: Arc<tokio::sync::mpsc::Sender<PartialMessageWithError>>,
+    flush_rx: SinkRx,
+    dlq_tx: Arc<InvalidMessageTx>,
     processed_data_tx: Arc<tokio::sync::mpsc::Sender<UnwoundSensorDataMessage>>,
     sensor_data_schema: Arc<apache_avro::Schema>,
 }
 
 impl ReadingCollector {
     pub fn new(
-        flush_rx: tokio::sync::mpsc::Receiver<PartialMessage>,
-        dlq_tx: tokio::sync::mpsc::Sender<PartialMessageWithError>,
+        flush_rx: SinkRx,
+        dlq_tx: Arc<InvalidMessageTx>,
         processed_data_tx: tokio::sync::mpsc::Sender<UnwoundSensorDataMessage>,
         sensor_data_schema: apache_avro::Schema,
     ) -> Self {
         Self {
             flush_rx,
-            dlq_tx: Arc::from(dlq_tx),
+            dlq_tx,
             processed_data_tx: Arc::from(processed_data_tx),
             sensor_data_schema: Arc::new(sensor_data_schema),
         }
@@ -103,7 +105,7 @@ mod tests {
         let (dlq_tx, mut dlq_rx) = mpsc::channel::<PartialMessageWithError>(10);
         let (processed_tx, mut processed_rx) = mpsc::channel::<UnwoundSensorDataMessage>(10);
 
-        let mut collector = ReadingCollector::new(flush_rx, dlq_tx, processed_tx, schema.clone());
+        let mut collector = ReadingCollector::new(flush_rx, Arc::from(dlq_tx), processed_tx, schema.clone());
 
         let ingest_handle = tokio::spawn(async move {
             collector.ingest().await;
@@ -155,7 +157,7 @@ mod tests {
         let (dlq_tx, mut dlq_rx) = mpsc::channel::<PartialMessageWithError>(10);
         let (processed_tx, mut processed_rx) = mpsc::channel::<UnwoundSensorDataMessage>(10);
 
-        let mut collector = ReadingCollector::new(flush_rx, dlq_tx, processed_tx, schema);
+        let mut collector = ReadingCollector::new(flush_rx, Arc::from(dlq_tx), processed_tx, schema);
 
         let ingest_handle = tokio::spawn(async move {
             collector.ingest().await;

@@ -1,5 +1,7 @@
 use crate::persistence::persistence_entrypoint::SensorDataRx;
 use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
+use crate::runtime_configuration::RetainReadTimeValue;
+use compact_str::CompactString;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,7 +9,7 @@ use std::time::Duration;
 /// To avoid this overhead and with very slim points, it's just better to build line protocol manually
 pub struct SimplePoint {
     pub measurement: Arc<str>,
-    pub driver: Arc<str>,
+    pub driver: Arc<CompactString>,
     pub value: f64,
     pub timestamp_nanos: u64,
 }
@@ -25,7 +27,7 @@ pub struct SensorDataBatcher {
     data_rx: SensorDataRx,
     pool_rx: tokio::sync::mpsc::Receiver<Vec<SimplePoint>>,
     batch_tx: tokio::sync::mpsc::Sender<Vec<SimplePoint>>,
-    current_driver_id: Arc<str>,
+    driver_id: RetainReadTimeValue<CompactString>,
     flush_max_combined_batch_size: usize,
     flush_interval_ms: u32,
 }
@@ -37,13 +39,13 @@ impl SensorDataBatcher {
         data_rx: SensorDataRx,
         batch_tx: tokio::sync::mpsc::Sender<Vec<SimplePoint>>,
         pool_rx: tokio::sync::mpsc::Receiver<Vec<SimplePoint>>,
-        starting_driver_id: String,
+        driver_id: RetainReadTimeValue<CompactString>,
     ) -> Self {
         Self {
             data_rx,
             pool_rx,
             batch_tx,
-            current_driver_id: Arc::from(starting_driver_id),
+            driver_id,
             flush_max_combined_batch_size,
             flush_interval_ms,
         }
@@ -65,7 +67,7 @@ impl SensorDataBatcher {
         loop {
             tokio::select! {
                 Some(data) = self.data_rx.recv() => {
-                    sensor_data_into_points(data, &mut buffer, &self.current_driver_id);
+                    sensor_data_into_points(data, &mut buffer, &self.driver_id.get());
 
                     if buffer.len() >= self.flush_max_combined_batch_size {
                         let to_flush = std::mem::replace(&mut buffer, get_buffer());
@@ -108,7 +110,7 @@ impl SensorDataBatcher {
 fn sensor_data_into_points(
     data: UnwoundSensorDataMessage,
     buffer: &mut Vec<SimplePoint>,
-    current_driver_id: &Arc<str>,
+    current_driver_id: &Arc<CompactString>,
 ) {
     let shared_measurement: Arc<str> = Arc::from(data.sensor_id);
     buffer.extend(data.readings.into_iter().map(|reading| SimplePoint {

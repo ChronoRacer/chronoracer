@@ -15,5 +15,7 @@ config = { version = "0.15.25", features = ["yaml"] }
 futures-util = "0.3.32"
 thiserror = "2.0.18"
 rayon = { version = "1.12.0" }
-influxdb3-client = { version = "0.2.0" }
-async-trait = "0.1.89" # TODO: always increment this to latest (lib is in early development)
+influxdb3-client = { version = "0.2.0" } # TODO: always increment this to latest (lib is in early development)
+arc-swap = { version = "1.9.2" }
+compact_str = { version = "0.10.0", features = ["serde"]}
+async-trait = { version = "0.1.91" }
