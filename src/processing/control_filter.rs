@@ -5,6 +5,7 @@ use crate::messaging::partial_message::PartialMessageWithError;
 use crate::runtime_configuration::RetainReadTimeValue;
 use compact_str::CompactString;
 use std::sync::Arc;
+use tracing::{error, info, warn};
 
 pub struct ControlFilter {
     control_rx: SinkRx,
@@ -14,6 +15,7 @@ pub struct ControlFilter {
 }
 
 impl ControlFilter {
+    #[must_use]
     pub fn new(
         control_rx: SinkRx,
         dlq_tx: Arc<InvalidMessageTx>,
@@ -37,15 +39,14 @@ impl ControlFilter {
                     Ok(message) => ControlFilter::relay_control_event(message, handler_ref),
                     Err(error) => {
                         let message = error.message;
-                        if failure_tx
+                        if let Err(e) = failure_tx
                             .blocking_send(PartialMessageWithError::new(message, &error.kind))
-                            .is_err()
                         {
-                            eprintln!("Failed to send to dlq");
+                            error!("Failed to send to dlq: {e}");
                         }
                     }
                 },
-            )
+            );
         }
     }
 
@@ -54,9 +55,13 @@ impl ControlFilter {
         chdrv_handler: &RetainReadTimeValue<CompactString>,
     ) {
         match control_event {
-            CoreControlMessage::CHDRV(body) => chdrv_handler.update(body.new_driver_id),
+            CoreControlMessage::CHDRV(body) => {
+                let new_driver_id = body.new_driver_id;
+                info!("Relaying CHDRV control message: new_driver_id={new_driver_id}");
+                chdrv_handler.update(new_driver_id);
+            },
             CoreControlMessage::UNKNOWN(unknown_key) => {
-                println!("Unknown control message: '{unknown_key}'. Dropping");
+                warn!("Unknown control message: '{unknown_key}'. Dropping");
             }
         }
     }

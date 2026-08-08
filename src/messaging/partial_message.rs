@@ -14,8 +14,8 @@ impl From<BorrowedMessage<'_>> for PartialMessage {
         Self {
             offset: borrowed_message.offset(),
             partition: borrowed_message.partition(),
-            key: borrowed_message.key().map(|bytes| Box::from(bytes)),
-            payload: borrowed_message.payload().map(|bytes| Box::from(bytes)),
+            key: borrowed_message.key().map(Box::from),
+            payload: borrowed_message.payload().map(Box::from),
         }
     }
 }

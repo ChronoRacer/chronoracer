@@ -3,6 +3,7 @@ use crate::persistence::sensor_data_batcher::SimplePoint;
 use compact_str::CompactString;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
+use tracing::{error, info};
 
 pub struct InfluxDbFlusher {
     client: Arc<influxdb3_client::Client>,
@@ -13,9 +14,15 @@ pub struct InfluxDbFlusher {
     max_inflight_requests: usize,
 }
 
+#[derive(Debug, Copy, Clone)]
+pub enum BatcherWiringType {
+    Normal,
+    Fast
+}
 pub type BatcherWiring = (
     tokio::sync::mpsc::Receiver<Vec<SimplePoint>>,
     tokio::sync::mpsc::Sender<Vec<SimplePoint>>,
+    BatcherWiringType,
 );
 
 impl InfluxDbFlusher {
@@ -37,8 +44,8 @@ impl InfluxDbFlusher {
                 .build()
                 .expect("Invalid InfluxDB config"),
         )
-            .await
-            .expect("Failed to create InfluxDb client");
+        .await
+        .expect("Failed to create InfluxDb client");
 
         Self {
             client: Arc::from(client),
@@ -52,7 +59,6 @@ impl InfluxDbFlusher {
 
     pub async fn ingest(&mut self) {
         let max_inflight = self.max_inflight_requests;
-
         let fast_wiring = self
             .fast_batcher_wiring
             .take()
@@ -60,7 +66,7 @@ impl InfluxDbFlusher {
         let client_fast = Arc::clone(&self.client);
         let race_id_fast = Arc::clone(&self.race_id);
         let semaphore_fast = Arc::clone(&self.semaphore);
-        tokio::spawn(Self::ingest_internal(
+        let fast_handle = tokio::spawn(Self::ingest_internal(
             fast_wiring,
             client_fast,
             race_id_fast,
@@ -75,13 +81,14 @@ impl InfluxDbFlusher {
         let client_normal = Arc::clone(&self.client);
         let race_id_normal = Arc::clone(&self.race_id);
         let semaphore_normal = Arc::clone(&self.semaphore);
-        tokio::spawn(Self::ingest_internal(
+        let normal_handle = tokio::spawn(Self::ingest_internal(
             normal_wiring,
             client_normal,
             race_id_normal,
             semaphore_normal,
             max_inflight,
         ));
+        let (_, _) = tokio::join!(fast_handle, normal_handle);
     }
 
     async fn ingest_internal(
@@ -91,14 +98,15 @@ impl InfluxDbFlusher {
         semaphore: Arc<Semaphore>,
         max_inflight_requests: usize,
     ) {
-        let (mut batch_rx, pool_tx) = wiring;
-
+        let (mut batch_rx, pool_tx, wiring_type) = wiring;
+        info!("Starting data flush ingestion loop for {:?}", wiring_type);
         while let Some(mut batch) = batch_rx.recv().await {
             let permit = Arc::clone(&semaphore).acquire_owned().await.unwrap();
             let db = Arc::clone(&client);
             let pool_tx = pool_tx.clone();
             let race_id = Arc::clone(&race_id);
 
+            info!("Received new batch to flush: batch_size={}, wiring_type={:?}", batch.len(), wiring_type);
             tokio::spawn(async move {
                 let _permit = permit;
 
@@ -107,16 +115,19 @@ impl InfluxDbFlusher {
                     line_protocol.push_str(&point.to_line_protocol(&race_id));
                     line_protocol.push('\n');
                 }
-
-                if let Err(e) = db
+                match db
                     .write(line_protocol)
                     .max_inflight(max_inflight_requests)
                     .await
                 {
-                    // TODO: Error handling + partial writes handling
-                    eprintln!("database write failed: {}", e);
+                    Ok(()) => {
+                        info!("Flushed data points: batch_size={}, wiring_type={:?}", batch.len(), wiring_type);
+                    }
+                    Err(e) => {
+                        // TODO: Error handling + partial writes handling
+                        error!("Database write failed: {e}, wiring_type={wiring_type:?}");
+                    }
                 }
-
                 batch.clear();
 
                 let _ = pool_tx.try_send(batch);

@@ -5,6 +5,7 @@ use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::producer::future_producer::OwnedDeliveryResult;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::time::Duration;
+use tracing::{error, info};
 
 pub type InvalidMessageRx = tokio::sync::mpsc::Receiver<PartialMessageWithError>;
 pub type InvalidMessageTx = tokio::sync::mpsc::Sender<PartialMessageWithError>;
@@ -38,6 +39,7 @@ pub struct DLQHandler<'a, P: KafkaProducer = FutureProducer> {
 }
 
 impl<'a> DLQHandler<'a, FutureProducer> {
+    #[must_use]
     pub fn new(config: &'a CoreConfig, dlq_rx: InvalidMessageRx) -> Self {
         let kafka_config = &config.kafka;
         let producer: FutureProducer = rdkafka::ClientConfig::new()
@@ -59,9 +61,9 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
             producer,
             unknown_key: kafka_config.dlq_config.dlq_unknown_key.as_bytes(),
             dlq_topic: &kafka_config.dlq_config.dlq_topic,
-            dlq_timeout: rdkafka::util::Timeout::from(Duration::from_secs(
-                kafka_config.dlq_config.publish_timeout_sec as u64,
-            )),
+            dlq_timeout: rdkafka::util::Timeout::from(Duration::from_secs(u64::from(
+                kafka_config.dlq_config.publish_timeout_sec,
+            ))),
             dlq_rx,
         }
     }
@@ -69,9 +71,9 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
     pub async fn ingest(mut self) {
         while let Some(message) = self.dlq_rx.recv().await {
             match self.send_to_dlq(message).await {
-                Ok(_) => println!("Redirected message to DLQ."),
+                Ok(_) => info!("Redirected message to DLQ"),
                 Err((kafka_err, _)) => {
-                    eprintln!("Failed to write to DLQ: {}", kafka_err);
+                    error!("Failed to write to DLQ: {kafka_err}");
                 }
             }
         }

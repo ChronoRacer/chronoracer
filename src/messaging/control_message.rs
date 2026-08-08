@@ -44,27 +44,21 @@ impl TryFrom<PartialMessage> for CoreControlMessage {
     type Error = MessageParseError;
 
     fn try_from(message: PartialMessage) -> Result<Self, Self::Error> {
-        let key_bytes = match &message.key {
-            Some(key) => key,
-            None => {
+        let Some(key_bytes) = &message.key else {
                 return Err(MessageParseError {
                     message,
                     kind: MessageParseErrorKind::MissingKey,
                 });
-            }
-        };
+            };
 
         match key_bytes.as_ref() {
             b"CHDRV" => {
-                let payload_bytes = match message.payload.as_deref() {
-                    Some(p) => p,
-                    None => {
+                let Some(payload_bytes) = message.payload.as_deref() else {
                         return Err(MessageParseError {
                             message,
                             kind: MessageParseErrorKind::MissingPayload,
                         });
-                    }
-                };
+                    };
                 match CompactString::from_utf8(payload_bytes) {
                     Ok(driver_id) => Ok(CoreControlMessage::CHDRV(ChangeDriverMessage {
                         new_driver_id: driver_id,

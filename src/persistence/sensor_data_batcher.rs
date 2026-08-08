@@ -1,11 +1,14 @@
 use crate::persistence::persistence_entrypoint::SensorDataRx;
+use crate::persistence::sensor_data_flusher::BatcherWiringType;
 use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use crate::runtime_configuration::RetainReadTimeValue;
 use compact_str::CompactString;
+use log::info;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::{error, warn};
 
-/// The influxdb3_client::Point implementation is overengineered for this use case and has in-built deduplication and sorting.
+/// The `influxdb3_client::Point` implementation is overengineered for this use case and has in-built deduplication and sorting.
 /// To avoid this overhead and with very slim points, it's just better to build line protocol manually
 pub struct SimplePoint {
     pub measurement: Arc<str>,
@@ -15,6 +18,7 @@ pub struct SimplePoint {
 }
 
 impl SimplePoint {
+    #[must_use]
     pub fn to_line_protocol(&self, race_id: &str) -> String {
         format!(
             "{},race={},driver={} val={} {}",
@@ -30,9 +34,11 @@ pub struct SensorDataBatcher {
     driver_id: &'static RetainReadTimeValue<CompactString>,
     flush_max_combined_batch_size: usize,
     flush_interval_ms: u32,
+    batcher_wiring_type: BatcherWiringType,
 }
 
 impl SensorDataBatcher {
+    #[must_use]
     pub fn new(
         flush_max_combined_batch_size: usize,
         flush_interval_ms: u32,
@@ -40,6 +46,7 @@ impl SensorDataBatcher {
         batch_tx: tokio::sync::mpsc::Sender<Vec<SimplePoint>>,
         pool_rx: tokio::sync::mpsc::Receiver<Vec<SimplePoint>>,
         driver_id: &'static RetainReadTimeValue<CompactString>,
+        batcher_wiring_type: BatcherWiringType,
     ) -> Self {
         Self {
             data_rx,
@@ -48,13 +55,16 @@ impl SensorDataBatcher {
             driver_id,
             flush_max_combined_batch_size,
             flush_interval_ms,
+            batcher_wiring_type,
         }
     }
 
     pub async fn ingest(&mut self) {
         let mut interval =
-            tokio::time::interval(Duration::from_millis(self.flush_interval_ms as u64));
+            tokio::time::interval(Duration::from_millis(u64::from(self.flush_interval_ms)));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let wiring_type = self.batcher_wiring_type;
+        info!("Starting ingestion loop, flush_type={wiring_type:?}");
 
         let mut get_buffer = || -> Vec<SimplePoint> {
             self.pool_rx
@@ -71,10 +81,10 @@ impl SensorDataBatcher {
 
                     if buffer.len() >= self.flush_max_combined_batch_size {
                         let to_flush = std::mem::replace(&mut buffer, get_buffer());
-                        if self.batch_tx.send(to_flush).await.is_err() {
-                            eprintln!("Failed to flush data buffer");
+                        if let Err(e) = self.batch_tx.send(to_flush).await {
+                            error!("Failed to flush data buffer, flush_type={wiring_type:?}: {e}");
                             if self.batch_tx.is_closed() {
-                                eprintln!("Batch data buffer is closed");
+                                warn!("Batch data buffer is closed. Closing ingestion loop, flush_type={wiring_type:?}");
                                 break;
                             }
                         }
@@ -86,10 +96,10 @@ impl SensorDataBatcher {
                 _ = interval.tick() => {
                     if !buffer.is_empty() {
                         let to_flush = std::mem::replace(&mut buffer, get_buffer());
-                        if self.batch_tx.send(to_flush).await.is_err() {
-                            eprintln!("Failed to flush data buffer");
+                        if let Err(e) = self.batch_tx.send(to_flush).await {
+                            error!("Failed to flush data buffer, flush_type={wiring_type:?}: {e}");
                             if self.batch_tx.is_closed() {
-                                eprintln!("Batch data buffer is closed");
+                                warn!("Batch data buffer is closed. Closing ingestion loop, flush_type={wiring_type:?}");
                                 break;
                             }
                         }
@@ -100,6 +110,7 @@ impl SensorDataBatcher {
                     if !buffer.is_empty() {
                         let _ = self.batch_tx.send(buffer).await;
                     }
+                    warn!("Closing ingestion loop, flush_type={wiring_type:?}");
                     break;
                 }
             }

@@ -13,6 +13,8 @@ pub struct MessagingLayerEntrypoint<'a> {
 }
 
 impl<'a> MessagingLayerEntrypoint<'a> {
+    
+    #[must_use] 
     pub fn init(config: &'a CoreConfig) -> MessagingLayerEntrypoint<'a> {
         let (sensor_sink_tx, sensor_sink_rx) = tokio::sync::mpsc::channel::<PartialMessage>(
             config.processing.message_channel_buffer_size,

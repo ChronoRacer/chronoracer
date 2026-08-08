@@ -2,6 +2,7 @@ use crate::configuration::KafkaConfig;
 use crate::messaging::partial_message::PartialMessage;
 use futures_util::StreamExt;
 use rdkafka::consumer::{Consumer, StreamConsumer};
+use tracing::{error, warn};
 
 pub type SinkRx = tokio::sync::mpsc::Receiver<PartialMessage>;
 pub type SinkTx = tokio::sync::mpsc::Sender<PartialMessage>;
@@ -13,6 +14,8 @@ pub struct MessageSink {
 }
 
 impl MessageSink {
+
+    #[must_use]
     pub fn new(
         kafka_config: &KafkaConfig,
         topics: &[&str],
@@ -27,31 +30,31 @@ impl MessageSink {
             .expect("Failed to create message sink consumer");
         consumer
             .subscribe(topics)
-            .expect(format!("Failed to subscribe to {} topics", topics.join(",")).as_str());
+            .unwrap_or_else(|_| panic!("Failed to subscribe to {} topics", topics.join(",")));
         Self { consumer, flush_tx }
     }
 
-    pub async fn ingest(self: &mut Self) {
+    pub async fn ingest(&mut self) {
         let mut message_stream = self.consumer.stream();
         while let Some(message_result) = message_stream.next().await {
             match message_result {
                 Ok(borrowed_message) => {
-                    if self
+                    if let Err(e) = self
                         .flush_tx
                         .send(PartialMessage::from(borrowed_message))
                         .await
-                        .is_err()
                     {
-                        eprintln!(
-                            "Pipeline pipeline pipeline broken downstream"
+                        error!(
+                            "Ingestion pipeline broken downstream: {e}"
                         );
                         if self.flush_tx.is_closed() {
+                            warn!("Downstream pipeline closed. Breaking ingestion loop");
                             break;
                         }
                     }
                 }
                 Err(kafka_error) => {
-                    eprintln!("Kafka error occurred while polling: {}", kafka_error);
+                    error!("Kafka error occurred while polling: {kafka_error}");
                 }
             }
         }

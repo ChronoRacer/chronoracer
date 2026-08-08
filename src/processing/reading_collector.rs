@@ -1,9 +1,10 @@
 use crate::messaging::dlq_handler::InvalidMessageTx;
 use crate::messaging::message_sink::SinkRx;
-use crate::messaging::partial_message::{PartialMessage, PartialMessageWithError};
-use crate::processing::avro::{AvroSchema, SchemaRegistry, TryFromAvro};
+use crate::messaging::partial_message::PartialMessageWithError;
+use crate::processing::avro::TryFromAvro;
 use crate::processing::sensor_data_message::{SensorDataMessage, UnwoundSensorDataMessage};
 use std::sync::Arc;
+use tracing::error;
 
 pub struct ReadingCollector {
     flush_rx: SinkRx,
@@ -14,6 +15,7 @@ pub struct ReadingCollector {
 }
 
 impl ReadingCollector {
+    #[must_use]
     pub fn new(
         flush_rx: SinkRx,
         dlq_tx: Arc<InvalidMessageTx>,
@@ -40,23 +42,20 @@ impl ReadingCollector {
                 {
                     Ok(deserialized_message) => {
                         let unwound = UnwoundSensorDataMessage::from(deserialized_message);
-                        if success_tx.blocking_send(unwound).is_err() {
-                            eprintln!("Failed to send to downstream");
+                        if let Err(e) = success_tx.blocking_send(unwound) {
+                            error!("Failed to send to downstream: {e}");
                         }
                     }
                     Err(deserialization_error) => {
-                        if failure_tx
-                            .blocking_send(PartialMessageWithError::new(
-                                partial_message,
-                                &deserialization_error,
-                            ))
-                            .is_err()
-                        {
-                            eprintln!("Failed to send to dlq");
+                        if let Err(e) = failure_tx.blocking_send(PartialMessageWithError::new(
+                            partial_message,
+                            &deserialization_error,
+                        )) {
+                            error!("Failed to send to dlq: {e}");
                         }
                     }
                 }
-            })
+            });
         }
     }
 }
@@ -64,17 +63,18 @@ impl ReadingCollector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::messaging::partial_message::PartialMessage;
+    use crate::processing::avro::{AvroSchema, SchemaRegistry};
     use apache_avro::types::Value;
     use std::time::Duration;
     use tokio::sync::mpsc;
     use tokio::time::timeout;
 
     fn build_pool() -> rayon::ThreadPool {
-        let rayon_pool = rayon::ThreadPoolBuilder::new()
+        rayon::ThreadPoolBuilder::new()
             .num_threads(1)
             .build()
-            .expect("Failed to build Rayon pool");
-        rayon_pool
+            .expect("Failed to build Rayon pool")
     }
 
     fn load_avro_schema() -> apache_avro::Schema {
@@ -116,7 +116,13 @@ mod tests {
         let (dlq_tx, mut dlq_rx) = mpsc::channel::<PartialMessageWithError>(10);
         let (processed_tx, mut processed_rx) = mpsc::channel::<UnwoundSensorDataMessage>(10);
 
-        let mut collector = ReadingCollector::new(flush_rx, Arc::from(dlq_tx), processed_tx, schema.clone(), build_pool().into());
+        let mut collector = ReadingCollector::new(
+            flush_rx,
+            Arc::from(dlq_tx),
+            processed_tx,
+            schema.clone(),
+            build_pool().into(),
+        );
 
         let ingest_handle = tokio::spawn(async move {
             collector.ingest().await;
@@ -168,7 +174,13 @@ mod tests {
         let (dlq_tx, mut dlq_rx) = mpsc::channel::<PartialMessageWithError>(10);
         let (processed_tx, mut processed_rx) = mpsc::channel::<UnwoundSensorDataMessage>(10);
 
-        let mut collector = ReadingCollector::new(flush_rx, Arc::from(dlq_tx), processed_tx, schema, build_pool().into());
+        let mut collector = ReadingCollector::new(
+            flush_rx,
+            Arc::from(dlq_tx),
+            processed_tx,
+            schema,
+            build_pool().into(),
+        );
 
         let ingest_handle = tokio::spawn(async move {
             collector.ingest().await;

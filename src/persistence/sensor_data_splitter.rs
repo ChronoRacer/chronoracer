@@ -2,6 +2,7 @@ use crate::configuration::PersistenceConfig;
 use crate::persistence::persistence_entrypoint::SensorDataRx;
 use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use std::collections::HashSet;
+use tracing::error;
 
 pub struct SensorDataSplitter {
     fast_flush_sensor_ids: HashSet<String>,
@@ -30,12 +31,12 @@ impl SensorDataSplitter {
         while let Some(data) = self.data_rx.recv().await {
             if self.fast_flush_sensor_ids.contains(&data.sensor_id) {
                 if self.fast_tx.send(data).await.is_err() && self.normal_tx.is_closed() {
+                    error!("Downstream fast flush channel closed. Breaking ingestion loop");
                     break;
                 }
-            } else {
-                if self.normal_tx.send(data).await.is_err() && self.fast_tx.is_closed() {
-                    break;
-                }
+            } else if self.normal_tx.send(data).await.is_err() && self.fast_tx.is_closed() {
+                error!("Downstream normal flush channel closed. Breaking ingestion loop");
+                break;
             }
         }
     }
@@ -52,7 +53,7 @@ mod tests {
             sensor_id: sensor_id.to_string(),
             readings: Box::new([AbsoluteSensorReading {
                 value: 10.0,
-                timestamp: 1000000000,
+                timestamp: 1_000_000_000,
             }]),
         }
     }
