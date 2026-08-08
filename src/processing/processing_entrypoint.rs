@@ -20,12 +20,12 @@ impl ProcessingLayerEntrypoint {
         sensor_sink_rx: SinkRx,
         control_rx: SinkRx,
         dlq_tx: InvalidMessageTx,
-        chdrv_handler: RetainReadTimeValue<CompactString>,
+        chdrv_handler: &'static RetainReadTimeValue<CompactString>,
+        rayon_pool: Arc<rayon::ThreadPool>,
     ) -> Self {
         let (processed_data_tx, processed_data_rx) =
-            tokio::sync::mpsc::channel::<UnwoundSensorDataMessage>(
-                10, // TODO size should be equal to rayon processing pool
-            );
+            tokio::sync::mpsc::channel::<UnwoundSensorDataMessage>(rayon_pool.current_num_threads());
+
         let sensor_data_schema = SchemaRegistry::load_and_parse_from_env(AvroSchema::SensorData)
             .expect("Failed to load sensor data schema");
         let dlq_tx_arc = Arc::from(dlq_tx);
@@ -34,8 +34,9 @@ impl ProcessingLayerEntrypoint {
             Arc::clone(&dlq_tx_arc),
             processed_data_tx,
             sensor_data_schema,
+            Arc::clone(&rayon_pool),
         );
-        let control_filter = ControlFilter::new(control_rx, Arc::clone(&dlq_tx_arc), chdrv_handler);
+        let control_filter = ControlFilter::new(control_rx, Arc::clone(&dlq_tx_arc), chdrv_handler, Arc::clone(&rayon_pool));
         Self {
             collector,
             processed_data_rx,

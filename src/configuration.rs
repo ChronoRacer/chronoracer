@@ -106,11 +106,30 @@ impl RaceConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct RuntimeConfig {
+    pub rayon_threads: u16,
+    pub tokio_workers: u16,
+    pub tokio_blocking: u16,
+}
+
+impl RuntimeConfig {
+    pub fn mock_config() -> RuntimeConfig {
+        Self {
+            rayon_threads: 4,
+            tokio_workers: 8,
+            tokio_blocking: 1,
+        }
+    }
+}
+
+
+#[derive(Debug, Deserialize)]
 pub struct CoreConfig {
     pub kafka: KafkaConfig,
     pub processing: ProcessingConfig,
     pub persistence: PersistenceConfig,
     pub race: RaceConfig,
+    pub runtime: RuntimeConfig,
 }
 
 impl CoreConfig {
@@ -137,6 +156,7 @@ impl CoreConfig {
             processing: ProcessingConfig::mock_config(),
             persistence: PersistenceConfig::mock_config(),
             race: RaceConfig::mock_config(),
+            runtime: RuntimeConfig::mock_config(),
         }
     }
 }

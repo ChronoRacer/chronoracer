@@ -16,7 +16,7 @@ pub struct PersistanceLayerEntryPoint {
 }
 
 impl PersistanceLayerEntryPoint {
-    pub async fn init(config: &CoreConfig, processed_data_rx: SensorDataRx, driver_id_holder: RetainReadTimeValue<CompactString>) -> Self {
+    pub async fn init(config: &CoreConfig, processed_data_rx: SensorDataRx, driver_id_holder: &'static RetainReadTimeValue<CompactString>) -> Self {
         let persistence_config = &config.persistence;
 
         let (fast_tx, fast_rx) = tokio::sync::mpsc::channel(10); // TODO size
@@ -26,7 +26,7 @@ impl PersistanceLayerEntryPoint {
             SensorDataSplitter::new(processed_data_rx, fast_tx, normal_tx, persistence_config);
 
         let (fast_batcher, fast_batcher_wiring) =
-            PersistanceLayerEntryPoint::create_batcher(fast_rx, driver_id_holder.clone(), persistence_config, true);
+            PersistanceLayerEntryPoint::create_batcher(fast_rx, driver_id_holder, persistence_config, true);
         let (normal_batcher, normal_batcher_wiring) =
             PersistanceLayerEntryPoint::create_batcher(normal_rx, driver_id_holder, persistence_config, false);
 
@@ -48,7 +48,7 @@ impl PersistanceLayerEntryPoint {
 
     fn create_batcher(
         batcher_rx: SensorDataRx,
-        driver_id_holder: RetainReadTimeValue<CompactString>,
+        driver_id_holder: &'static RetainReadTimeValue<CompactString>,
         persistence_config: &PersistenceConfig,
         is_fast: bool,
     ) -> (SensorDataBatcher, BatcherWiring) {

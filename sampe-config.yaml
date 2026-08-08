@@ -1,3 +1,7 @@
+runtime:
+  rayon_threads: 4
+  tokio_workers: 8
+  tokio_blocking: 1
 race:
   race_id: "test-race"
   initial_driver_id: "test"

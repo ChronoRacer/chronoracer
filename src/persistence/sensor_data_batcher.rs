@@ -27,7 +27,7 @@ pub struct SensorDataBatcher {
     data_rx: SensorDataRx,
     pool_rx: tokio::sync::mpsc::Receiver<Vec<SimplePoint>>,
     batch_tx: tokio::sync::mpsc::Sender<Vec<SimplePoint>>,
-    driver_id: RetainReadTimeValue<CompactString>,
+    driver_id: &'static RetainReadTimeValue<CompactString>,
     flush_max_combined_batch_size: usize,
     flush_interval_ms: u32,
 }
@@ -39,7 +39,7 @@ impl SensorDataBatcher {
         data_rx: SensorDataRx,
         batch_tx: tokio::sync::mpsc::Sender<Vec<SimplePoint>>,
         pool_rx: tokio::sync::mpsc::Receiver<Vec<SimplePoint>>,
-        driver_id: RetainReadTimeValue<CompactString>,
+        driver_id: &'static RetainReadTimeValue<CompactString>,
     ) -> Self {
         Self {
             data_rx,
