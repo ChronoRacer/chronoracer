@@ -31,6 +31,7 @@ impl ControlFilter {
     }
 
     pub async fn ingest(&mut self) {
+        info!("Staring control ingestion loop");
         while let Some(partial_message) = self.control_rx.recv().await {
             let failure_tx = Arc::clone(&self.dlq_tx);
             let handler_ref = self.chdrv_handler;
@@ -48,6 +49,7 @@ impl ControlFilter {
                 },
             );
         }
+        warn!("Control ingestion loop terminated");
     }
 
     fn relay_control_event(

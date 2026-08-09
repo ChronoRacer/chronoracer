@@ -4,7 +4,7 @@ use crate::messaging::partial_message::PartialMessageWithError;
 use crate::processing::avro::TryFromAvro;
 use crate::processing::sensor_data_message::{SensorDataMessage, UnwoundSensorDataMessage};
 use std::sync::Arc;
-use tracing::error;
+use tracing::{error, info, warn};
 
 pub struct ReadingCollector {
     flush_rx: SinkRx,
@@ -33,6 +33,7 @@ impl ReadingCollector {
     }
 
     pub async fn ingest(&mut self) {
+        info!("Starting Reading collector ingestion loop");
         while let Some(partial_message) = self.flush_rx.recv().await {
             let schema = Arc::clone(&self.sensor_data_schema);
             let success_tx = Arc::clone(&self.processed_data_tx);
@@ -57,6 +58,7 @@ impl ReadingCollector {
                 }
             });
         }
+        warn!("Reading collector ingestion loop terminated");
     }
 }
 

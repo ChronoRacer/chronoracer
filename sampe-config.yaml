@@ -1,7 +1,7 @@
 runtime:
-  rayon_threads: 2
-  tokio_workers: 6
-  tokio_blocking: 1
+  rayon_threads: 4
+  tokio_workers: 10
+  tokio_blocking: 3
 race:
   race_id: "test-race"
   initial_driver_id: "test"
@@ -32,15 +32,14 @@ processing:
   message_channel_buffer_size: 5000
   dlq_channel_buffer_size: 10000
 persistence:
-  db_host: "localhost"
+  db_host: "http://localhost"
   db_port: 8181
   db_password: "apiv3_token"
   db_name: "chrono_db"
   fast_flush_max_combined_batch_size: 1000
   fast_flush_interval_ms: 1500
   fast_flush_sensor_ids:
-    - "s1"
-    - "s2"
+    - "sensor-1"
   flush_max_combined_batch_size: 5000
   flush_interval_ms: 3000
   max_inflight_db_writes: 7

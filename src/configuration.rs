@@ -91,7 +91,7 @@ pub struct PersistenceConfig {
 impl PersistenceConfig {
     pub fn mock_config() -> PersistenceConfig {
         Self {
-            db_host: "localhost".to_string(),
+            db_host: "http://localhost".to_string(),
             db_port: 5432,
             db_password: "root".to_string(),
             db_name: "chrono_db".to_string(),

@@ -1,40 +1,44 @@
 use crate::configuration::KafkaConfig;
 use crate::messaging::partial_message::PartialMessage;
 use futures_util::StreamExt;
+use log::info;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use tracing::{error, warn};
 
 pub type SinkRx = tokio::sync::mpsc::Receiver<PartialMessage>;
 pub type SinkTx = tokio::sync::mpsc::Sender<PartialMessage>;
 
-
 pub struct MessageSink {
     consumer: StreamConsumer,
     flush_tx: SinkTx,
+    topics: Vec<&'static str>,
 }
 
 impl MessageSink {
-
     #[must_use]
-    pub fn new(
-        kafka_config: &KafkaConfig,
-        topics: &[&str],
-        flush_tx: SinkTx,
-    ) -> Self {
+    pub fn new(kafka_config: &KafkaConfig, topics: Vec<&'static str>, flush_tx: SinkTx) -> Self {
         let consumer: StreamConsumer = rdkafka::ClientConfig::new()
             .set("group.id", &kafka_config.group_id)
-            .set("bootstrap.servers", &kafka_config.brokers.join(","))
+            .set("bootstrap.servers", kafka_config.brokers.join(","))
             .set("enable.auto.commit", "false")
             .set("session.timeout.ms", "6000")
             .create()
             .expect("Failed to create message sink consumer");
         consumer
-            .subscribe(topics)
+            .subscribe(&topics)
             .unwrap_or_else(|_| panic!("Failed to subscribe to {} topics", topics.join(",")));
-        Self { consumer, flush_tx }
+        Self {
+            consumer,
+            flush_tx,
+            topics,
+        }
     }
 
     pub async fn ingest(&mut self) {
+        info!(
+            "Message sink opened for topics: {}",
+            self.topics.join(",")
+        );
         let mut message_stream = self.consumer.stream();
         while let Some(message_result) = message_stream.next().await {
             match message_result {
@@ -44,9 +48,7 @@ impl MessageSink {
                         .send(PartialMessage::from(borrowed_message))
                         .await
                     {
-                        error!(
-                            "Ingestion pipeline broken downstream: {e}"
-                        );
+                        error!("Ingestion pipeline broken downstream: {e}");
                         if self.flush_tx.is_closed() {
                             warn!("Downstream pipeline closed. Breaking ingestion loop");
                             break;
@@ -58,6 +60,10 @@ impl MessageSink {
                 }
             }
         }
+        warn!(
+            "Message sink terminated for topics: {}",
+            self.topics.join(",")
+        );
     }
 }
 

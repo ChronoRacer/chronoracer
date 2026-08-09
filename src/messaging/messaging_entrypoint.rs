@@ -15,7 +15,7 @@ pub struct MessagingLayerEntrypoint<'a> {
 
 impl<'a> MessagingLayerEntrypoint<'a> {
     #[must_use]
-    pub async fn init(config: &'a CoreConfig) -> MessagingLayerEntrypoint<'a> {
+    pub async fn init(config: &'static CoreConfig) -> MessagingLayerEntrypoint<'a> {
         ensure_all_topics_exists(&config.kafka)
             .await
             .expect("Failed to ensure topics exists");
@@ -25,7 +25,7 @@ impl<'a> MessagingLayerEntrypoint<'a> {
         );
         let sensor_data_sink = MessageSink::new(
             &config.kafka,
-            &[
+            vec![
                 &config.kafka.sensor_data_flush_topic.name,
                 &config.kafka.sensor_data_order_topic.name,
             ],
@@ -36,7 +36,7 @@ impl<'a> MessagingLayerEntrypoint<'a> {
         );
         let control_sink = MessageSink::new(
             &config.kafka,
-            &[&config.kafka.control_event_topic.name],
+            vec![&config.kafka.control_event_topic.name],
             control_sink_tx,
         );
         let (dlq_tx, dlq_rx) = tokio::sync::mpsc::channel::<PartialMessageWithError>(

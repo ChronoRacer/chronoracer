@@ -64,7 +64,7 @@ impl SensorDataBatcher {
             tokio::time::interval(Duration::from_millis(u64::from(self.flush_interval_ms)));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let wiring_type = self.batcher_wiring_type;
-        info!("Starting ingestion loop, flush_type={wiring_type:?}");
+        info!("Starting batcher ingestion loop, batch_type={wiring_type:?}");
 
         let mut get_buffer = || -> Vec<SimplePoint> {
             self.pool_rx
@@ -82,9 +82,9 @@ impl SensorDataBatcher {
                     if buffer.len() >= self.flush_max_combined_batch_size {
                         let to_flush = std::mem::replace(&mut buffer, get_buffer());
                         if let Err(e) = self.batch_tx.send(to_flush).await {
-                            error!("Failed to flush data buffer, flush_type={wiring_type:?}: {e}");
+                            error!("Failed to flush data buffer, batch_type={wiring_type:?}: {e}");
                             if self.batch_tx.is_closed() {
-                                warn!("Batch data buffer is closed. Closing ingestion loop, flush_type={wiring_type:?}");
+                                warn!("Batch data buffer is closed. Closing ingestion loop, batch_type={wiring_type:?}");
                                 break;
                             }
                         }
@@ -97,9 +97,9 @@ impl SensorDataBatcher {
                     if !buffer.is_empty() {
                         let to_flush = std::mem::replace(&mut buffer, get_buffer());
                         if let Err(e) = self.batch_tx.send(to_flush).await {
-                            error!("Failed to flush data buffer, flush_type={wiring_type:?}: {e}");
+                            error!("Failed to flush data buffer, batch_type={wiring_type:?}: {e}");
                             if self.batch_tx.is_closed() {
-                                warn!("Batch data buffer is closed. Closing ingestion loop, flush_type={wiring_type:?}");
+                                warn!("Batch data buffer is closed. Closing ingestion loop, batch_type={wiring_type:?}");
                                 break;
                             }
                         }
@@ -110,7 +110,7 @@ impl SensorDataBatcher {
                     if !buffer.is_empty() {
                         let _ = self.batch_tx.send(buffer).await;
                     }
-                    warn!("Closing ingestion loop, flush_type={wiring_type:?}");
+                    warn!("Closing batcher ingestion loop, batch_type={wiring_type:?}");
                     break;
                 }
             }

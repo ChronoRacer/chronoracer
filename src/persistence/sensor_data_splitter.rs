@@ -2,7 +2,7 @@ use crate::configuration::PersistenceConfig;
 use crate::persistence::persistence_entrypoint::SensorDataRx;
 use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use std::collections::HashSet;
-use tracing::error;
+use tracing::{error, info, warn};
 
 pub struct SensorDataSplitter {
     fast_flush_sensor_ids: HashSet<String>,
@@ -12,6 +12,8 @@ pub struct SensorDataSplitter {
 }
 
 impl SensorDataSplitter {
+
+    #[must_use]
     pub fn new(
         data_rx: SensorDataRx,
         fast_tx: tokio::sync::mpsc::Sender<UnwoundSensorDataMessage>,
@@ -28,6 +30,7 @@ impl SensorDataSplitter {
         }
     }
     pub async fn ingest(&mut self) {
+        info!("Starting Splitter ingestion loop");
         while let Some(data) = self.data_rx.recv().await {
             if self.fast_flush_sensor_ids.contains(&data.sensor_id) {
                 if self.fast_tx.send(data).await.is_err() && self.normal_tx.is_closed() {
@@ -39,6 +42,7 @@ impl SensorDataSplitter {
                 break;
             }
         }
+        warn!("Splitter ingestion loop terminated");
     }
 }
 

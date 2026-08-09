@@ -5,7 +5,7 @@ use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::producer::future_producer::OwnedDeliveryResult;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use std::time::Duration;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub type InvalidMessageRx = tokio::sync::mpsc::Receiver<PartialMessageWithError>;
 pub type InvalidMessageTx = tokio::sync::mpsc::Sender<PartialMessageWithError>;
@@ -66,6 +66,7 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
     }
 
     pub async fn ingest(mut self) {
+        info!("Starting DQL ingestion loop");
         while let Some(message) = self.dlq_rx.recv().await {
             match self.send_to_dlq(message).await {
                 Ok(_) => info!("Redirected message to DLQ"),
@@ -74,6 +75,7 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
                 }
             }
         }
+        warn!("DQL ingestion loop terminated");
     }
 
     pub async fn send_to_dlq(
@@ -213,11 +215,11 @@ mod tests {
 
         assert_eq!(
             headers_map.get("o_partition").unwrap(),
-            &2i32.to_le_bytes().to_vec()
+            b"2"
         );
         assert_eq!(
             headers_map.get("o_offset").unwrap(),
-            &100i64.to_le_bytes().to_vec()
+            b"100"
         );
         assert_eq!(
             headers_map.get("o_error").unwrap(),

@@ -17,7 +17,7 @@ pub struct PersistanceLayerEntryPoint {
 
 impl PersistanceLayerEntryPoint {
     pub async fn init(
-        config: &CoreConfig,
+        config: &'static CoreConfig,
         processed_data_rx: SensorDataRx,
         driver_id_holder: &'static RetainReadTimeValue<CompactString>,
     ) -> Self {

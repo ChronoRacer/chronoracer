@@ -3,7 +3,7 @@ use crate::persistence::sensor_data_batcher::SimplePoint;
 use compact_str::CompactString;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub struct InfluxDbFlusher {
     client: Arc<influxdb3_client::Client>,
@@ -39,7 +39,7 @@ impl InfluxDbFlusher {
                 .host(format!("{}:{}", &persistence.db_host, &persistence.db_port))
                 .token(&persistence.db_password)
                 .database(&persistence.db_name)
-                .write_accept_partial(true)
+                .write_accept_partial(false)
                 .write_use_v2_api(false)
                 .write_no_sync(false)
                 .max_idle_connections((persistence.max_inflight_db_writes * 2) as usize)
@@ -48,7 +48,20 @@ impl InfluxDbFlusher {
         )
         .await
         .expect("Failed to create InfluxDb client");
+        match client.ping().await {
+            Ok(version) => {
+                if version == "unknown" {
+                    error!("InfluxDB reachable, but version ping failed. Probably invalid access token");
+                    panic!("InfluxDB not usable");
+                }
+                info!("Connected to InfluxDb. Using version {version}");
+            },
+            Err(e) => {
+                error!("Failed to connect to InfluxDb. Error: {e}");
+                panic!("InfluxDB not usable");
 
+            },
+        }
         Self {
             client: Arc::from(client),
             race_id: Arc::from(race_id),
@@ -101,14 +114,14 @@ impl InfluxDbFlusher {
         max_inflight_requests: usize,
     ) {
         let (mut batch_rx, pool_tx, wiring_type) = wiring;
-        info!("Starting data flush ingestion loop for {:?}", wiring_type);
+        info!("Starting data flush ingestion loop, flush_type={wiring_type:?}");
         while let Some(mut batch) = batch_rx.recv().await {
             let permit = Arc::clone(&semaphore).acquire_owned().await.unwrap();
             let db = Arc::clone(&client);
             let pool_tx = pool_tx.clone();
             let race_id = Arc::clone(&race_id);
 
-            info!("Received new batch to flush: batch_size={}, wiring_type={:?}", batch.len(), wiring_type);
+            info!("Received new batch to flush: batch_size={}, flush_type={:?}", batch.len(), wiring_type);
             tokio::spawn(async move {
                 let _permit = permit;
 
@@ -123,11 +136,11 @@ impl InfluxDbFlusher {
                     .await
                 {
                     Ok(()) => {
-                        info!("Flushed data points: batch_size={}, wiring_type={:?}", batch.len(), wiring_type);
+                        info!("Flushed data points: batch_size={}, flush_type={:?}", batch.len(), wiring_type);
                     }
                     Err(e) => {
                         // TODO: Error handling + partial writes handling
-                        error!("Database write failed: {e}, wiring_type={wiring_type:?}");
+                        error!("Database write failed: {e}, flush_type={wiring_type:?}");
                     }
                 }
                 batch.clear();
@@ -135,5 +148,6 @@ impl InfluxDbFlusher {
                 let _ = pool_tx.try_send(batch);
             });
         }
+        warn!("Data flush ingestion loop terminated, flush_type={wiring_type:?}");
     }
 }

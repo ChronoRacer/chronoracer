@@ -5,8 +5,7 @@ services:
     env_file:
       - influxdb3.env
     ports:
-      - "8086:8086"
-      - "8081:8081"
+      - "8181:8181"
     volumes:
       - influxdb3_data:/var/lib/influxdb3
       - ./admin-token.json:/etc/influxdb3/admin-token.json:ro
