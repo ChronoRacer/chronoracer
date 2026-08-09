@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct DLQConfig {
-    pub dlq_topic: String,
+    pub topic: TopicConfig,
     pub dlq_unknown_key: String,
     pub publish_timeout_sec: u16,
 }
@@ -13,8 +13,25 @@ impl DLQConfig {
     pub fn mock_config() -> DLQConfig {
         Self {
             dlq_unknown_key: "UNKNOWN_KEY".to_string(),
-            dlq_topic: "test.dlq.topic".to_string(),
+            topic: TopicConfig::mock_config("dlq"),
             publish_timeout_sec: 2,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TopicConfig {
+    pub name: String,
+    pub num_partitions: i32,
+    pub replication_factor: i32,
+}
+
+impl TopicConfig {
+    pub fn mock_config(name: &str) -> TopicConfig {
+        Self {
+            name: name.to_string(),
+            num_partitions: 1,
+            replication_factor: 1,
         }
     }
 }
@@ -23,9 +40,9 @@ impl DLQConfig {
 pub struct KafkaConfig {
     pub brokers: Vec<String>,
     pub group_id: String,
-    pub sensor_data_flush_topic: String,
-    pub sensor_data_order_topic: String,
-    pub control_event_topic: String,
+    pub sensor_data_flush_topic: TopicConfig,
+    pub sensor_data_order_topic: TopicConfig,
+    pub control_event_topic: TopicConfig,
     pub dlq_config: DLQConfig,
 }
 
@@ -33,11 +50,11 @@ impl KafkaConfig {
     pub fn mock_config() -> KafkaConfig {
         Self {
             group_id: "test_group".to_string(),
-            sensor_data_flush_topic: "flush".to_string(),
-            sensor_data_order_topic: "order".to_string(),
+            sensor_data_flush_topic: TopicConfig::mock_config("flush"),
+            sensor_data_order_topic: TopicConfig::mock_config("order"),
             brokers: vec!["localhost:9092".to_string()],
             dlq_config: DLQConfig::mock_config(),
-            control_event_topic: "event".to_string(),
+            control_event_topic: TopicConfig::mock_config("event"),
         }
     }
 }
@@ -187,10 +204,15 @@ mod tests {
             env::set_var(CoreConfig::CONFIG_PATH_ENV_VAR_NAME, "sampe-config.yaml");
         }
         let loaded = CoreConfig::load_from_env();
-        assert!(loaded.is_ok());
-        let unwrapped = loaded.unwrap();
-        assert_eq!(unwrapped.kafka.brokers.len(), 1);
-        assert_eq!(unwrapped.kafka.brokers[0], "localhost:9092".to_string());
-        assert_eq!(unwrapped.kafka.dlq_config.publish_timeout_sec, 5);
+        match loaded {
+            Ok(loaded) => {
+                assert_eq!(loaded.kafka.brokers.len(), 1);
+                assert_eq!(loaded.kafka.brokers[0], "localhost:9092".to_string());
+                assert_eq!(loaded.kafka.dlq_config.publish_timeout_sec, 5);
+            },
+            Err(e) => {
+                panic!("{}", e);
+            }
+        }
     }
 }

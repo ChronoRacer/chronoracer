@@ -43,10 +43,7 @@ impl<'a> DLQHandler<'a, FutureProducer> {
     pub fn new(config: &'a CoreConfig, dlq_rx: InvalidMessageRx) -> Self {
         let kafka_config = &config.kafka;
         let producer: FutureProducer = rdkafka::ClientConfig::new()
-            .set("group.id", &kafka_config.group_id)
-            .set("bootstrap.servers", &kafka_config.brokers.join(","))
-            .set("enable.auto.commit", "true")
-            .set("session.timeout.ms", "6000")
+            .set("bootstrap.servers", kafka_config.brokers.join(","))
             .create()
             .expect("Failed to create DLQ handler producer");
 
@@ -60,7 +57,7 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
         Self {
             producer,
             unknown_key: kafka_config.dlq_config.dlq_unknown_key.as_bytes(),
-            dlq_topic: &kafka_config.dlq_config.dlq_topic,
+            dlq_topic: &kafka_config.dlq_config.topic.name,
             dlq_timeout: rdkafka::util::Timeout::from(Duration::from_secs(u64::from(
                 kafka_config.dlq_config.publish_timeout_sec,
             ))),
@@ -204,7 +201,7 @@ mod tests {
         assert_eq!(records.len(), 1);
 
         let rec = &records[0];
-        assert_eq!(rec.topic, "test.dlq.topic");
+        assert_eq!(rec.topic, "dlq");
         assert_eq!(rec.key.as_deref(), Some(b"UNKNOWN_KEY".as_slice()));
         assert_eq!(rec.payload.as_deref(), Some(b"bad bytes".as_slice()));
 

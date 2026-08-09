@@ -1,0 +1,5 @@
+{
+  "token": "apiv3_token",
+  "name": "admin",
+  "description": "Initial admin token for Docker deployment"
+}

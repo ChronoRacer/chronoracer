@@ -59,7 +59,7 @@ fn main() {
         );
 
         // Messaging
-        let mut messaging_wrapper = MessagingLayerEntrypoint::init(config);
+        let mut messaging_wrapper = MessagingLayerEntrypoint::init(config).await;
         info!("Messaging layer initalized");
 
         // Processing

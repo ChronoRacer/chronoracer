@@ -26,6 +26,8 @@ pub type BatcherWiring = (
 );
 
 impl InfluxDbFlusher {
+
+    #[must_use]
     pub async fn from_config(
         persistence: &PersistenceConfig,
         race_id: CompactString,
@@ -39,7 +41,7 @@ impl InfluxDbFlusher {
                 .database(&persistence.db_name)
                 .write_accept_partial(true)
                 .write_use_v2_api(false)
-                .write_no_sync(true)
+                .write_no_sync(false)
                 .max_idle_connections((persistence.max_inflight_db_writes * 2) as usize)
                 .build()
                 .expect("Invalid InfluxDB config"),

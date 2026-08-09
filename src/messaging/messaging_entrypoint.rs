@@ -1,5 +1,6 @@
 use crate::configuration::CoreConfig;
 use crate::messaging::dlq_handler::DLQHandler;
+use crate::messaging::management::ensure_all_topics_exists;
 use crate::messaging::message_sink::{MessageSink, SinkRx};
 use crate::messaging::partial_message::{PartialMessage, PartialMessageWithError};
 
@@ -13,17 +14,20 @@ pub struct MessagingLayerEntrypoint<'a> {
 }
 
 impl<'a> MessagingLayerEntrypoint<'a> {
-    
-    #[must_use] 
-    pub fn init(config: &'a CoreConfig) -> MessagingLayerEntrypoint<'a> {
+    #[must_use]
+    pub async fn init(config: &'a CoreConfig) -> MessagingLayerEntrypoint<'a> {
+        ensure_all_topics_exists(&config.kafka)
+            .await
+            .expect("Failed to ensure topics exists");
+
         let (sensor_sink_tx, sensor_sink_rx) = tokio::sync::mpsc::channel::<PartialMessage>(
             config.processing.message_channel_buffer_size,
         );
         let sensor_data_sink = MessageSink::new(
             &config.kafka,
             &[
-                &config.kafka.sensor_data_flush_topic,
-                &config.kafka.sensor_data_order_topic,
+                &config.kafka.sensor_data_flush_topic.name,
+                &config.kafka.sensor_data_order_topic.name,
             ],
             sensor_sink_tx,
         );
@@ -32,7 +36,7 @@ impl<'a> MessagingLayerEntrypoint<'a> {
         );
         let control_sink = MessageSink::new(
             &config.kafka,
-            &[&config.kafka.control_event_topic],
+            &[&config.kafka.control_event_topic.name],
             control_sink_tx,
         );
         let (dlq_tx, dlq_rx) = tokio::sync::mpsc::channel::<PartialMessageWithError>(

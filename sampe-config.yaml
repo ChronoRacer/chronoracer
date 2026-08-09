@@ -1,6 +1,6 @@
 runtime:
-  rayon_threads: 4
-  tokio_workers: 8
+  rayon_threads: 2
+  tokio_workers: 6
   tokio_blocking: 1
 race:
   race_id: "test-race"
@@ -8,27 +8,39 @@ race:
 kafka:
   brokers:
     - localhost:9092
-  group_id: "todo"
-  sensor_data_flush_topic: "todo"
-  sensor_data_order_topic: "todo"
-  control_event_topic: "todo"
+  group_id: "chrono-core"
+  sensor_data_flush_topic:
+    name: "flush"
+    num_partitions: 3
+    replication_factor: 1
+  sensor_data_order_topic:
+    name: "flush-order"
+    num_partitions: 3
+    replication_factor: 1
+  control_event_topic:
+    name: "control"
+    num_partitions: 1
+    replication_factor: 1
   dlq_config:
-    dlq_topic: "todo"
-    dlq_unknown_key: "todo"
+    topic:
+      name: "dlq"
+      num_partitions: 3
+      replication_factor: 1
+    dlq_unknown_key: "unknown"
     publish_timeout_sec: 5
 processing:
   message_channel_buffer_size: 5000
   dlq_channel_buffer_size: 10000
 persistence:
   db_host: "localhost"
-  db_port: 5432
-  db_password: "root"
+  db_port: 8181
+  db_password: "apiv3_token"
   db_name: "chrono_db"
   fast_flush_max_combined_batch_size: 1000
   fast_flush_interval_ms: 1500
   fast_flush_sensor_ids:
-    - "test"
-    - "test2"
+    - "s1"
+    - "s2"
   flush_max_combined_batch_size: 5000
   flush_interval_ms: 3000
   max_inflight_db_writes: 7
