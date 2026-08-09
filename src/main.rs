@@ -81,6 +81,7 @@ fn main() {
         let mut tasks = tokio::task::JoinSet::new();
 
         tasks.spawn(async move { messaging_wrapper.sensor_data_sink.ingest().await });
+        tasks.spawn(async move { messaging_wrapper.control_sink.ingest().await });
         tasks.spawn(async move { messaging_wrapper.dlq_handler.ingest().await });
 
         tasks.spawn(async move { processing_layer.collector.ingest().await });

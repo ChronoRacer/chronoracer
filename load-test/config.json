@@ -2,8 +2,8 @@
   "broker": "localhost:9092",
   "sensor_topics": ["flush", "flush-order"],
   "sensor_ids": ["sensor-1", "sensor-2", "sensor-3", "sensor-4", "sensor-5"],
-  "testing_time": 60.0,
-  "point_count": 10,
+  "testing_time": 30.0,
+  "point_count": 1000,
   "change_driver": {
     "enabled": true,
     "count": 10,

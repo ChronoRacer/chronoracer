@@ -21,7 +21,9 @@ impl MessageSink {
             .set("group.id", &kafka_config.group_id)
             .set("bootstrap.servers", kafka_config.brokers.join(","))
             .set("enable.auto.commit", "false")
-            .set("session.timeout.ms", "6000")
+            .set("session.timeout.ms", "45000")
+            .set("heartbeat.interval.ms", "15000")
+            .set("max.poll.interval.ms", "300000")
             .create()
             .expect("Failed to create message sink consumer");
         consumer
