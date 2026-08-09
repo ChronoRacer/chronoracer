@@ -84,15 +84,15 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
         let inner_message = failed_message.message;
         let message_key = inner_message.key.as_deref().unwrap_or(self.unknown_key);
 
-        let mut r = FutureRecord::to(self.dlq_topic).key(message_key).headers(
+        let mut record= FutureRecord::to(self.dlq_topic).key(message_key).headers(
             OwnedHeaders::new_with_capacity(3)
                 .insert(Header {
                     key: "o_partition",
-                    value: Some(&inner_message.partition.to_le_bytes()),
+                    value: Some(inner_message.partition.to_string().as_bytes()),
                 })
                 .insert(Header {
                     key: "o_offset",
-                    value: Some(&inner_message.offset.to_le_bytes()),
+                    value: Some(inner_message.offset.to_string().as_bytes()),
                 })
                 .insert(Header {
                     key: "o_error",
@@ -100,9 +100,9 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
                 }),
         );
         if let Some(payload) = inner_message.payload.as_deref() {
-            r = r.payload(payload);
+            record = record.payload(payload);
         }
-        self.producer.send_record(r, self.dlq_timeout).await
+        self.producer.send_record(record, self.dlq_timeout).await
     }
 }
 

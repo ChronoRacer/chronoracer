@@ -88,24 +88,18 @@ mod tests {
         sensor_id: String,
         first_reading_value: f64,
     ) -> Vec<u8> {
-        let mut buffer = Vec::new();
-        let mut writer = apache_avro::Writer::new(schema, &mut buffer);
-        // Matches SensorDataMessage
         let record = Value::Record(vec![
             ("sensor_id".to_string(), Value::String(sensor_id)),
-            ("timestamp".to_string(), Value::TimestampNanos(1000000000)),
+            ("timestamp".to_string(), Value::TimestampNanos(1_000_000_000)),
             (
                 "readings".to_string(),
                 Value::Array(vec![Value::Record(vec![
-                    ("value".to_string(), Value::Double(first_reading_value)),
                     ("delta".to_string(), Value::Int(234)),
+                    ("value".to_string(), Value::Double(first_reading_value)),
                 ])]),
             ),
         ]);
-        writer.append(record).expect("Failed to append record");
-        writer.flush().expect("Failed to flush writer");
-        drop(writer);
-        buffer
+        apache_avro::to_avro_datum(schema, record).expect("Failed to serialize to raw datum")
     }
 
     #[tokio::test]

@@ -1,3 +1,4 @@
+use std::io::Cursor;
 use crate::processing::avro::{AvroErrorExtended, TryFromAvro};
 use apache_avro::Schema;
 use serde::Deserialize;
@@ -49,16 +50,12 @@ impl From<SensorDataMessage> for UnwoundSensorDataMessage {
     }
 }
 
-
 impl TryFromAvro for SensorDataMessage {
     fn try_from_avro(schema: &Schema, bytes: Option<&[u8]>) -> Result<Self, AvroErrorExtended> {
         if let Some(avro_value) = bytes {
-            let mut reader = apache_avro::Reader::with_schema(schema, avro_value)?;
-            if let Some(value_result) = reader.next() {
-                return Ok(apache_avro::from_value::<SensorDataMessage>(
-                    &value_result?,
-                )?);
-            }
+            let mut cursor = Cursor::new(avro_value);
+            let value = apache_avro::from_avro_datum(schema, &mut cursor, None)?;
+            return Ok(apache_avro::from_value::<SensorDataMessage>(&value)?);
         }
         Err(AvroErrorExtended::EmptyPayload)
     }
