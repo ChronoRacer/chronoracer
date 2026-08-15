@@ -92,6 +92,8 @@ fn main() {
         tasks.spawn(async move { persistance_wrapper.normal_batcher.ingest().await });
         tasks.spawn(async move { persistance_wrapper.flusher.ingest().await });
 
+        tasks.spawn(async move { messaging_wrapper.heartbeat_handler.keep_alive().await });
+        
         info!("Running...");
         if let Some(result) = tasks.join_next().await {
             match result {

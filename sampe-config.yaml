@@ -2,6 +2,7 @@ runtime:
   rayon_threads: 4
   tokio_workers: 10
   tokio_blocking: 3
+  heartbeat_interval_s: 30
 race:
   race_id: "test-race"
   initial_driver_id: "test"
@@ -9,12 +10,8 @@ kafka:
   brokers:
     - localhost:9092
   group_id: "chrono-core"
-  sensor_data_flush_topic:
-    name: "flush"
-    num_partitions: 3
-    replication_factor: 1
-  sensor_data_order_topic:
-    name: "flush-order"
+  sensor_data_topic:
+    name: "data"
     num_partitions: 3
     replication_factor: 1
   control_event_topic:
@@ -28,6 +25,10 @@ kafka:
       replication_factor: 1
     dlq_unknown_key: "unknown"
     publish_timeout_sec: 5
+  heartbeat_topic:
+    name: "core"
+    num_partitions: 1
+    replication_factor: 1
 processing:
   message_channel_buffer_size: 5000
   dlq_channel_buffer_size: 10000

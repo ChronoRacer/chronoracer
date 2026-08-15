@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::configuration::CoreConfig;
 use crate::messaging::partial_message::PartialMessageWithError;
 use async_trait::async_trait;
@@ -31,28 +32,15 @@ impl KafkaProducer for FutureProducer {
 }
 
 pub struct DLQHandler<'a, P: KafkaProducer = FutureProducer> {
-    producer: P,
+    producer: Arc<P>,
     unknown_key: &'a [u8],
     dlq_topic: &'a str,
     dlq_timeout: rdkafka::util::Timeout,
     dlq_rx: InvalidMessageRx,
 }
 
-impl<'a> DLQHandler<'a, FutureProducer> {
-    #[must_use]
-    pub fn new(config: &'a CoreConfig, dlq_rx: InvalidMessageRx) -> Self {
-        let kafka_config = &config.kafka;
-        let producer: FutureProducer = rdkafka::ClientConfig::new()
-            .set("bootstrap.servers", kafka_config.brokers.join(","))
-            .create()
-            .expect("Failed to create DLQ handler producer");
-
-        Self::with_producer(config, dlq_rx, producer)
-    }
-}
-
 impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
-    pub fn with_producer(config: &'a CoreConfig, dlq_rx: InvalidMessageRx, producer: P) -> Self {
+    pub fn with_producer(config: &'a CoreConfig, dlq_rx: InvalidMessageRx, producer: Arc<P>) -> Self {
         let kafka_config = &config.kafka;
         Self {
             producer,
@@ -184,7 +172,7 @@ mod tests {
         let (_tx, rx) = mpsc::channel(10);
         let mock_producer = MockKafkaProducer::default();
 
-        let handler = DLQHandler::with_producer(&config, rx, mock_producer.clone());
+        let handler = DLQHandler::with_producer(&config, rx, Arc::new(mock_producer.clone()));
 
         let failed_msg = PartialMessageWithError {
             error_msg: "Parse Error".to_string(),
@@ -233,7 +221,7 @@ mod tests {
         let (tx, rx) = mpsc::channel(10);
         let mock_producer = MockKafkaProducer::default();
 
-        let handler = DLQHandler::with_producer(&config, rx, mock_producer.clone());
+        let handler = DLQHandler::with_producer(&config, rx, Arc::new(mock_producer.clone()));
 
         let msg1 = PartialMessageWithError {
             error_msg: "Err 1".to_string(),

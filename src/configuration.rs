@@ -40,21 +40,21 @@ impl TopicConfig {
 pub struct KafkaConfig {
     pub brokers: Vec<String>,
     pub group_id: String,
-    pub sensor_data_flush_topic: TopicConfig,
-    pub sensor_data_order_topic: TopicConfig,
+    pub sensor_data_topic: TopicConfig,
     pub control_event_topic: TopicConfig,
     pub dlq_config: DLQConfig,
+    pub heartbeat_topic: TopicConfig,
 }
 
 impl KafkaConfig {
     pub fn mock_config() -> KafkaConfig {
         Self {
             group_id: "test_group".to_string(),
-            sensor_data_flush_topic: TopicConfig::mock_config("flush"),
-            sensor_data_order_topic: TopicConfig::mock_config("order"),
+            sensor_data_topic: TopicConfig::mock_config("data"),
             brokers: vec!["localhost:9092".to_string()],
             dlq_config: DLQConfig::mock_config(),
             control_event_topic: TopicConfig::mock_config("event"),
+            heartbeat_topic: TopicConfig::mock_config("core"),
         }
     }
 }
@@ -127,6 +127,7 @@ pub struct RuntimeConfig {
     pub rayon_threads: u16,
     pub tokio_workers: u16,
     pub tokio_blocking: u16,
+    pub heartbeat_interval_s: u16
 }
 
 impl RuntimeConfig {
@@ -135,6 +136,7 @@ impl RuntimeConfig {
             rayon_threads: 4,
             tokio_workers: 8,
             tokio_blocking: 1,
+            heartbeat_interval_s: 30,
         }
     }
 }

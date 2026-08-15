@@ -1,8 +1,11 @@
 use crate::configuration::CoreConfig;
 use crate::messaging::dlq_handler::DLQHandler;
+use crate::messaging::heartbeat_handler::HeartbeatHandler;
 use crate::messaging::management::ensure_all_topics_exists;
 use crate::messaging::message_sink::{MessageSink, SinkRx};
 use crate::messaging::partial_message::{PartialMessage, PartialMessageWithError};
+use rdkafka::producer::FutureProducer;
+use std::sync::Arc;
 
 pub struct MessagingLayerEntrypoint<'a> {
     pub sensor_data_sink: MessageSink,
@@ -11,6 +14,7 @@ pub struct MessagingLayerEntrypoint<'a> {
     pub dlq_tx: tokio::sync::mpsc::Sender<PartialMessageWithError>,
     pub control_sink: MessageSink,
     pub control_sink_rx: SinkRx,
+    pub heartbeat_handler: HeartbeatHandler,
 }
 
 impl<'a> MessagingLayerEntrypoint<'a> {
@@ -25,10 +29,7 @@ impl<'a> MessagingLayerEntrypoint<'a> {
         );
         let sensor_data_sink = MessageSink::new(
             &config.kafka,
-            vec![
-                &config.kafka.sensor_data_flush_topic.name,
-                &config.kafka.sensor_data_order_topic.name,
-            ],
+            vec![&config.kafka.sensor_data_topic.name],
             sensor_sink_tx,
         );
         let (control_sink_tx, control_sink_rx) = tokio::sync::mpsc::channel::<PartialMessage>(
@@ -42,7 +43,16 @@ impl<'a> MessagingLayerEntrypoint<'a> {
         let (dlq_tx, dlq_rx) = tokio::sync::mpsc::channel::<PartialMessageWithError>(
             config.processing.dlq_channel_buffer_size,
         );
-        let dlq_handler = DLQHandler::new(config, dlq_rx);
+
+        let producer: Arc<FutureProducer> = Arc::new(
+            rdkafka::ClientConfig::new()
+                .set("bootstrap.servers", config.kafka.brokers.join(","))
+                .create()
+                .expect("Failed to create DLQ handler producer"),
+        );
+        let dlq_handler = DLQHandler::with_producer(config, dlq_rx, Arc::clone(&producer));
+        let heartbeat_handler = HeartbeatHandler::new(Arc::clone(&producer), config);
+
         Self {
             sensor_data_sink,
             sensor_sink_rx,
@@ -50,6 +60,7 @@ impl<'a> MessagingLayerEntrypoint<'a> {
             dlq_tx,
             control_sink,
             control_sink_rx,
+            heartbeat_handler,
         }
     }
 }

@@ -15,10 +15,10 @@ pub async fn ensure_all_topics_exists(kafka_config: &KafkaConfig) -> Result<(), 
     let results = admin_client
         .create_topics(
             &[
-                NewTopic::from(&kafka_config.sensor_data_flush_topic),
-                NewTopic::from(&kafka_config.sensor_data_order_topic),
+                NewTopic::from(&kafka_config.sensor_data_topic),
                 NewTopic::from(&kafka_config.dlq_config.topic),
                 NewTopic::from(&kafka_config.control_event_topic),
+                NewTopic::from(&kafka_config.heartbeat_topic)
             ],
             &options,
         )
