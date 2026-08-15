@@ -3,6 +3,7 @@ runtime:
   tokio_workers: 10
   tokio_blocking: 3
   heartbeat_interval_s: 30
+  data_pipeline_drain_timeout_s: 120
 race:
   race_id: "test-race"
   initial_driver_id: "test"

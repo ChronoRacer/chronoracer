@@ -2,16 +2,24 @@ use crate::messaging::control_message::CoreControlMessage;
 use crate::messaging::dlq_handler::InvalidMessageTx;
 use crate::messaging::message_sink::SinkRx;
 use crate::messaging::partial_message::PartialMessageWithError;
+use crate::monitor::Monitor;
 use crate::runtime_configuration::RetainReadTimeValue;
 use compact_str::CompactString;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
 pub struct ControlFilter {
     control_rx: SinkRx,
+    inner: Arc<ControlRelay>,
+    rayon_pool: Arc<rayon::ThreadPool>,
+}
+
+struct ControlRelay {
     dlq_tx: Arc<InvalidMessageTx>,
     chdrv_handler: &'static RetainReadTimeValue<CompactString>,
-    rayon_pool: Arc<rayon::ThreadPool>,
+    monitor: Arc<Monitor>,
+    closed: AtomicBool,
 }
 
 impl ControlFilter {
@@ -21,26 +29,33 @@ impl ControlFilter {
         dlq_tx: Arc<InvalidMessageTx>,
         chdrv_handler: &'static RetainReadTimeValue<CompactString>,
         rayon_pool: Arc<rayon::ThreadPool>,
+        monitor: Arc<Monitor>,
     ) -> Self {
-        Self {
-            control_rx,
+        let inner = ControlRelay {
             dlq_tx,
             chdrv_handler,
+            monitor,
+            closed: AtomicBool::new(false),
+        };
+        Self {
+            control_rx,
             rayon_pool,
+            inner: Arc::new(inner),
         }
     }
 
     pub async fn ingest(&mut self) {
-        info!("Staring control ingestion loop");
+        info!("Starting control ingestion loop");
         while let Some(partial_message) = self.control_rx.recv().await {
-            let failure_tx = Arc::clone(&self.dlq_tx);
-            let handler_ref = self.chdrv_handler;
+            let inner = Arc::clone(&self.inner);
+
             self.rayon_pool.spawn(
                 move || match CoreControlMessage::try_from(partial_message) {
-                    Ok(message) => ControlFilter::relay_control_event(message, handler_ref),
+                    Ok(message) => inner.relay_control_event(message),
                     Err(error) => {
                         let message = error.message;
-                        if let Err(e) = failure_tx
+                        if let Err(e) = inner
+                            .dlq_tx
                             .blocking_send(PartialMessageWithError::new(message, &error.kind))
                         {
                             error!("Failed to send to dlq: {e}");
@@ -51,20 +66,27 @@ impl ControlFilter {
         }
         warn!("Control ingestion loop terminated");
     }
+}
 
-    fn relay_control_event(
-        control_event: CoreControlMessage,
-        chdrv_handler: &RetainReadTimeValue<CompactString>,
-    ) {
+impl ControlRelay {
+    fn relay_control_event(&self, control_event: CoreControlMessage) {
+        info!("Received control event: {control_event}");
+        if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+            warn!("Control relay closed. Dropping");
+            return;
+        }
+
         match control_event {
             CoreControlMessage::CHDRV(body) => {
                 let new_driver_id = body.new_driver_id;
-                info!("Relaying CHDRV control message: new_driver_id={new_driver_id}");
-                chdrv_handler.update(new_driver_id);
-            },
-            CoreControlMessage::UNKNOWN(unknown_key) => {
-                warn!("Unknown control message: '{unknown_key}'. Dropping");
+                self.chdrv_handler.update(new_driver_id);
             }
+            CoreControlMessage::SHUTDOWN => {
+                self.closed.store(true, std::sync::atomic::Ordering::Release);
+                info!("Relay closed due to receiving shutdown event");
+                self.monitor.shutdown_signal_received();
+            }
+            _ => {}
         }
     }
 }

@@ -127,7 +127,8 @@ pub struct RuntimeConfig {
     pub rayon_threads: u16,
     pub tokio_workers: u16,
     pub tokio_blocking: u16,
-    pub heartbeat_interval_s: u16
+    pub heartbeat_interval_s: u16,
+    pub data_pipeline_drain_timeout_s: u16
 }
 
 impl RuntimeConfig {
@@ -137,6 +138,7 @@ impl RuntimeConfig {
             tokio_workers: 8,
             tokio_blocking: 1,
             heartbeat_interval_s: 30,
+            data_pipeline_drain_timeout_s: 120,
         }
     }
 }

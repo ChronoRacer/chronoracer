@@ -15,6 +15,7 @@ impl<T> RetainReadTimeValue<T> {
 
     /// Get current value. This method gurantees that the pointer to read value always point to the
     /// read time value when accessed and not to the current one held by this struct
+    #[must_use]
     pub fn get(&self) -> Arc<T> {
         self.inner.load_full()
     }

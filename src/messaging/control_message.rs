@@ -2,13 +2,24 @@ use crate::messaging::partial_message::PartialMessage;
 use compact_str::CompactString;
 use std::error::Error;
 use std::fmt;
+use std::fmt::Formatter;
 use std::str::Utf8Error;
 
 pub enum CoreControlMessage {
     CHDRV(ChangeDriverMessage),
+    SHUTDOWN,
     UNKNOWN(String),
 }
 
+impl fmt::Display for CoreControlMessage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            CoreControlMessage::CHDRV(msg) => write!(f, "CHDRV:{}", msg.new_driver_id),
+            CoreControlMessage::SHUTDOWN => write!(f, "SHUTDOWN"),
+            CoreControlMessage::UNKNOWN(key) => write!(f, "UNKNOWN:{key}"),
+        }
+    }
+}
 pub struct ChangeDriverMessage {
     pub new_driver_id: CompactString,
 }
@@ -68,7 +79,8 @@ impl TryFrom<PartialMessage> for CoreControlMessage {
                         kind: MessageParseErrorKind::InvalidPayload(decoding_error),
                     }),
                 }
-            }
+            },
+            b"SHUTDOWN" => Ok(CoreControlMessage::SHUTDOWN),
             unknown => Ok(CoreControlMessage::UNKNOWN(
                 String::from_utf8_lossy(unknown).into_owned(),
             )),

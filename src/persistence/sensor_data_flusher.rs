@@ -1,5 +1,5 @@
 use crate::configuration::PersistenceConfig;
-use crate::persistence::sensor_data_batcher::SimplePoint;
+use crate::persistence::sensor_data_batcher::{SimplePoint, SIMPLE_POINT_PROTOCOL_MAX_LENGTH};
 use compact_str::CompactString;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -39,7 +39,7 @@ impl InfluxDbFlusher {
                 .host(format!("{}:{}", &persistence.db_host, &persistence.db_port))
                 .token(&persistence.db_password)
                 .database(&persistence.db_name)
-                .write_accept_partial(false)
+                .write_accept_partial(true)
                 .write_use_v2_api(false)
                 .write_no_sync(false)
                 .max_idle_connections((persistence.max_inflight_db_writes * 2) as usize)
@@ -125,7 +125,7 @@ impl InfluxDbFlusher {
             tokio::spawn(async move {
                 let _permit = permit;
 
-                let mut line_protocol = String::new();
+                let mut line_protocol = String::with_capacity(batch.len() * (SIMPLE_POINT_PROTOCOL_MAX_LENGTH + 2));
                 for point in &batch {
                     line_protocol.push_str(&point.to_line_protocol(&race_id));
                     line_protocol.push('\n');

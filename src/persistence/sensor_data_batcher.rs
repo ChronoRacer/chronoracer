@@ -17,6 +17,8 @@ pub struct SimplePoint {
     pub timestamp_nanos: u64,
 }
 
+pub const SIMPLE_POINT_PROTOCOL_MAX_LENGTH: usize = 10 + 1 + 4 + 1 + 16 + 1 + 6 + 1 + 10 + 1 + 3 + 1 + 12 + 1 + 10;
+
 impl SimplePoint {
     #[must_use]
     pub fn to_line_protocol(&self, race_id: &str) -> String {
