@@ -38,6 +38,28 @@ impl TopicConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct KafkaExportConfig {
+    pub redpanda_yaml_dir_path: PathBuf,
+    pub export_topics: Vec<String>,
+    pub nested_path_in_bucket: String,
+    pub local_path: PathBuf,
+    pub max_retries: u16
+}
+
+impl KafkaExportConfig {
+    pub fn mock_config() -> KafkaExportConfig {
+        Self {
+            redpanda_yaml_dir_path: PathBuf::from("/redpanda"),
+            export_topics: vec!["dlq".to_string()],
+            nested_path_in_bucket: "export/kafka".to_string(),
+            local_path: PathBuf::from("/export/kafka"),
+            max_retries: 2
+        }
+    }
+
+}
+
+#[derive(Debug, Deserialize)]
 pub struct KafkaConfig {
     pub brokers: Vec<String>,
     pub group_id: String,
@@ -45,6 +67,7 @@ pub struct KafkaConfig {
     pub control_event_topic: TopicConfig,
     pub dlq_config: DLQConfig,
     pub heartbeat_topic: TopicConfig,
+    pub export: KafkaExportConfig
 }
 
 impl KafkaConfig {
@@ -56,6 +79,7 @@ impl KafkaConfig {
             dlq_config: DLQConfig::mock_config(),
             control_event_topic: TopicConfig::mock_config("event"),
             heartbeat_topic: TopicConfig::mock_config("core"),
+            export: KafkaExportConfig::mock_config()
         }
     }
 }
@@ -79,8 +103,8 @@ impl ProcessingConfig {
 pub struct DatabaseExportConfig {
     pub compression_level: u16,
     pub compression_type: CompactString,
-    pub export_dir: PathBuf,
-    pub max_retires: u16
+    pub vm_export_dir: PathBuf,
+    pub max_retries: u16
 }
 
 impl DatabaseExportConfig {
@@ -88,8 +112,8 @@ impl DatabaseExportConfig {
         Self {
             compression_type: CompactString::const_new("zstd"),
             compression_level: 7,
-            export_dir: PathBuf::from("/export/db"),
-            max_retires: 2,
+            vm_export_dir: PathBuf::from("/export/db"),
+            max_retries: 2,
         }
     }
 }
@@ -166,6 +190,20 @@ impl RuntimeConfig {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct GcpConfig {
+    pub enabled: bool,
+    pub export_bucket: String
+}
+
+impl GcpConfig {
+    pub fn mock_config() -> Self {
+        Self {
+            enabled: false,
+            export_bucket: "exports".to_string()
+        }
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct CoreConfig {
@@ -174,6 +212,7 @@ pub struct CoreConfig {
     pub persistence: PersistenceConfig,
     pub race: RaceConfig,
     pub runtime: RuntimeConfig,
+    pub gcp: GcpConfig
 }
 
 impl CoreConfig {
@@ -201,6 +240,7 @@ impl CoreConfig {
             persistence: PersistenceConfig::mock_config(),
             race: RaceConfig::mock_config(),
             runtime: RuntimeConfig::mock_config(),
+            gcp: GcpConfig::mock_config()
         }
     }
 }

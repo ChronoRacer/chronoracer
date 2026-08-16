@@ -5,3 +5,4 @@ pub mod messaging_entrypoint;
 pub mod control_message;
 pub mod management;
 pub mod heartbeat_handler;
+pub mod kafka_exporter;

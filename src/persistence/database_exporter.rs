@@ -22,7 +22,7 @@ impl InfluxDbExporter {
     async fn execute_query_with_retry(&self, query: &str) -> Result<QueryResult, String> {
         let mut attempts = 0;
         let mut backoff = Duration::from_secs(1);
-        let max_retries = self.database_export_config.max_retires;
+        let max_retries = self.database_export_config.max_retries;
         loop {
             match self.client.sql(query).await {
                 Ok(result) => return Ok(result),
@@ -48,10 +48,10 @@ impl InfluxDbExporter {
     }
 
     pub async fn export_database(&self) -> Result<Vec<PathBuf>, String> {
-        if let Err(err) = tokio::fs::create_dir_all(&self.database_export_config.export_dir).await {
+        if let Err(err) = tokio::fs::create_dir_all(&self.database_export_config.vm_export_dir).await {
             return Err(format!(
                 "Unrecoverable error: Cannot create root export directory '{}': {}",
-                self.database_export_config.export_dir.display(),
+                self.database_export_config.vm_export_dir.display(),
                 err
             ));
         }
@@ -120,12 +120,12 @@ impl InfluxDbExporter {
 
         let rows: Vec<Row> = result_set
             .rows()
-            .map_err(|err| format!("Failed to extract rows: {:?}", err))?;
+            .map_err(|err| format!("Failed to extract rows: {err:?}"))?;
 
         rows.iter()
             .map(|row| {
                 row.get("table_name")
-                    .map(|value| value.to_string())
+                    .map(ToString::to_string)
                     .ok_or_else(|| "table name missing".to_string())
             })
             .collect::<Result<Vec<String>, _>>()
@@ -150,7 +150,7 @@ impl InfluxDbExporter {
     }
 
     fn table_name_to_export_path(&self, table_name: &str) -> PathBuf {
-        let mut export_path = self.database_export_config.export_dir.join(table_name);
+        let mut export_path = self.database_export_config.vm_export_dir.join(table_name);
         export_path.set_extension("parquet");
         export_path
     }
@@ -159,10 +159,8 @@ impl InfluxDbExporter {
         &self,
         export_destination: &Path,
     ) -> Result<(), io::Error> {
-        if let Some(parent) = export_destination.parent() {
-            if !parent.as_os_str().is_empty() {
+        if let Some(parent) = export_destination.parent() && !parent.as_os_str().is_empty() {
                 tokio::fs::create_dir_all(parent).await?;
-            }
         }
         match tokio::fs::remove_file(export_destination).await {
             Ok(()) => Ok(()),

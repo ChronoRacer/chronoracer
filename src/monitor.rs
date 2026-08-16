@@ -1,17 +1,20 @@
 use crate::configuration::CoreConfig;
-use crate::persistence::exporter::InfluxDbExporter;
+use crate::persistence::database_exporter::InfluxDbExporter;
 use log::error;
 use std::time::Duration;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::info;
+use crate::messaging::kafka_exporter::KafkaExporter;
 
 pub struct Monitor {
     data_cancel_token: CancellationToken,
     data_tracker: TaskTracker,
     config: &'static CoreConfig,
     database_exporter: InfluxDbExporter,
+    kafka_exporter: KafkaExporter
+
 }
 
 impl Monitor {
@@ -21,12 +24,14 @@ impl Monitor {
         data_tracker: TaskTracker,
         config: &'static CoreConfig,
         database_exporter: InfluxDbExporter,
+        kafka_exporter: KafkaExporter
     ) -> Self {
         Self {
             data_cancel_token,
             data_tracker,
             config,
             database_exporter,
+            kafka_exporter
         }
     }
     pub fn track_task<F>(&self, task: F)
@@ -56,7 +61,7 @@ impl Monitor {
             }
         }
 
-        let export_kafka = async {};
+        let export_kafka = self.kafka_exporter.export_kafka();
 
         let export_database_future = self.database_exporter.export_database();
         let (db_export, kafka_export) = tokio::join!(export_database_future, export_kafka);

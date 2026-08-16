@@ -8,7 +8,7 @@ use compact_str::CompactString;
 use influxdb3_client::Client;
 use std::sync::Arc;
 use tracing::{error, info};
-use crate::persistence::exporter::InfluxDbExporter;
+use crate::persistence::database_exporter::InfluxDbExporter;
 
 pub type SensorDataRx = tokio::sync::mpsc::Receiver<UnwoundSensorDataMessage>;
 

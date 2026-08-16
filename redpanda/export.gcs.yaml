@@ -1,0 +1,47 @@
+input:
+  kafka:
+    addresses: __KAFKA_BROKERS_ARRAY__
+    topics: __KAFKA_TOPICS_ARRAY__
+    consumer_group: __KAFKA_CONSUMER_GROUP__
+    auto_replay_nacks: true
+    batching:
+      count: 10000
+      period: "5s"
+
+pipeline:
+  processors:
+    - mapping: |
+        root.topic = meta("kafka_topic")
+        root.partition = meta("kafka_partition").number()
+        root.offset = meta("kafka_offset").number()
+        root.timestamp = meta("kafka_timestamp_ms").number().catch(null)
+        root.key = meta("kafka_key").catch(null)
+        root.value = content().catch(null)
+        root.headers = meta().format_json()
+
+    - parquet_encode:
+        default_compression: zstd
+        schema:
+          - name: topic
+            type: UTF8
+          - name: partition
+            type: INT32
+          - name: offset
+            type: INT64
+          - name: timestamp
+            type: INT64
+            optional: true
+          - name: key
+            type: BYTE_ARRAY
+            optional: true
+          - name: value
+            type: BYTE_ARRAY
+            optional: true
+          - name: headers
+            type: UTF8
+            optional: true
+
+output:
+  gcp_cloud_storage:
+    bucket: __EXPORT_BUCKET__
+    path: "__BUCKET_DIR_PATH__/${! meta(\"kafka_topic\") }.parquet"

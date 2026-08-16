@@ -1,6 +1,7 @@
 use crate::configuration::CoreConfig;
 use crate::messaging::dlq_handler::DLQHandler;
 use crate::messaging::heartbeat_handler::HeartbeatHandler;
+use crate::messaging::kafka_exporter::KafkaExporter;
 use crate::messaging::management::ensure_all_topics_exists;
 use crate::messaging::message_sink::{MessageSink, SinkRx};
 use crate::messaging::partial_message::{PartialMessage, PartialMessageWithError};
@@ -15,11 +16,14 @@ pub struct MessagingLayerEntrypoint<'a> {
     pub control_sink: MessageSink,
     pub control_sink_rx: SinkRx,
     pub heartbeat_handler: HeartbeatHandler,
+    pub kafka_exporter: KafkaExporter<'a>,
 }
 
 impl<'a> MessagingLayerEntrypoint<'a> {
     #[must_use]
     pub async fn init(config: &'static CoreConfig) -> MessagingLayerEntrypoint<'a> {
+        let kafka_exporter = KafkaExporter::new(&config.race.race_id, &config.gcp, &config.kafka).expect("Failed to create Kafka exported");
+
         ensure_all_topics_exists(&config.kafka)
             .await
             .expect("Failed to ensure topics exists");
@@ -61,6 +65,7 @@ impl<'a> MessagingLayerEntrypoint<'a> {
             control_sink,
             control_sink_rx,
             heartbeat_handler,
+            kafka_exporter
         }
     }
 }

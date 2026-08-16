@@ -22,6 +22,7 @@ pub mod monitor;
 pub mod persistence;
 pub mod processing;
 pub mod runtime_configuration;
+pub mod gcp_utils;
 
 fn main() {
     // Logger
@@ -96,6 +97,7 @@ fn main() {
             data_tracker,
             config,
             persistance_wrapper.exporter,
+            messaging_wrapper.kafka_exporter
         );
 
         // Data Pipeline

@@ -11,7 +11,7 @@ tokio = { version = "1.52.3", features = ["sync", "rt", "rt-multi-thread", "macr
 tokio-util = { version = "0.7.19", features = ["rt"] }
 rdkafka = { version = "0.39.0", features = ["cmake-build", "tokio"] }
 serde = { version = "1.0.228", features = ["derive"] }
-apache-avro = "0.21.0"
+apache-avro = "0.22.0"
 config = { version = "0.15.25", features = ["yaml"] }
 futures-util = "0.3.32"
 thiserror = "2.0.18"
@@ -21,6 +21,7 @@ arc-swap = { version = "1.9.2" }
 compact_str = { version = "0.10.0", features = ["serde"] }
 async-trait = { version = "0.1.91" }
 tracing = { version = "0.1.44" }
-tracing-subscriber = { version = "0.3.23"}
+tracing-subscriber = { version = "0.3.23" }
 tracing-appender = { version = "0.2.5" }
 log = "0.4.33"
+which = "8.0.5"

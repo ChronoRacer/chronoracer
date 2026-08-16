@@ -1,6 +1,5 @@
 use crate::configuration::KafkaConfig;
 use crate::messaging::partial_message::PartialMessage;
-use futures_util::SinkExt;
 use futures_util::StreamExt;
 use log::info;
 use rdkafka::consumer::{Consumer, StreamConsumer};
