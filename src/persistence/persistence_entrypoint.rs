@@ -5,6 +5,10 @@ use crate::persistence::sensor_data_splitter::SensorDataSplitter;
 use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use crate::runtime_configuration::RetainReadTimeValue;
 use compact_str::CompactString;
+use influxdb3_client::Client;
+use std::sync::Arc;
+use tracing::{error, info};
+use crate::persistence::exporter::InfluxDbExporter;
 
 pub type SensorDataRx = tokio::sync::mpsc::Receiver<UnwoundSensorDataMessage>;
 
@@ -13,6 +17,7 @@ pub struct PersistanceLayerEntryPoint {
     pub(crate) fast_batcher: SensorDataBatcher,
     pub(crate) normal_batcher: SensorDataBatcher,
     pub(crate) flusher: InfluxDbFlusher,
+    pub(crate) exporter: InfluxDbExporter
 }
 
 impl PersistanceLayerEntryPoint {
@@ -22,6 +27,13 @@ impl PersistanceLayerEntryPoint {
         driver_id_holder: &'static RetainReadTimeValue<CompactString>,
     ) -> Self {
         let persistence_config = &config.persistence;
+        let db_client = Arc::new(match Self::create_influxdb_client(persistence_config).await {
+            Ok(client) => client,
+            Err(error_message) => {
+                error!(error_message);
+                panic!("Error creating InfluxDB client: {error_message}");
+            }
+        });
 
         let (fast_tx, fast_rx) = tokio::sync::mpsc::channel(10); // TODO size
         let (normal_tx, normal_rx) = tokio::sync::mpsc::channel(10); // TODO size
@@ -48,15 +60,51 @@ impl PersistanceLayerEntryPoint {
             race_id,
             fast_batcher_wiring,
             normal_batcher_wiring,
-        )
-        .await;
+            Arc::clone(&db_client),
+        );
+
+        let exporter = InfluxDbExporter::new(
+            db_client,
+            &persistence_config.export
+        );
 
         Self {
             splitter,
             fast_batcher,
             normal_batcher,
             flusher,
+            exporter
         }
+    }
+
+    async fn create_influxdb_client(
+        persistence_config: &PersistenceConfig,
+    ) -> Result<Client, String> {
+        let client = Client::new(
+            influxdb3_client::ClientConfig::builder()
+                .host(format!(
+                    "{}:{}",
+                    &persistence_config.db_host, &persistence_config.db_port
+                ))
+                .token(&persistence_config.db_password)
+                .database(&persistence_config.db_name)
+                .write_accept_partial(true)
+                .write_use_v2_api(false)
+                .write_no_sync(false)
+                .max_idle_connections((persistence_config.max_inflight_db_writes * 2) as usize)
+                .build()
+                .map_err(|e| format!("Invalid InfluxDB config: {e}"))?,
+        )
+        .await
+        .map_err(|e| format!("Failed to create InfluxDb client: {e}"))?;
+
+        client.ping().await.map(|version| {
+            if version == "unknown" {
+                return Err("InfluxDB reachable, but version ping failed. Probably invalid access token".to_owned());
+            }
+            info!("Connected to InfluxDb. Using version {version}");
+            Ok(client)
+        }).map_err(|e| format!("Failed to connect to InfluxDb. Error: {e}"))?
     }
 
     fn create_batcher(
@@ -85,7 +133,7 @@ impl PersistanceLayerEntryPoint {
             batch_tx,
             pool_rx,
             driver_id_holder,
-            batcher_wiring_type
+            batcher_wiring_type,
         );
         (batcher, (batch_rx, pool_tx, batcher_wiring_type))
     }

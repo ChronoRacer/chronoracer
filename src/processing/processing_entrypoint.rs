@@ -8,7 +8,7 @@ use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use crate::runtime_configuration::RetainReadTimeValue;
 use compact_str::CompactString;
 use std::sync::Arc;
-use crate::monitor::Monitor;
+use tokio::sync::oneshot;
 
 pub struct ProcessingLayerEntrypoint {
     pub(crate) collector: ReadingCollector,
@@ -24,8 +24,8 @@ impl ProcessingLayerEntrypoint {
         control_rx: SinkRx,
         dlq_tx: InvalidMessageTx,
         chdrv_handler: &'static RetainReadTimeValue<CompactString>,
+        shutdown_handler_tx: oneshot::Sender<()>,
         rayon_pool: Arc<rayon::ThreadPool>,
-        monitor: Arc<Monitor>,
     ) -> Self {
         let (processed_data_tx, processed_data_rx) = tokio::sync::mpsc::channel::<
             UnwoundSensorDataMessage,
@@ -43,10 +43,10 @@ impl ProcessingLayerEntrypoint {
         );
         let control_filter = ControlFilter::new(
             control_rx,
-            Arc::clone(&dlq_tx_arc),
+            dlq_tx_arc,
             chdrv_handler,
-            Arc::clone(&rayon_pool),
-            monitor
+            rayon_pool,
+            shutdown_handler_tx
         );
         Self {
             collector,

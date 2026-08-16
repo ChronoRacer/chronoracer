@@ -45,3 +45,8 @@ persistence:
   flush_max_combined_batch_size: 5000
   flush_interval_ms: 3000
   max_inflight_db_writes: 7
+  export:
+    compression_level: 6
+    compression_type: ZSTD
+    export_dir: /todo
+    max_retires: 3

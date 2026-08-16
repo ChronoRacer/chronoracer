@@ -2,11 +2,11 @@ use crate::messaging::control_message::CoreControlMessage;
 use crate::messaging::dlq_handler::InvalidMessageTx;
 use crate::messaging::message_sink::SinkRx;
 use crate::messaging::partial_message::PartialMessageWithError;
-use crate::monitor::Monitor;
 use crate::runtime_configuration::RetainReadTimeValue;
 use compact_str::CompactString;
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use tokio::sync::oneshot;
 use tracing::{error, info, warn};
 
 pub struct ControlFilter {
@@ -18,7 +18,7 @@ pub struct ControlFilter {
 struct ControlRelay {
     dlq_tx: Arc<InvalidMessageTx>,
     chdrv_handler: &'static RetainReadTimeValue<CompactString>,
-    monitor: Arc<Monitor>,
+    shutdown_handler_tx: Mutex<Option<oneshot::Sender<()>>>,
     closed: AtomicBool,
 }
 
@@ -29,12 +29,12 @@ impl ControlFilter {
         dlq_tx: Arc<InvalidMessageTx>,
         chdrv_handler: &'static RetainReadTimeValue<CompactString>,
         rayon_pool: Arc<rayon::ThreadPool>,
-        monitor: Arc<Monitor>,
+        shutdown_handler_tx: oneshot::Sender<()>,
     ) -> Self {
         let inner = ControlRelay {
             dlq_tx,
             chdrv_handler,
-            monitor,
+            shutdown_handler_tx: Mutex::new(Some(shutdown_handler_tx)),
             closed: AtomicBool::new(false),
         };
         Self {
@@ -84,7 +84,11 @@ impl ControlRelay {
             CoreControlMessage::SHUTDOWN => {
                 self.closed.store(true, std::sync::atomic::Ordering::Release);
                 info!("Relay closed due to receiving shutdown event");
-                self.monitor.shutdown_signal_received();
+                if let Ok(mut lock) = self.shutdown_handler_tx.lock() {
+                    if let Some(tx) = lock.take() {
+                        let _ = tx.send(());
+                    }
+                }
             }
             _ => {}
         }

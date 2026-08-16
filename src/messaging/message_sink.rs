@@ -1,8 +1,9 @@
 use crate::configuration::KafkaConfig;
 use crate::messaging::partial_message::PartialMessage;
-use futures_util::{SinkExt, StreamExt};
+use futures_util::SinkExt;
+use futures_util::StreamExt;
 use log::info;
-use rdkafka::consumer::{Consumer, DefaultConsumerContext, MessageStream, StreamConsumer};
+use rdkafka::consumer::{Consumer, StreamConsumer};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, warn};
 

@@ -1,6 +1,7 @@
 use compact_str::CompactString;
 use config::{Config, File};
 use serde::Deserialize;
+use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 pub struct DLQConfig {
@@ -75,6 +76,26 @@ impl ProcessingConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct DatabaseExportConfig {
+    pub compression_level: u16,
+    pub compression_type: CompactString,
+    pub export_dir: PathBuf,
+    pub max_retires: u16
+}
+
+impl DatabaseExportConfig {
+    pub fn mock_config() -> DatabaseExportConfig {
+        Self {
+            compression_type: CompactString::const_new("zstd"),
+            compression_level: 7,
+            export_dir: PathBuf::from("/export/db"),
+            max_retires: 2,
+        }
+    }
+}
+
+
+#[derive(Debug, Deserialize)]
 pub struct PersistenceConfig {
     pub db_host: String,
     pub db_port: u16,
@@ -86,6 +107,7 @@ pub struct PersistenceConfig {
     pub flush_max_combined_batch_size: usize,
     pub flush_interval_ms: u32,
     pub max_inflight_db_writes: u16,
+    pub export: DatabaseExportConfig,
 }
 
 impl PersistenceConfig {
@@ -101,6 +123,7 @@ impl PersistenceConfig {
             flush_max_combined_batch_size: 5000,
             flush_interval_ms: 3000,
             max_inflight_db_writes: 7,
+            export: DatabaseExportConfig::mock_config(),
         }
     }
 }

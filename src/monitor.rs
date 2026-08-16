@@ -1,15 +1,17 @@
 use crate::configuration::CoreConfig;
+use crate::persistence::exporter::InfluxDbExporter;
 use log::error;
 use std::time::Duration;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
-use tracing::{info};
+use tracing::info;
 
 pub struct Monitor {
     data_cancel_token: CancellationToken,
     data_tracker: TaskTracker,
     config: &'static CoreConfig,
+    database_exporter: InfluxDbExporter,
 }
 
 impl Monitor {
@@ -18,11 +20,13 @@ impl Monitor {
         data_cancel_token: CancellationToken,
         data_tracker: TaskTracker,
         config: &'static CoreConfig,
+        database_exporter: InfluxDbExporter,
     ) -> Self {
         Self {
             data_cancel_token,
             data_tracker,
             config,
+            database_exporter,
         }
     }
     pub fn track_task<F>(&self, task: F)
@@ -42,7 +46,7 @@ impl Monitor {
         self.data_tracker.close();
 
         let drain_timeout =
-            Duration::from_secs(self.config.runtime.data_pipeline_drain_timeout_s as u64);
+            Duration::from_secs(u64::from(self.config.runtime.data_pipeline_drain_timeout_s));
         match timeout(drain_timeout, self.data_tracker.wait()).await {
             Ok(()) => {
                 info!("Data pipeline drained");
@@ -52,17 +56,12 @@ impl Monitor {
             }
         }
 
-        let export_kafka = async {
+        let export_kafka = async {};
 
-        };
-
-        let export_db = async {
-
-        };
-
+        let export_database_future = self.database_exporter.export_database();
+        let (db_export, kafka_export) = tokio::join!(export_database_future, export_kafka);
 
         todo!();
-
     }
 
     async fn upload_to_gcs(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

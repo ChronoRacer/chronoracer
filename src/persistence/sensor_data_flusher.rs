@@ -28,42 +28,15 @@ pub type BatcherWiring = (
 impl InfluxDbFlusher {
 
     #[must_use]
-    pub async fn from_config(
+    pub fn from_config(
         persistence: &PersistenceConfig,
         race_id: CompactString,
         fast_batcher_wiring: BatcherWiring,
         batcher_wiring: BatcherWiring,
+        client: Arc<influxdb3_client::Client>,
     ) -> Self {
-        let client = influxdb3_client::Client::new(
-            influxdb3_client::ClientConfig::builder()
-                .host(format!("{}:{}", &persistence.db_host, &persistence.db_port))
-                .token(&persistence.db_password)
-                .database(&persistence.db_name)
-                .write_accept_partial(true)
-                .write_use_v2_api(false)
-                .write_no_sync(false)
-                .max_idle_connections((persistence.max_inflight_db_writes * 2) as usize)
-                .build()
-                .expect("Invalid InfluxDB config"),
-        )
-        .await
-        .expect("Failed to create InfluxDb client");
-        match client.ping().await {
-            Ok(version) => {
-                if version == "unknown" {
-                    error!("InfluxDB reachable, but version ping failed. Probably invalid access token");
-                    panic!("InfluxDB not usable");
-                }
-                info!("Connected to InfluxDb. Using version {version}");
-            },
-            Err(e) => {
-                error!("Failed to connect to InfluxDb. Error: {e}");
-                panic!("InfluxDB not usable");
-
-            },
-        }
         Self {
-            client: Arc::from(client),
+            client,
             race_id: Arc::from(race_id),
             fast_batcher_wiring: Some(fast_batcher_wiring),
             normal_batcher_wiring: Some(batcher_wiring),
@@ -138,8 +111,14 @@ impl InfluxDbFlusher {
                     Ok(()) => {
                         info!("Flushed data points: batch_size={}, flush_type={:?}", batch.len(), wiring_type);
                     }
+                    Err(influxdb3_client::error::Error::PartialWrite(e)) => {
+                        error!("Database write partially failed. failed_lines={}, Error: {e}, flush_type={wiring_type:?}", e.line_errors.len());
+                        // TODO: is logging this needed?
+                        for line_error in &e.line_errors {
+                            error!("Line {}: {}", line_error.line, line_error.message);
+                        }
+                    }
                     Err(e) => {
-                        // TODO: Error handling + partial writes handling
                         error!("Database write failed: {e}, flush_type={wiring_type:?}");
                     }
                 }
