@@ -127,6 +127,25 @@ def produce_change_driver_messages(producer):
 
     print("[Control] Finished sending control messages.")
 
+def produce_shutdown_message(producer):
+    shutdown = CONFIG.get("shutdown", {})
+    if not shutdown.get("enabled", False):
+        return
+
+
+    topic = shutdown.get("topic", "control")
+    payload = ""
+
+    producer.produce(
+        topic=topic,
+        value=payload,
+        on_delivery=delivery_report,
+        key="SHUTDOWN"
+    )
+    producer.poll(0)
+
+    print("[Control] Sent shutdown message.")
+
 def main():
     global SENSOR_IDS
     
@@ -139,11 +158,13 @@ def main():
 
     producer = Producer(producer_conf)
     chdrv_enabled = CONFIG.get("change_driver", {}).get("enabled", False)
+    shutdown_enabled = CONFIG.get("shutdown", {}).get("enabled", False)
 
     print(f"Starting load test configuration:")
     print(f"- Total Time: {CONFIG['testing_time']}s")
     print(f"- Point Count: {CONFIG['point_count']}")
     print(f"- CHDRV enabled: {chdrv_enabled}")
+    print(f"- SHUTDOWN enabled: {shutdown_enabled}")
     
 
     start_time = time.monotonic()
@@ -158,7 +179,8 @@ def main():
     if chdrv_enabled:
         control_thread.join()
 
-    print("Generation complete. Flushing final messages to broker...")
+    print("Generation complete")
+    produce_shutdown_message(producer)
     producer.flush()
 
     actual_time = time.monotonic() - start_time

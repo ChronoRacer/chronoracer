@@ -9,5 +9,9 @@
     "count": 10,
     "initial_delay": 1.0,
     "topic": "control"
+  },
+  "shutdown": {
+    "enabled": true,
+    "topic": "control"
   }
 }
