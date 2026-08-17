@@ -1,9 +1,9 @@
 use crate::configuration::GcpConfig;
 use crate::gcp::gcp_utils::to_bucket_path;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use compact_str::CompactString;
-use futures_util::stream;
 use futures_util::StreamExt;
+use futures_util::stream;
 use google_cloud_gax::retry_policy::{AlwaysRetry, RetryPolicyExt};
 use google_cloud_storage::client::Storage;
 use std::path::{Path, PathBuf};
@@ -83,12 +83,14 @@ impl<'a> GcsStorageManager<'a> {
         in_bucket_path: &str,
     ) -> Result<String> {
         let file = File::open(file_path).await?;
-        Box::pin(client
-            .write_object(format!("projects/_/buckets/{bucket}"), in_bucket_path, file)
-            .set_if_generation_match(0)
-            .send_unbuffered())
-            .await
-            .map(|o| o.name)
-            .map_err(Into::into)
+        Box::pin(
+            client
+                .write_object(format!("projects/_/buckets/{bucket}"), in_bucket_path, file)
+                .set_if_generation_match(0)
+                .send_unbuffered(),
+        )
+        .await
+        .map(|o| o.name)
+        .map_err(Into::into)
     }
 }

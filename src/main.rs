@@ -165,15 +165,18 @@ async fn run_tasks(
                 match res {
                     Some(Ok(())) => {
                         if control_tasks.is_empty() {
+                            monitor.execute_shutdown_sequence().await;
                             break;
                         }
                     }
                     Some(Err(e)) => {
                         error!("Control task failed: {:?}", e);
                         control_tasks.abort_all();
+                        monitor.execute_shutdown_sequence().await;
                         break;
                     }
                     None => {
+                        monitor.execute_shutdown_sequence().await;
                         break;
                     }
                 }
@@ -181,10 +184,11 @@ async fn run_tasks(
             res = &mut shutdown_rx => {
                 match res {
                     Ok(()) => {
-                        monitor.shutdown_signal_received();
+                        monitor.execute_shutdown_sequence().await;
                     }
                     Err(_) => {
                         error!("Shutdown sender dropped before signaling, aborting...");
+                        monitor.execute_shutdown_sequence().await;
                     }
                 }
                 control_tasks.abort_all();

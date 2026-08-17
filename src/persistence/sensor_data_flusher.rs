@@ -1,5 +1,5 @@
 use crate::configuration::PersistenceConfig;
-use crate::persistence::sensor_data_batcher::{SimplePoint, SIMPLE_POINT_PROTOCOL_MAX_LENGTH};
+use crate::persistence::sensor_data_batcher::{SIMPLE_POINT_PROTOCOL_MAX_LENGTH, SimplePoint};
 use compact_str::CompactString;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -141,6 +141,7 @@ impl InfluxDbFlusher {
                 let _ = pool_tx.try_send(batch);
             });
         }
+        // TODO: Should remaining write handles be awaited?
         warn!("Data flush ingestion loop terminated, flush_type={wiring_type:?}");
     }
 }

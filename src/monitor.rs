@@ -59,8 +59,6 @@ impl<'a> Monitor<'a> {
         self.data_tracker.spawn(task);
     }
 
-    pub fn shutdown_signal_received(&self) {}
-
     pub async fn execute_shutdown_sequence(&self) {
         info!("Stopping data pipeline ingestion");
         self.data_cancel_token.cancel();

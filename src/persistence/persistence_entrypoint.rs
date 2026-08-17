@@ -5,7 +5,7 @@ use crate::persistence::sensor_data_flusher::{BatcherWiring, BatcherWiringType, 
 use crate::persistence::sensor_data_splitter::SensorDataSplitter;
 use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use crate::runtime_configuration::RetainReadTimeValue;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use compact_str::CompactString;
 use influxdb3_client::Client;
 use std::sync::Arc;
@@ -30,8 +30,10 @@ impl PersistanceLayerEntryPoint {
         let persistence_config = &config.persistence;
         let db_client = Arc::new(Self::create_influxdb_client(persistence_config).await?);
 
-        let (fast_tx, fast_rx) = tokio::sync::mpsc::channel((config.runtime.rayon_threads * 2) as usize);
-        let (normal_tx, normal_rx) = tokio::sync::mpsc::channel((config.runtime.rayon_threads * 2) as usize);
+        let (fast_tx, fast_rx) =
+            tokio::sync::mpsc::channel((config.runtime.rayon_threads * 2) as usize);
+        let (normal_tx, normal_rx) =
+            tokio::sync::mpsc::channel((config.runtime.rayon_threads * 2) as usize);
 
         let splitter =
             SensorDataSplitter::new(processed_data_rx, fast_tx, normal_tx, persistence_config);
@@ -85,8 +87,8 @@ impl PersistanceLayerEntryPoint {
                 .build()
                 .map_err(|e| anyhow!("Invalid InfluxDB config: {e}"))?,
         )
-            .await
-            .context("Failed to create InfluxDb client")?;
+        .await
+        .context("Failed to create InfluxDb client")?;
 
         client
             .ping()

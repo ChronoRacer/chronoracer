@@ -58,7 +58,7 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
     }
 
     pub async fn ingest(mut self) {
-        info!("Starting DQL ingestion loop");
+        info!("Starting DLQ ingestion loop");
         while let Some(message) = self.dlq_rx.recv().await {
             match self.send_to_dlq(message).await {
                 Ok(_) => info!("Redirected message to DLQ"),
@@ -67,7 +67,7 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
                 }
             }
         }
-        warn!("DQL ingestion loop terminated");
+        warn!("DLQ ingestion loop terminated");
     }
 
     pub async fn send_to_dlq(
@@ -103,9 +103,9 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rdkafka::Timestamp;
     use rdkafka::message::Headers;
     use rdkafka::producer::future_producer::Delivery;
-    use rdkafka::Timestamp;
     use std::sync::{Arc, Mutex};
     use tokio::sync::mpsc;
 

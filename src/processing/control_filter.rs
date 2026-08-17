@@ -85,8 +85,10 @@ impl ControlRelay {
                 self.closed
                     .store(true, std::sync::atomic::Ordering::Release);
                 info!("Relay closed due to receiving shutdown event");
-                if let Ok(mut lock) = self.shutdown_handler_tx.lock() && let Some(tx) = lock.take() {
-                        let _ = tx.send(());
+                if let Ok(mut lock) = self.shutdown_handler_tx.lock()
+                    && let Some(tx) = lock.take()
+                {
+                    let _ = tx.send(());
                 }
             }
             CoreControlMessage::UNKNOWN(_) => {}

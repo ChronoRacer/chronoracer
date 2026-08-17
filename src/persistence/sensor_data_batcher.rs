@@ -78,7 +78,15 @@ impl SensorDataBatcher {
 
         loop {
             tokio::select! {
-                Some(data) = self.data_rx.recv() => {
+                data = self.data_rx.recv() => {
+                    let Some(data) = data else {
+                        if !buffer.is_empty() {
+                            let _ = self.batch_tx.send(buffer).await;
+                        }
+                        warn!("Closing batcher ingestion loop, batch_type={wiring_type:?}");
+                        break;
+                    };
+
                     sensor_data_into_points(data, &mut buffer, &self.driver_id.get());
 
                     if buffer.len() >= self.flush_max_combined_batch_size {
@@ -108,13 +116,6 @@ impl SensorDataBatcher {
                     }
                 }
 
-                else => {
-                    if !buffer.is_empty() {
-                        let _ = self.batch_tx.send(buffer).await;
-                    }
-                    warn!("Closing batcher ingestion loop, batch_type={wiring_type:?}");
-                    break;
-                }
             }
         }
     }

@@ -149,9 +149,10 @@ impl<'a> KafkaExporter<'a> {
                 return Ok(());
             }
 
-            let status_msg = output
-                .status
-                .code().map_or_else(|| "Process killed by signal".to_string(), |c| format!("Exit code {c}"));
+            let status_msg = output.status.code().map_or_else(
+                || "Process killed by signal".to_string(),
+                |c| format!("Exit code {c}"),
+            );
 
             if attempt > max_retries {
                 error!("Process failed permanently. Last status: {}", status_msg);
