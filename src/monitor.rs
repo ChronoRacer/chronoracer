@@ -6,14 +6,13 @@ use crate::messaging::kafka_exporter::KafkaExporter;
 use crate::persistence::database_exporter::InfluxDbExporter;
 use anyhow::Result;
 use gcp::storage;
-use log::error;
 use std::path::PathBuf;
 use std::time::Duration;
 use storage::GcsStorageManager;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 pub struct Monitor<'a> {
     data_cancel_token: CancellationToken,

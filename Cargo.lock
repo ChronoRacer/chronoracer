@@ -612,7 +612,6 @@ dependencies = [
  "google-cloud-pubsub",
  "google-cloud-storage",
  "influxdb3-client",
- "log",
  "rayon",
  "rdkafka",
  "serde",

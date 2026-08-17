@@ -2,10 +2,9 @@ use crate::configuration::KafkaConfig;
 use crate::messaging::partial_message::PartialMessage;
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
-use log::info;
 use rdkafka::consumer::{Consumer, StreamConsumer};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 pub type SinkRx = tokio::sync::mpsc::Receiver<PartialMessage>;
 pub type SinkTx = tokio::sync::mpsc::Sender<PartialMessage>;

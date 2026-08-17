@@ -36,8 +36,9 @@ fn main() {
     }
 }
 
+#[tracing::instrument(err(Debug))]
 fn run() -> Result<()> {
-    let config_val = CoreConfig::load_from_env().context("Failed to load configuration")?;
+    let config_val = CoreConfig::load_from_env()?;
     let config: &'static CoreConfig = Box::leak(Box::new(config_val));
     info!("Configuration loaded: {:#?}", config);
     info!(

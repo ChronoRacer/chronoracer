@@ -3,10 +3,9 @@ use crate::persistence::sensor_data_flusher::BatcherWiringType;
 use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use crate::runtime_configuration::RetainReadTimeValue;
 use compact_str::CompactString;
-use log::info;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 /// The `influxdb3_client::Point` implementation is overengineered for this use case and has in-built deduplication and sorting.
 /// To avoid this overhead and with very slim points, it's just better to build line protocol manually
