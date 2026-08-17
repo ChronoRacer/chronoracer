@@ -1,14 +1,32 @@
 use crate::configuration::DatabaseExportConfig;
 use anyhow::{Context, Result, anyhow};
-use influxdb3_client::{Client, QueryResult, Row};
-use std::io;
+use influxdb3_client::Client;
+use reqwest::header::AUTHORIZATION;
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tracing::{error, info, warn};
+
+const EXPORT_TRIGGER_PATH: &str = "/api/v3/engine/export_database";
+
+#[derive(Debug, Deserialize)]
+struct ExportPluginResponse {
+    tables_found: usize,
+    tables_exported: usize,
+    files: Vec<String>,
+    failures: Vec<ExportFailure>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ExportFailure {
+    table: String,
+    error: String,
+}
 
 pub struct InfluxDbExporter {
     client: Arc<Client>,
+    http_client: reqwest::Client,
     database_export_config: &'static DatabaseExportConfig,
 }
 
@@ -16,151 +34,113 @@ impl InfluxDbExporter {
     pub fn new(client: Arc<Client>, export_config: &'static DatabaseExportConfig) -> Self {
         Self {
             client,
+            http_client: reqwest::Client::new(),
             database_export_config: export_config,
         }
     }
 
-    async fn execute_query_with_retry(&self, query: &str) -> Result<QueryResult> {
+    async fn invoke_export_trigger(&self) -> Result<ExportPluginResponse> {
+        let url = format!("{}{}", self.client.config().host_url(), EXPORT_TRIGGER_PATH);
+        let authorization = self
+            .client
+            .config()
+            .authorization_header()
+            .context("Failed to create InfluxDB authorization header")?;
+
         let mut attempts = 0;
         let mut backoff = Duration::from_secs(1);
-        let max_retries = self.database_export_config.max_retries;
         loop {
-            match self.client.sql(query).await {
-                Ok(result) => return Ok(result),
-                Err(err) => {
-                    attempts += 1;
-                    if attempts > max_retries {
-                        return Err(anyhow!(
-                            "Failed after {attempts} attempts. Last error: {err:?}"
-                        ));
-                    }
-                    warn!(
-                        "Query failed (attempt {}/{}). Retrying in {:?}... Error: {:?}",
-                        attempts,
-                        max_retries + 1,
-                        backoff,
-                        err
-                    );
-                    tokio::time::sleep(backoff).await;
-                    backoff *= 2;
+            let mut request = self.http_client.post(&url);
+            if let Some(header) = authorization.clone() {
+                request = request.header(AUTHORIZATION, header);
+            }
+            request = request.json(&serde_json::json!({
+                "export_dir": self.database_export_config.vm_export_dir,
+                "compression": self.database_export_config.compression_type,
+                "compression_level": self.database_export_config.compression_level,
+            }));
+
+            match request.send().await {
+                Ok(response) if response.status().is_success() => {
+                    let body = response
+                        .text()
+                        .await
+                        .context("Failed to read database export plugin response")?;
+                    return serde_json::from_str(&body)
+                        .context("Invalid database export plugin response");
+                }
+                Ok(response) => {
+                    let status = response.status();
+                    let body = response.text().await.unwrap_or_default();
+                    self.retry_or_fail(
+                        &mut attempts,
+                        &mut backoff,
+                        format!("HTTP {status}: {body}"),
+                    )
+                    .await?;
+                }
+                Err(error) => {
+                    self.retry_or_fail(&mut attempts, &mut backoff, error.to_string())
+                        .await?;
                 }
             }
         }
+    }
+
+    async fn retry_or_fail(
+        &self,
+        attempts: &mut u16,
+        backoff: &mut Duration,
+        error: String,
+    ) -> Result<()> {
+        *attempts += 1;
+        if *attempts > self.database_export_config.max_retries {
+            return Err(anyhow!(
+                "Database export trigger failed after {} attempts: {}",
+                *attempts,
+                error
+            ));
+        }
+
+        warn!(
+            "Database export trigger failed (attempt {}/{}). Retrying in {:?}: {}",
+            *attempts,
+            self.database_export_config.max_retries + 1,
+            *backoff,
+            error
+        );
+        tokio::time::sleep(*backoff).await;
+        *backoff *= 2;
+        Ok(())
     }
 
     pub async fn export_database(&self) -> Result<Vec<PathBuf>> {
-        tokio::fs::create_dir_all(&self.database_export_config.vm_export_dir)
-            .await
-            .with_context(|| {
-                format!(
-                    "Cannot create root export directory '{}'",
-                    self.database_export_config.vm_export_dir.display()
-                )
-            })?;
-        let table_names = self.fetch_tables_to_export().await?;
+        info!("Starting database export");
 
-        let total_count = table_names.len();
-        info!("Will export {} tables", total_count);
+        let response = self.invoke_export_trigger().await?;
 
-        let export_start = Instant::now();
-        let mut successful_exports: Vec<PathBuf> = Vec::with_capacity(total_count);
-
-        for table_name in table_names {
-            let export_destination = self.table_name_to_export_path(&table_name);
-
-            if let Err(err) = self
-                .ensure_export_destination_valid(&export_destination)
-                .await
-            {
-                error!(
-                    "Skipping table '{}': Failed to prepare export destination: {}",
-                    table_name, err
-                );
-                continue;
-            }
-
-            let export_table_start = Instant::now();
-            info!("Exporting table {}...", table_name);
-
-            match self.export_table(&table_name, &export_destination).await {
-                Ok(()) => {
-                    info!(
-                        "Exported table {} to '{}'. Time taken: {:.2?}",
-                        table_name,
-                        export_destination.display(),
-                        export_table_start.elapsed()
-                    );
-                    successful_exports.push(export_destination);
-                }
-                Err(error) => {
-                    error!(
-                        "Failed to export table {} to '{}': {}",
-                        table_name,
-                        export_destination.display(),
-                        error
-                    );
-                }
-            }
+        for failure in &response.failures {
+            error!(
+                "Database export plugin failed for table '{}': {}",
+                failure.table, failure.error
+            );
         }
+
+        let exported_files = response
+            .files
+            .iter()
+            .map(|file| {
+                Path::new(file)
+                    .file_name()
+                    .map(|name| self.database_export_config.vm_export_dir.join(name))
+                    .ok_or_else(|| anyhow!("Invalid export path returned by plugin: '{file}'"))
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         info!(
-            "Exporting finished. Exported {} out of {} tables. Total time taken: {:.2?}",
-            successful_exports.len(),
-            total_count,
-            export_start.elapsed()
+            "Database export finished. Exported {} out of {} tables",
+            response.tables_exported, response.tables_found
         );
-
-        Ok(successful_exports)
-    }
-
-    async fn fetch_tables_to_export(&self) -> Result<Vec<String>> {
-
-        // iox is the default one, not public
-        const TABLE_NAMES_QUERY: &str = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'iox';";
-
-        let result_set = self.execute_query_with_retry(TABLE_NAMES_QUERY).await?;
-
-        let rows: Vec<Row> = result_set.rows().context("Failed to extract rows")?;
-
-        rows.iter()
-            .map(|row| {
-                row.get("table_name")
-                    .map(ToString::to_string)
-                    .ok_or_else(|| anyhow!("table name missing"))
-            })
-            .collect::<Result<Vec<String>, _>>()
-    }
-
-    async fn export_table(&self, table_name: &str, export_destination: &Path) -> Result<()> {
-        let path_str = export_destination.display().to_string().replace('\\', "/");
-
-        let export_query: String = format!(
-            "COPY (SELECT * FROM '{}') TO '{}' (FORMAT PARQUET, COMPRESSION {}, COMPRESSION_LEVEL {});",
-            table_name,
-            path_str,
-            self.database_export_config.compression_type.to_uppercase(),
-            self.database_export_config.compression_level
-        );
-
-        self.execute_query_with_retry(&export_query).await.map(drop)
-    }
-
-    fn table_name_to_export_path(&self, table_name: &str) -> PathBuf {
-        let mut export_path = self.database_export_config.vm_export_dir.join(table_name);
-        export_path.set_extension("parquet");
-        export_path
-    }
-
-    async fn ensure_export_destination_valid(&self, export_destination: &Path) -> Result<()> {
-        if let Some(parent) = export_destination.parent()
-            && !parent.as_os_str().is_empty()
-        {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-        match tokio::fs::remove_file(export_destination).await {
-            Ok(()) => Ok(()),
-            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(err) => Err(err.into()),
-        }
+        Ok(exported_files)
     }
 }

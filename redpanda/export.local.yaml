@@ -1,14 +1,15 @@
 input:
   read_until:
     idle_timeout: "5s"
-    kafka_franz:
-      seed_brokers: __KAFKA_BROKERS_ARRAY__
-      topics: __KAFKA_TOPICS_ARRAY__
-      consumer_group: __KAFKA_CONSUMER_GROUP__
-      start_from_oldest: true
-      batching:
-        count: 10000
-        period: "2s"
+    input:
+      kafka_franz:
+        seed_brokers: __KAFKA_BROKERS_ARRAY__
+        topics: __KAFKA_TOPICS_ARRAY__
+        consumer_group: '__RACE_ID__-export'
+        start_from_oldest: true
+        batching:
+          count: 10000
+          period: "2s"
 
 pipeline:
   processors:

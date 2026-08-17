@@ -99,12 +99,9 @@ impl<'a> KafkaExporter<'a> {
         );
 
         content = content
+            .replace("__RACE_ID__", self.race_id)
             .replace("__KAFKA_BROKERS_ARRAY__", &brokers)
             .replace("__KAFKA_TOPICS_ARRAY__", &topics)
-            .replace(
-                "__KAFKA_CONSUMER_GROUP__",
-                &to_quoted(&self.kafka_config.group_id),
-            )
             .replace(
                 "__EXPORT_BUCKET__",
                 &to_quoted(&self.gcp_config.export_bucket),
@@ -201,7 +198,7 @@ mod tests {
         let rendered_path = directory.join(KafkaExporter::RENDERED_TEMPLATE_FILE);
         std::fs::write(
             &raw_path,
-            "brokers: __KAFKA_BROKERS_ARRAY__\ntopics: __KAFKA_TOPICS_ARRAY__\ngroup: __KAFKA_CONSUMER_GROUP__\nbucket: __EXPORT_BUCKET__\ndir: __BUCKET_DIR_PATH__\nlocal: __LOCAL_PATH__",
+            "brokers: __KAFKA_BROKERS_ARRAY__\ntopics: __KAFKA_TOPICS_ARRAY__\ngroup: __RACE_ID__\nbucket: __EXPORT_BUCKET__\ndir: __BUCKET_DIR_PATH__\nlocal: __LOCAL_PATH__",
         )
             .expect("template should be written");
 
@@ -233,7 +230,7 @@ mod tests {
 
         assert!(rendered.contains(r#"brokers: ["broker-a:9092","broker-b:9092"]"#));
         assert!(rendered.contains(r#"topics: ["data","dlq"]"#));
-        assert!(rendered.contains(r#"group: "test_group""#));
+        assert!(rendered.contains("group: race-123"));
         assert!(rendered.contains(r#"bucket: "bucket""#));
         assert!(rendered.contains("dir: race-123/exports"));
 
