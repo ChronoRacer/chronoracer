@@ -103,8 +103,8 @@ impl<'a> KafkaExporter<'a> {
                 "__EXPORT_BUCKET__",
                 &format!("\"{}\"", self.gcp_config.export_bucket),
             )
-            .replace("__BUCKET_DIR_PATH__", &format!("\"{bucket_dir}\""))
-            .replace("__LOCAL_PATH__", &format!("\"{local_path}\""));
+            .replace("__BUCKET_DIR_PATH__", &bucket_dir)
+            .replace("__LOCAL_PATH__", &local_path);
 
         std::fs::write(&self.rendered_template_path, content)?;
 

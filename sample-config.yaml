@@ -33,11 +33,11 @@ kafka:
     num_partitions: 1
     replication_factor: 1
   export:
-    redpanda_yaml_dir_path: "/redpanda"
+    redpanda_yaml_dir_path: "./redpanda"
     export_topics:
       - "dlq"
     nested_path_in_bucket: "export/kafka"
-    local_path: "/export/kafka"
+    local_path: "./export/kafka"
     max_retries: 2
 processing:
   message_channel_buffer_size: 5000

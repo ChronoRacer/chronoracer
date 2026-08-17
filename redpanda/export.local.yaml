@@ -42,5 +42,5 @@ pipeline:
             optional: true
 output:
   file:
-    path: "__LOCAL_PATH__${! meta(\"kafka_topic\") }.parquet"
+    path: __LOCAL_PATH__${! meta(\"kafka_topic\") }.parquet
     codec: all-bytes
