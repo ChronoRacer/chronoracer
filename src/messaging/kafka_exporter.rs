@@ -1,6 +1,6 @@
 use crate::configuration::{GcpConfig, KafkaConfig};
 use crate::gcp::gcp_utils::to_bucket_path;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use compact_str::CompactString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -63,24 +63,30 @@ impl<'a> KafkaExporter<'a> {
     }
 
     fn render_template(&self, raw_template_path: &Path) -> Result<()> {
+        let to_quoted = |s: &String| format!("\"{s}\"");
+        let to_array = |s: &String| format!("[{s}]");
         let mut content = std::fs::read_to_string(raw_template_path)?;
 
-        let brokers = self
-            .kafka_config
-            .brokers
-            .iter()
-            .map(|b| format!("\"{b}\""))
-            .collect::<Vec<_>>()
-            .join(",");
+        let brokers = to_array(
+            &self
+                .kafka_config
+                .brokers
+                .iter()
+                .map(to_quoted)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
 
-        let topics = self
-            .kafka_config
-            .export
-            .export_topics
-            .iter()
-            .map(|t| format!("\"{t}\""))
-            .collect::<Vec<_>>()
-            .join(",");
+        let topics = to_array(
+            &self
+                .kafka_config
+                .export
+                .export_topics
+                .iter()
+                .map(to_quoted)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
 
         let mut local_path = self.kafka_config.export.local_path.display().to_string();
         if !local_path.ends_with(std::path::MAIN_SEPARATOR) {
@@ -97,11 +103,11 @@ impl<'a> KafkaExporter<'a> {
             .replace("__KAFKA_TOPICS_ARRAY__", &topics)
             .replace(
                 "__KAFKA_CONSUMER_GROUP__",
-                &format!("\"{}\"", self.kafka_config.group_id),
+                &to_quoted(&self.kafka_config.group_id),
             )
             .replace(
                 "__EXPORT_BUCKET__",
-                &format!("\"{}\"", self.gcp_config.export_bucket),
+                &to_quoted(&self.gcp_config.export_bucket),
             )
             .replace("__BUCKET_DIR_PATH__", &bucket_dir)
             .replace("__LOCAL_PATH__", &local_path);
@@ -195,9 +201,9 @@ mod tests {
         let rendered_path = directory.join(KafkaExporter::RENDERED_TEMPLATE_FILE);
         std::fs::write(
             &raw_path,
-            "brokers: [__KAFKA_BROKERS_ARRAY__]\ntopics: [__KAFKA_TOPICS_ARRAY__]\ngroup: __KAFKA_CONSUMER_GROUP__\nbucket: __EXPORT_BUCKET__\ndir: __BUCKET_DIR_PATH__\nlocal: __LOCAL_PATH__",
+            "brokers: __KAFKA_BROKERS_ARRAY__\ntopics: __KAFKA_TOPICS_ARRAY__\ngroup: __KAFKA_CONSUMER_GROUP__\nbucket: __EXPORT_BUCKET__\ndir: __BUCKET_DIR_PATH__\nlocal: __LOCAL_PATH__",
         )
-        .expect("template should be written");
+            .expect("template should be written");
 
         let race_id = CompactString::from("race-123");
         let gcp_config = GcpConfig {
@@ -212,7 +218,7 @@ mod tests {
         kafka_config.brokers = vec!["broker-a:9092".to_string(), "broker-b:9092".to_string()];
         kafka_config.export.export_topics = vec!["data".to_string(), "dlq".to_string()];
         kafka_config.export.nested_path_in_bucket = "/exports/".to_string();
-        kafka_config.export.local_path = PathBuf::from("C:\\exports");
+        kafka_config.export.local_path = PathBuf::from("exports");
         let exporter = KafkaExporter {
             race_id: &race_id,
             gcp_config: &gcp_config,
@@ -229,8 +235,11 @@ mod tests {
         assert!(rendered.contains(r#"topics: ["data","dlq"]"#));
         assert!(rendered.contains(r#"group: "test_group""#));
         assert!(rendered.contains(r#"bucket: "bucket""#));
-        assert!(rendered.contains(r#"dir: "race-123/exports""#));
-        assert!(rendered.contains(r#"local: "C:\exports\""#));
+        assert!(rendered.contains("dir: race-123/exports"));
+
+        let mut local_export_path = "exports".to_string();
+        local_export_path.push(std::path::MAIN_SEPARATOR);
+        assert!(rendered.contains(&format!("local: {local_export_path}")));
 
         std::fs::remove_dir_all(directory).expect("temporary directory should be removed");
     }

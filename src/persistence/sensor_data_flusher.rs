@@ -1,6 +1,7 @@
 use crate::configuration::PersistenceConfig;
 use crate::persistence::sensor_data_batcher::{SIMPLE_POINT_PROTOCOL_MAX_LENGTH, SimplePoint};
 use compact_str::CompactString;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tracing::{error, info, warn};
@@ -87,7 +88,11 @@ impl InfluxDbFlusher {
     ) {
         let (mut batch_rx, pool_tx, wiring_type) = wiring;
         info!("Starting data flush ingestion loop, flush_type={wiring_type:?}");
+        let mut write_tasks: VecDeque<tokio::task::JoinHandle<()>> =
+            VecDeque::with_capacity(max_inflight_requests);
         while let Some(mut batch) = batch_rx.recv().await {
+            write_tasks.retain(|task| !task.is_finished());
+
             let Ok(permit) = Arc::clone(&semaphore).acquire_owned().await else {
                 warn!("Database flush semaphore closed; stopping flush loop");
                 break;
@@ -101,7 +106,7 @@ impl InfluxDbFlusher {
                 batch.len(),
                 wiring_type
             );
-            tokio::spawn(async move {
+            write_tasks.push_back(tokio::spawn(async move {
                 let _permit = permit;
 
                 let mut line_protocol =
@@ -139,9 +144,13 @@ impl InfluxDbFlusher {
                 batch.clear();
 
                 let _ = pool_tx.try_send(batch);
-            });
+            }));
         }
-        // TODO: Should remaining write handles be awaited?
+
+        while let Some(task) = write_tasks.pop_front() {
+            let _ = task.await;
+        }
+
         warn!("Data flush ingestion loop terminated, flush_type={wiring_type:?}");
     }
 }

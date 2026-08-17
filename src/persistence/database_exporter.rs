@@ -114,9 +114,9 @@ impl InfluxDbExporter {
     }
 
     async fn fetch_tables_to_export(&self) -> Result<Vec<String>> {
-        const TABLE_NAMES_QUERY: &str = "SELECT table_name \
-        FROM information_schema.tables \
-        WHERE table_schema = 'public';";
+
+        // iox is the default one, not public
+        const TABLE_NAMES_QUERY: &str = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'iox';";
 
         let result_set = self.execute_query_with_retry(TABLE_NAMES_QUERY).await?;
 
@@ -135,7 +135,7 @@ impl InfluxDbExporter {
         let path_str = export_destination.display().to_string().replace('\\', "/");
 
         let export_query: String = format!(
-            "COPY (SELECT * FROM {}) TO '{}' (FORMAT PARQUET, COMPRESSION {}, COMPRESSION_LEVEL {});",
+            "COPY (SELECT * FROM '{}') TO '{}' (FORMAT PARQUET, COMPRESSION {}, COMPRESSION_LEVEL {});",
             table_name,
             path_str,
             self.database_export_config.compression_type.to_uppercase(),

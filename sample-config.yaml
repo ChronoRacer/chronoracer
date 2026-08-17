@@ -57,7 +57,7 @@ persistence:
   export:
     compression_level: 6
     compression_type: ZSTD
-    vm_export_dir: /todo
+    vm_export_dir: "./export/db"
     max_retries: 3
 gcp:
   enabled: false

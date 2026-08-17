@@ -1,3 +1,4 @@
 /target
 .idea
 /redpanda/export.yaml
+/export/
