@@ -175,7 +175,9 @@ pub struct RuntimeConfig {
     pub tokio_workers: u16,
     pub tokio_blocking: u16,
     pub heartbeat_interval_s: u16,
-    pub data_pipeline_drain_timeout_s: u16
+    pub data_pipeline_drain_timeout_s: u16,
+    pub notify_shutdown_on_failed_db_export: bool,
+    pub notify_shutdown_on_failed_kafka_export: bool,
 }
 
 impl RuntimeConfig {
@@ -186,6 +188,8 @@ impl RuntimeConfig {
             tokio_blocking: 1,
             heartbeat_interval_s: 30,
             data_pipeline_drain_timeout_s: 120,
+            notify_shutdown_on_failed_db_export: false,
+            notify_shutdown_on_failed_kafka_export: true,
         }
     }
 }
@@ -193,14 +197,22 @@ impl RuntimeConfig {
 #[derive(Debug, Deserialize)]
 pub struct GcpConfig {
     pub enabled: bool,
-    pub export_bucket: String
+    pub project_id: String,
+    pub pubsub_topic_id: String,
+    pub export_bucket: String,
+    pub max_retries: u16,
+    pub max_gcs_concurrent_uploads: u16,
 }
 
 impl GcpConfig {
     pub fn mock_config() -> Self {
         Self {
             enabled: false,
-            export_bucket: "exports".to_string()
+            export_bucket: "exports".to_string(),
+            max_retries: 2,
+            max_gcs_concurrent_uploads: 3,
+            project_id: "1234".to_string(),
+            pubsub_topic_id: "todo".to_string(),
         }
     }
 }

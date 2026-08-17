@@ -1,5 +1,5 @@
 use crate::configuration::{GcpConfig, KafkaConfig};
-use crate::gcp_utils::to_bucket_path;
+use crate::gcp::gcp_utils::to_bucket_path;
 use compact_str::CompactString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};

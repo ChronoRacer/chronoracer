@@ -14,6 +14,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{error, info, warn};
+use crate::gcp::gcp_entrypoint::GcpLayerEntrypoint;
 
 mod configuration;
 pub mod logger;
@@ -22,7 +23,7 @@ pub mod monitor;
 pub mod persistence;
 pub mod processing;
 pub mod runtime_configuration;
-pub mod gcp_utils;
+pub mod gcp;
 
 fn main() {
     // Logger
@@ -90,6 +91,18 @@ fn main() {
                 .await;
         info!("Persistance layer initalized");
 
+        // GCP
+        
+        let gcp_wrapper = GcpLayerEntrypoint::init(&config.race.race_id, &config.gcp).await;
+        let (storage, pubsub) = match gcp_wrapper {
+            Some(w) => (Some(w.gcs_storage_manager), Some(w.gcs_pub_sub_manager)),
+            None => {
+                (None, None)
+            }
+        };
+        
+        info!("GCP layer initalized");
+        
         // Monitor
 
         let monitor = Monitor::new(
@@ -97,7 +110,11 @@ fn main() {
             data_tracker,
             config,
             persistance_wrapper.exporter,
-            messaging_wrapper.kafka_exporter
+            messaging_wrapper.kafka_exporter,
+            storage,
+            pubsub,
+            config.runtime.notify_shutdown_on_failed_db_export, 
+            config.runtime.notify_shutdown_on_failed_kafka_export,
         );
 
         // Data Pipeline
@@ -131,7 +148,7 @@ fn main() {
 
 async fn run(
     mut control_tasks: JoinSet<()>,
-    monitor: Monitor,
+    monitor: Monitor<'_>,
     mut shutdown_rx: oneshot::Receiver<()>,
 ) {
     info!("Core running...");

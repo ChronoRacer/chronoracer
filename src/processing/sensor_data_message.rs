@@ -1,7 +1,7 @@
-use std::io::Cursor;
 use crate::processing::avro::{AvroErrorExtended, TryFromAvro};
 use apache_avro::Schema;
 use serde::Deserialize;
+use std::io::Cursor;
 
 #[derive(Deserialize, Debug)]
 pub struct RelativeSensorReading {
