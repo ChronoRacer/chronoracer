@@ -103,9 +103,9 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rdkafka::Timestamp;
     use rdkafka::message::Headers;
     use rdkafka::producer::future_producer::Delivery;
+    use rdkafka::Timestamp;
     use std::sync::{Arc, Mutex};
     use tokio::sync::mpsc;
 
@@ -149,14 +149,14 @@ mod tests {
             if let Some(headers) = record.headers {
                 for i in 0..headers.count() {
                     let h = headers.get(i);
-                    extracted_headers.push((h.key.to_string(), h.value.map(|v| v.to_vec())));
+                    extracted_headers.push((h.key.to_string(), h.value.map(<[u8]>::to_vec)));
                 }
             }
 
             let captured = CapturedRecord {
                 topic: record.topic.to_string(),
-                key: record.key.map(|k| k.to_vec()),
-                payload: record.payload.map(|p| p.to_vec()),
+                key: record.key.map(<[u8]>::to_vec),
+                payload: record.payload.map(<[u8]>::to_vec),
                 headers: extracted_headers,
             };
 

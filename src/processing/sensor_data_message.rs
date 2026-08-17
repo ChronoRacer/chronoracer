@@ -67,9 +67,44 @@ impl TryFromAvro for SensorDataMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::processing::avro::{AvroSchema, SchemaRegistry};
+    use apache_avro::types::Value;
+
+    fn sensor_data_schema() -> Schema {
+        AvroSchema::point_env_var_to_workspace();
+        SchemaRegistry::load_and_parse_from_env(AvroSchema::SensorData)
+            .expect("sensor data schema should load")
+    }
+
+    fn encode_sensor_data(schema: &Schema) -> Vec<u8> {
+        let value = Value::Record(vec![
+            (
+                "sensor_id".to_string(),
+                Value::String("sensor-42".to_string()),
+            ),
+            (
+                "timestamp".to_string(),
+                Value::TimestampNanos(1_000_000_000),
+            ),
+            (
+                "readings".to_string(),
+                Value::Array(vec![
+                    Value::Record(vec![
+                        ("delta".to_string(), Value::Int(12)),
+                        ("value".to_string(), Value::Double(21.5)),
+                    ]),
+                    Value::Record(vec![
+                        ("delta".to_string(), Value::Int(345)),
+                        ("value".to_string(), Value::Double(-4.25)),
+                    ]),
+                ]),
+            ),
+        ]);
+        apache_avro::to_avro_datum(schema, value).expect("sensor data should encode")
+    }
 
     #[test]
-    fn SensorDataMessage_unwind() {
+    fn sensor_data_message_unwind() {
         let sensor_id = "test";
         let message = SensorDataMessage {
             sensor_id: sensor_id.to_string(),
@@ -93,15 +128,15 @@ mod tests {
         let expected_unwound_readings = vec![
             AbsoluteSensorReading {
                 value: 1.0,
-                timestamp: 100002,
+                timestamp: 100_002,
             },
             AbsoluteSensorReading {
                 value: 2.0,
-                timestamp: 100003,
+                timestamp: 100_003,
             },
             AbsoluteSensorReading {
                 value: 3.0,
-                timestamp: 100004,
+                timestamp: 100_004,
             },
         ];
         assert_eq!(
@@ -112,7 +147,7 @@ mod tests {
     }
 
     #[test]
-    fn RelativeSensorReading_to_absolute() {
+    fn relative_sensor_reading_to_absolute() {
         let delta = 7;
         let relative_reading = RelativeSensorReading {
             value: 10.0,
@@ -122,5 +157,73 @@ mod tests {
         let absolute_reading = relative_reading.to_absolute(base_timestamp);
         assert_eq!(absolute_reading.value, 10.0);
         assert_eq!(absolute_reading.timestamp, base_timestamp + delta as u64);
+    }
+
+    #[test]
+    fn sensor_data_message_deserializes_from_avro() {
+        let schema = sensor_data_schema();
+        let message = SensorDataMessage::try_from_avro(&schema, Some(&encode_sensor_data(&schema)))
+            .expect("valid sensor data should deserialize");
+
+        assert_eq!(message.sensor_id, "sensor-42");
+        assert_eq!(message.timestamp, 1_000_000_000);
+        assert_eq!(message.readings.len(), 2);
+        assert_eq!(message.readings[0].value, 21.5);
+        assert_eq!(message.readings[0].delta, 12);
+        assert_eq!(message.readings[1].value, -4.25);
+        assert_eq!(message.readings[1].delta, 345);
+    }
+
+    #[test]
+    fn sensor_data_message_rejects_missing_payload() {
+        let schema = sensor_data_schema();
+
+        let error = SensorDataMessage::try_from_avro(&schema, None)
+            .expect_err("missing payload should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "The Avro payload was empty or missing expected data"
+        );
+    }
+
+    #[test]
+    fn sensor_data_message_rejects_malformed_payload() {
+        let schema = sensor_data_schema();
+
+        let result = SensorDataMessage::try_from_avro(&schema, Some(&[0xff, 0xff, 0xff]));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn unwinding_an_empty_message_preserves_sensor_id() {
+        let message = SensorDataMessage {
+            sensor_id: "empty-sensor".to_string(),
+            timestamp: u64::MAX,
+            readings: Vec::new(),
+        };
+
+        let unwound = UnwoundSensorDataMessage::from(message);
+
+        assert_eq!(unwound.sensor_id, "empty-sensor");
+        assert!(unwound.readings.is_empty());
+    }
+
+    #[test]
+    fn relative_reading_with_max_delta_is_unwound_without_loss() {
+        let message = SensorDataMessage {
+            sensor_id: "boundary-sensor".to_string(),
+            timestamp: 0,
+            readings: vec![RelativeSensorReading {
+                value: f64::MIN,
+                delta: u32::MAX,
+            }],
+        };
+
+        let unwound = UnwoundSensorDataMessage::from(message);
+
+        assert_eq!(unwound.readings[0].value, f64::MIN);
+        assert_eq!(unwound.readings[0].timestamp, u64::from(u32::MAX));
     }
 }

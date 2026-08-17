@@ -22,7 +22,7 @@ pub struct Monitor<'a> {
     database_exporter: InfluxDbExporter,
     kafka_exporter: KafkaExporter<'a>,
     gcs_storage_manager: Option<GcsStorageManager<'a>>,
-    gcp_pubsub_manager: Option<gcp::pubsub::GcsPubSubManager<'a>>,
+    gcp_pubsub_manager: Option<GcsPubSubManager<'a>>,
     notify_shutdown_on_failed_db_export: bool,
     notify_shutdown_on_failed_kafka_export: bool,
 }
@@ -93,7 +93,7 @@ impl<'a> Monitor<'a> {
                 info!("Kafka export complete");
             }
             Err(e) => {
-                error!("Error exporting to Kafka: {}", e);
+                error!("Error exporting to Kafka: {e}");
             }
         }
 
@@ -107,18 +107,18 @@ impl<'a> Monitor<'a> {
                 info!("Database export complete with {} files", paths.len());
                 if let Err(e) = Self::upload_to_gcs(self.gcs_storage_manager.as_ref(), paths).await
                 {
-                    error!("Failed to upload to GCS: {}", e);
+                    error!("Failed to upload to GCS: {e}");
                 }
             }
             Err(e) => {
-                error!("Error exporting database: {} ; will not upload", e);
+                error!("Error exporting database: {e} ; will not upload");
             }
         }
 
         if kafka_notification && db_notification {
             info!("Sending shutdown notification...");
             if let Err(e) = Self::notify_shutdown_complete(self.gcp_pubsub_manager.as_ref()).await {
-                error!("Failed to send shutdown notification: {}", e);
+                error!("Failed to send shutdown notification: {e}");
             }
         }
 
@@ -148,5 +148,24 @@ impl<'a> Monitor<'a> {
         }
         warn!("Shutdown message publish skipped - pubsub manager not provided");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn upload_to_gcs_succeeds_when_storage_is_not_configured() {
+        let result = Monitor::upload_to_gcs(None, vec![PathBuf::from("export.parquet")]).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn notify_shutdown_succeeds_when_pubsub_is_not_configured() {
+        let result = Monitor::notify_shutdown_complete(None).await;
+
+        assert!(result.is_ok());
     }
 }

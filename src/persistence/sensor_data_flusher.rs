@@ -1,5 +1,5 @@
 use crate::configuration::PersistenceConfig;
-use crate::persistence::sensor_data_batcher::{SIMPLE_POINT_PROTOCOL_MAX_LENGTH, SimplePoint};
+use crate::persistence::sensor_data_batcher::{SimplePoint, SIMPLE_POINT_PROTOCOL_MAX_LENGTH};
 use compact_str::CompactString;
 use std::sync::Arc;
 use tokio::sync::Semaphore;

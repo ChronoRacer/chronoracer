@@ -1,5 +1,5 @@
 use crate::configuration::DatabaseExportConfig;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use influxdb3_client::{Client, QueryResult, Row};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -100,7 +100,7 @@ impl InfluxDbExporter {
                         error
                     );
                 }
-            };
+            }
         }
 
         info!(

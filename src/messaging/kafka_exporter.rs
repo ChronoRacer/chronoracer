@@ -151,9 +151,7 @@ impl<'a> KafkaExporter<'a> {
 
             let status_msg = output
                 .status
-                .code()
-                .map(|c| format!("Exit code {c}"))
-                .unwrap_or_else(|| "Process killed by signal".to_string());
+                .code().map_or_else(|| "Process killed by signal".to_string(), |c| format!("Exit code {c}"));
 
             if attempt > max_retries {
                 error!("Process failed permanently. Last status: {}", status_msg);
@@ -175,5 +173,64 @@ impl<'a> KafkaExporter<'a> {
         }
 
         Err(anyhow!("Retry count overflowed"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::configuration::{GcpConfig, KafkaConfig};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn render_template_replaces_export_placeholders() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after epoch")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("chronoracer-export-{unique}"));
+        std::fs::create_dir_all(&directory).expect("temporary directory should be created");
+        let raw_path = directory.join("template.yaml");
+        let rendered_path = directory.join(KafkaExporter::RENDERED_TEMPLATE_FILE);
+        std::fs::write(
+            &raw_path,
+            "brokers: [__KAFKA_BROKERS_ARRAY__]\ntopics: [__KAFKA_TOPICS_ARRAY__]\ngroup: __KAFKA_CONSUMER_GROUP__\nbucket: __EXPORT_BUCKET__\ndir: __BUCKET_DIR_PATH__\nlocal: __LOCAL_PATH__",
+        )
+        .expect("template should be written");
+
+        let race_id = CompactString::from("race-123");
+        let gcp_config = GcpConfig {
+            enabled: true,
+            project_id: "project".to_string(),
+            pubsub_topic_id: "topic".to_string(),
+            export_bucket: "bucket".to_string(),
+            max_retries: 1,
+            max_gcs_concurrent_uploads: 1,
+        };
+        let mut kafka_config = KafkaConfig::mock_config();
+        kafka_config.brokers = vec!["broker-a:9092".to_string(), "broker-b:9092".to_string()];
+        kafka_config.export.export_topics = vec!["data".to_string(), "dlq".to_string()];
+        kafka_config.export.nested_path_in_bucket = "/exports/".to_string();
+        kafka_config.export.local_path = PathBuf::from("C:\\exports");
+        let exporter = KafkaExporter {
+            race_id: &race_id,
+            gcp_config: &gcp_config,
+            kafka_config: &kafka_config,
+            rendered_template_path: rendered_path.clone(),
+        };
+
+        exporter
+            .render_template(&raw_path)
+            .expect("template should render");
+        let rendered = std::fs::read_to_string(&rendered_path).expect("rendered file should exist");
+
+        assert!(rendered.contains(r#"brokers: ["broker-a:9092","broker-b:9092"]"#));
+        assert!(rendered.contains(r#"topics: ["data","dlq"]"#));
+        assert!(rendered.contains(r#"group: "test_group""#));
+        assert!(rendered.contains(r#"bucket: "bucket""#));
+        assert!(rendered.contains(r#"dir: "race-123/exports""#));
+        assert!(rendered.contains(r#"local: "C:\exports\""#));
+
+        std::fs::remove_dir_all(directory).expect("temporary directory should be removed");
     }
 }

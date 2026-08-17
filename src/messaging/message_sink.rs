@@ -17,7 +17,6 @@ pub struct MessageSink {
 }
 
 impl MessageSink {
-    #[must_use]
     pub fn new(
         kafka_config: &KafkaConfig,
         topics: Vec<&'static str>,
@@ -79,7 +78,7 @@ impl MessageSink {
         loop {
             tokio::select! {
                 biased;
-                _ = cancel_token.cancelled() => {
+                () = cancel_token.cancelled() => {
                     info!("Cancellation received. Stopping ingestion for topics: {}", self.topics.join(","));
                     break;
                 }

@@ -85,13 +85,70 @@ impl ControlRelay {
                 self.closed
                     .store(true, std::sync::atomic::Ordering::Release);
                 info!("Relay closed due to receiving shutdown event");
-                if let Ok(mut lock) = self.shutdown_handler_tx.lock() {
-                    if let Some(tx) = lock.take() {
+                if let Ok(mut lock) = self.shutdown_handler_tx.lock() && let Some(tx) = lock.take() {
                         let _ = tx.send(());
-                    }
                 }
             }
-            _ => {}
+            CoreControlMessage::UNKNOWN(_) => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::messaging::control_message::{ChangeDriverMessage, CoreControlMessage};
+
+    fn relay(
+        shutdown_handler_tx: oneshot::Sender<()>,
+    ) -> (ControlRelay, &'static RetainReadTimeValue<CompactString>) {
+        let driver_id = Box::leak(Box::new(RetainReadTimeValue::new(CompactString::from(
+            "initial",
+        ))));
+        let (dlq_tx, _dlq_rx) = tokio::sync::mpsc::channel(1);
+        let relay = ControlRelay {
+            dlq_tx: Arc::new(dlq_tx),
+            chdrv_handler: driver_id,
+            shutdown_handler_tx: Mutex::new(Some(shutdown_handler_tx)),
+            closed: AtomicBool::new(false),
+        };
+        (relay, driver_id)
+    }
+
+    #[test]
+    fn change_driver_event_updates_runtime_driver_id() {
+        let (shutdown_tx, _shutdown_rx) = oneshot::channel();
+        let (relay, driver_id) = relay(shutdown_tx);
+
+        relay.relay_control_event(CoreControlMessage::CHDRV(ChangeDriverMessage {
+            new_driver_id: CompactString::from("driver-42"),
+        }));
+
+        assert_eq!(driver_id.get().as_str(), "driver-42");
+    }
+
+    #[tokio::test]
+    async fn shutdown_event_notifies_once_and_closes_relay() {
+        let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
+        let (relay, driver_id) = relay(shutdown_tx);
+
+        relay.relay_control_event(CoreControlMessage::SHUTDOWN);
+        assert!(shutdown_rx.try_recv().is_ok());
+
+        relay.relay_control_event(CoreControlMessage::CHDRV(ChangeDriverMessage {
+            new_driver_id: CompactString::from("ignored"),
+        }));
+
+        assert_eq!(driver_id.get().as_str(), "initial");
+    }
+
+    #[test]
+    fn unknown_event_does_not_change_runtime_state() {
+        let (shutdown_tx, _shutdown_rx) = oneshot::channel();
+        let (relay, driver_id) = relay(shutdown_tx);
+
+        relay.relay_control_event(CoreControlMessage::UNKNOWN("other".to_string()));
+
+        assert_eq!(driver_id.get().as_str(), "initial");
     }
 }

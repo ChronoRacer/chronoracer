@@ -18,7 +18,6 @@ pub struct ProcessingLayerEntrypoint {
 }
 
 impl ProcessingLayerEntrypoint {
-    #[must_use]
     pub fn init(
         sensor_sink_rx: SinkRx,
         control_rx: SinkRx,

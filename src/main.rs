@@ -64,7 +64,7 @@ fn run() -> Result<()> {
     tokio_runtime.block_on(async {
         let data_cancel_token = CancellationToken::new();
         let data_tracker = TaskTracker::new();
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
         // Runtime configuration
         let current_driver_id_handler =

@@ -11,8 +11,8 @@ pub enum AvroSchema {
 }
 
 impl AvroSchema {
-    pub fn env_var(&self) -> &'static str {
-        match *self {
+    pub fn env_var(self) -> &'static str {
+        match self {
             AvroSchema::SensorData => "AVRO_MESSAGE_SCHEMA_PATH",
         }
     }
@@ -34,7 +34,7 @@ impl AvroSchema {
 impl SchemaRegistry {
     pub fn load_and_parse_from_env(schema_type: AvroSchema) -> Result<Schema> {
         let env_var = schema_type.env_var();
-        let schema_path = std::env::var(env_var)
+        let schema_path = env::var(env_var)
             .with_context(|| format!("Environment variable '{env_var}' not set"))?;
         let schema_string =
             std::fs::read_to_string(schema_path).context("Failed to read Avro schema")?;

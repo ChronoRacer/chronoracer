@@ -14,6 +14,7 @@ pub struct HeartbeatHandler {
 }
 
 impl HeartbeatHandler {
+    #[must_use]
     pub fn new(producer: Arc<FutureProducer>, config: &'static CoreConfig) -> Self {
         Self {
             producer,

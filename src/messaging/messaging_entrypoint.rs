@@ -21,7 +21,6 @@ pub struct MessagingLayerEntrypoint<'a> {
 }
 
 impl<'a> MessagingLayerEntrypoint<'a> {
-    #[must_use]
     pub async fn init(config: &'static CoreConfig) -> Result<MessagingLayerEntrypoint<'a>> {
         let kafka_exporter = KafkaExporter::new(&config.race.race_id, &config.gcp, &config.kafka)
             .context("Failed to create Kafka exporter")?;
