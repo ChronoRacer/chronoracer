@@ -1,5 +1,5 @@
 use crate::configuration::PersistenceConfig;
-use crate::persistence::sensor_data_batcher::{SimplePoint, SIMPLE_POINT_PROTOCOL_MAX_LENGTH};
+use crate::persistence::sensor_data_batcher::{SIMPLE_POINT_PROTOCOL_MAX_LENGTH, SimplePoint};
 use compact_str::CompactString;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -17,7 +17,7 @@ pub struct InfluxDbFlusher {
 #[derive(Debug, Copy, Clone)]
 pub enum BatcherWiringType {
     Normal,
-    Fast
+    Fast,
 }
 pub type BatcherWiring = (
     tokio::sync::mpsc::Receiver<Vec<SimplePoint>>,
@@ -26,7 +26,6 @@ pub type BatcherWiring = (
 );
 
 impl InfluxDbFlusher {
-
     #[must_use]
     pub fn from_config(
         persistence: &PersistenceConfig,
@@ -47,10 +46,10 @@ impl InfluxDbFlusher {
 
     pub async fn ingest(&mut self) {
         let max_inflight = self.max_inflight_requests;
-        let fast_wiring = self
-            .fast_batcher_wiring
-            .take()
-            .expect("Fast batcher wiring already taken");
+        let Some(fast_wiring) = self.fast_batcher_wiring.take() else {
+            error!("Fast batcher wiring is unavailable; stopping flusher");
+            return;
+        };
         let client_fast = Arc::clone(&self.client);
         let race_id_fast = Arc::clone(&self.race_id);
         let semaphore_fast = Arc::clone(&self.semaphore);
@@ -62,10 +61,10 @@ impl InfluxDbFlusher {
             max_inflight,
         ));
 
-        let normal_wiring = self
-            .normal_batcher_wiring
-            .take()
-            .expect("Normal batcher wiring already taken");
+        let Some(normal_wiring) = self.normal_batcher_wiring.take() else {
+            error!("Normal batcher wiring is unavailable; stopping flusher");
+            return;
+        };
         let client_normal = Arc::clone(&self.client);
         let race_id_normal = Arc::clone(&self.race_id);
         let semaphore_normal = Arc::clone(&self.semaphore);
@@ -89,16 +88,24 @@ impl InfluxDbFlusher {
         let (mut batch_rx, pool_tx, wiring_type) = wiring;
         info!("Starting data flush ingestion loop, flush_type={wiring_type:?}");
         while let Some(mut batch) = batch_rx.recv().await {
-            let permit = Arc::clone(&semaphore).acquire_owned().await.unwrap();
+            let Ok(permit) = Arc::clone(&semaphore).acquire_owned().await else {
+                warn!("Database flush semaphore closed; stopping flush loop");
+                break;
+            };
             let db = Arc::clone(&client);
             let pool_tx = pool_tx.clone();
             let race_id = Arc::clone(&race_id);
 
-            info!("Received new batch to flush: batch_size={}, flush_type={:?}", batch.len(), wiring_type);
+            info!(
+                "Received new batch to flush: batch_size={}, flush_type={:?}",
+                batch.len(),
+                wiring_type
+            );
             tokio::spawn(async move {
                 let _permit = permit;
 
-                let mut line_protocol = String::with_capacity(batch.len() * (SIMPLE_POINT_PROTOCOL_MAX_LENGTH + 2));
+                let mut line_protocol =
+                    String::with_capacity(batch.len() * (SIMPLE_POINT_PROTOCOL_MAX_LENGTH + 2));
                 for point in &batch {
                     line_protocol.push_str(&point.to_line_protocol(&race_id));
                     line_protocol.push('\n');
@@ -109,10 +116,17 @@ impl InfluxDbFlusher {
                     .await
                 {
                     Ok(()) => {
-                        info!("Flushed data points: batch_size={}, flush_type={:?}", batch.len(), wiring_type);
+                        info!(
+                            "Flushed data points: batch_size={}, flush_type={:?}",
+                            batch.len(),
+                            wiring_type
+                        );
                     }
                     Err(influxdb3_client::error::Error::PartialWrite(e)) => {
-                        error!("Database write partially failed. failed_lines={}, Error: {e}, flush_type={wiring_type:?}", e.line_errors.len());
+                        error!(
+                            "Database write partially failed. failed_lines={}, Error: {e}, flush_type={wiring_type:?}",
+                            e.line_errors.len()
+                        );
                         // TODO: is logging this needed?
                         for line_error in &e.line_errors {
                             error!("Line {}: {}", line_error.line, line_error.message);

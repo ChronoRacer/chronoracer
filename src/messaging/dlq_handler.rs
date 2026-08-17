@@ -1,10 +1,10 @@
-use std::sync::Arc;
 use crate::configuration::CoreConfig;
 use crate::messaging::partial_message::PartialMessageWithError;
 use async_trait::async_trait;
 use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::producer::future_producer::OwnedDeliveryResult;
 use rdkafka::producer::{FutureProducer, FutureRecord};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
@@ -40,7 +40,11 @@ pub struct DLQHandler<'a, P: KafkaProducer = FutureProducer> {
 }
 
 impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
-    pub fn with_producer(config: &'a CoreConfig, dlq_rx: InvalidMessageRx, producer: Arc<P>) -> Self {
+    pub fn with_producer(
+        config: &'a CoreConfig,
+        dlq_rx: InvalidMessageRx,
+        producer: Arc<P>,
+    ) -> Self {
         let kafka_config = &config.kafka;
         Self {
             producer,
@@ -74,7 +78,7 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
         let inner_message = failed_message.message;
         let message_key = inner_message.key.as_deref().unwrap_or(self.unknown_key);
 
-        let mut record= FutureRecord::to(self.dlq_topic).key(message_key).headers(
+        let mut record = FutureRecord::to(self.dlq_topic).key(message_key).headers(
             OwnedHeaders::new_with_capacity(3)
                 .insert(Header {
                     key: "o_partition",
@@ -99,9 +103,9 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rdkafka::Timestamp;
     use rdkafka::message::Headers;
     use rdkafka::producer::future_producer::Delivery;
-    use rdkafka::Timestamp;
     use std::sync::{Arc, Mutex};
     use tokio::sync::mpsc;
 
@@ -201,14 +205,8 @@ mod tests {
             .map(|(k, v)| (k.as_str(), v.clone().unwrap()))
             .collect();
 
-        assert_eq!(
-            headers_map.get("o_partition").unwrap(),
-            b"2"
-        );
-        assert_eq!(
-            headers_map.get("o_offset").unwrap(),
-            b"100"
-        );
+        assert_eq!(headers_map.get("o_partition").unwrap(), b"2");
+        assert_eq!(headers_map.get("o_offset").unwrap(), b"100");
         assert_eq!(
             headers_map.get("o_error").unwrap(),
             b"Parse Error".as_slice()

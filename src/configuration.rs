@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use compact_str::CompactString;
 use config::{Config, File};
 use serde::Deserialize;
@@ -43,7 +44,7 @@ pub struct KafkaExportConfig {
     pub export_topics: Vec<String>,
     pub nested_path_in_bucket: String,
     pub local_path: PathBuf,
-    pub max_retries: u16
+    pub max_retries: u16,
 }
 
 impl KafkaExportConfig {
@@ -53,10 +54,9 @@ impl KafkaExportConfig {
             export_topics: vec!["dlq".to_string()],
             nested_path_in_bucket: "export/kafka".to_string(),
             local_path: PathBuf::from("/export/kafka"),
-            max_retries: 2
+            max_retries: 2,
         }
     }
-
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,7 +67,7 @@ pub struct KafkaConfig {
     pub control_event_topic: TopicConfig,
     pub dlq_config: DLQConfig,
     pub heartbeat_topic: TopicConfig,
-    pub export: KafkaExportConfig
+    pub export: KafkaExportConfig,
 }
 
 impl KafkaConfig {
@@ -79,7 +79,7 @@ impl KafkaConfig {
             dlq_config: DLQConfig::mock_config(),
             control_event_topic: TopicConfig::mock_config("event"),
             heartbeat_topic: TopicConfig::mock_config("core"),
-            export: KafkaExportConfig::mock_config()
+            export: KafkaExportConfig::mock_config(),
         }
     }
 }
@@ -104,7 +104,7 @@ pub struct DatabaseExportConfig {
     pub compression_level: u16,
     pub compression_type: CompactString,
     pub vm_export_dir: PathBuf,
-    pub max_retries: u16
+    pub max_retries: u16,
 }
 
 impl DatabaseExportConfig {
@@ -117,7 +117,6 @@ impl DatabaseExportConfig {
         }
     }
 }
-
 
 #[derive(Debug, Deserialize)]
 pub struct PersistenceConfig {
@@ -224,15 +223,15 @@ pub struct CoreConfig {
     pub persistence: PersistenceConfig,
     pub race: RaceConfig,
     pub runtime: RuntimeConfig,
-    pub gcp: GcpConfig
+    pub gcp: GcpConfig,
 }
 
 impl CoreConfig {
     pub const CONFIG_PATH_ENV_VAR_NAME: &'static str = "CORE_CONFIG_PATH";
 
     /// Loads the configuration from the YAML file path specified by the env variable.
-    pub fn load_from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        let config_path = std::env::var(Self::CONFIG_PATH_ENV_VAR_NAME).map_err(|_| {
+    pub fn load_from_env() -> Result<Self> {
+        let config_path = std::env::var(Self::CONFIG_PATH_ENV_VAR_NAME).with_context(|| {
             format!(
                 "Environment variable '{}' not set",
                 Self::CONFIG_PATH_ENV_VAR_NAME
@@ -240,8 +239,11 @@ impl CoreConfig {
         })?;
         let settings = Config::builder()
             .add_source(File::with_name(&config_path))
-            .build()?;
-        let config: Self = settings.try_deserialize()?;
+            .build()
+            .context("Failed to build configuration")?;
+        let config: Self = settings
+            .try_deserialize()
+            .context("Failed to deserialize configuration")?;
         Ok(config)
     }
 
@@ -252,7 +254,7 @@ impl CoreConfig {
             persistence: PersistenceConfig::mock_config(),
             race: RaceConfig::mock_config(),
             runtime: RuntimeConfig::mock_config(),
-            gcp: GcpConfig::mock_config()
+            gcp: GcpConfig::mock_config(),
         }
     }
 }
@@ -261,9 +263,16 @@ impl CoreConfig {
 mod tests {
     use crate::configuration::CoreConfig;
     use std::env;
+    use std::sync::{Mutex, OnceLock};
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
 
     #[test]
-    fn load_from_env__fails_on_missing_env_var() {
+    fn load_from_env_fails_on_missing_env_var() {
+        let _lock = env_lock();
         unsafe {
             env::remove_var(CoreConfig::CONFIG_PATH_ENV_VAR_NAME);
         }
@@ -278,7 +287,8 @@ mod tests {
     }
 
     #[test]
-    fn load_from_env__sample_config_loads_correctly() {
+    fn load_from_env_sample_config_loads_correctly() {
+        let _lock = env_lock();
         unsafe {
             env::set_var(CoreConfig::CONFIG_PATH_ENV_VAR_NAME, "sampe-config.yaml");
         }
@@ -288,7 +298,7 @@ mod tests {
                 assert_eq!(loaded.kafka.brokers.len(), 1);
                 assert_eq!(loaded.kafka.brokers[0], "localhost:9092".to_string());
                 assert_eq!(loaded.kafka.dlq_config.publish_timeout_sec, 5);
-            },
+            }
             Err(e) => {
                 panic!("{}", e);
             }

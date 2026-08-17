@@ -1,5 +1,5 @@
-use rdkafka::message::BorrowedMessage;
 use rdkafka::Message;
+use rdkafka::message::BorrowedMessage;
 
 #[derive(Debug)]
 pub struct PartialMessage {
@@ -26,7 +26,7 @@ pub struct PartialMessageWithError {
 }
 
 impl PartialMessageWithError {
-    pub(crate) fn new<E: std::error::Error + 'static>(original: PartialMessage, err: &E) -> Self {
+    pub(crate) fn new<E: std::fmt::Display>(original: PartialMessage, err: &E) -> Self {
         Self {
             message: original,
             error_msg: err.to_string(),

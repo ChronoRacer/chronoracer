@@ -12,7 +12,6 @@ pub struct SensorDataSplitter {
 }
 
 impl SensorDataSplitter {
-
     #[must_use]
     pub fn new(
         data_rx: SensorDataRx,
@@ -49,9 +48,9 @@ impl SensorDataSplitter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::configuration::DatabaseExportConfig;
     use crate::processing::sensor_data_message::AbsoluteSensorReading;
     use tokio::sync::mpsc;
-    use crate::configuration::DatabaseExportConfig;
 
     fn create_message(sensor_id: &str) -> UnwoundSensorDataMessage {
         UnwoundSensorDataMessage {
@@ -76,7 +75,7 @@ mod tests {
             flush_max_combined_batch_size: 5000,
             flush_interval_ms: 3000,
             max_inflight_db_writes: 7,
-            export: DatabaseExportConfig::mock_config()
+            export: DatabaseExportConfig::mock_config(),
         };
 
         let (data_tx, data_rx) = mpsc::channel(10);

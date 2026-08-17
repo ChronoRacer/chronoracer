@@ -1,12 +1,13 @@
 use crate::configuration::{KafkaConfig, TopicConfig};
+use anyhow::{Result, anyhow};
+use rdkafka::ClientConfig;
 use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
 use rdkafka::client::DefaultClientContext;
 use rdkafka::error::{KafkaError, RDKafkaErrorCode};
-use rdkafka::ClientConfig;
 use std::time::Duration;
 use tracing::{error, info};
 
-pub async fn ensure_all_topics_exists(kafka_config: &KafkaConfig) -> Result<(), KafkaError> {
+pub async fn ensure_all_topics_exists(kafka_config: &KafkaConfig) -> Result<()> {
     let admin_client: AdminClient<DefaultClientContext> = ClientConfig::new()
         .set("bootstrap.servers", kafka_config.brokers.join(","))
         .create()?;
@@ -18,7 +19,7 @@ pub async fn ensure_all_topics_exists(kafka_config: &KafkaConfig) -> Result<(), 
                 NewTopic::from(&kafka_config.sensor_data_topic),
                 NewTopic::from(&kafka_config.dlq_config.topic),
                 NewTopic::from(&kafka_config.control_event_topic),
-                NewTopic::from(&kafka_config.heartbeat_topic)
+                NewTopic::from(&kafka_config.heartbeat_topic),
             ],
             &options,
         )
@@ -32,7 +33,7 @@ pub async fn ensure_all_topics_exists(kafka_config: &KafkaConfig) -> Result<(), 
             }
             Err((topic, error_code)) => {
                 error!("Failed to create topic '{}': {:?}", topic, error_code);
-                return Err(KafkaError::AdminOp(error_code));
+                return Err(anyhow!(KafkaError::AdminOp(error_code)));
             }
         }
     }

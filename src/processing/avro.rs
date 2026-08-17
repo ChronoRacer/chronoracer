@@ -1,10 +1,11 @@
+use anyhow::{Context, Result};
 use apache_avro::Schema;
 use std::env;
 use std::path::PathBuf;
-use thiserror::Error;
 
 pub struct SchemaRegistry {}
 
+#[derive(Copy, Clone)]
 pub enum AvroSchema {
     SensorData,
 }
@@ -24,36 +25,25 @@ impl AvroSchema {
         unsafe {
             env::set_var(
                 AvroSchema::SensorData.env_var(),
-                file_path.to_str().unwrap(),
+                file_path.to_string_lossy().as_ref(),
             );
         }
     }
 }
 
 impl SchemaRegistry {
-    pub fn load_and_parse_from_env(
-        schema_type: AvroSchema,
-    ) -> Result<Schema, Box<dyn std::error::Error>> {
+    pub fn load_and_parse_from_env(schema_type: AvroSchema) -> Result<Schema> {
         let env_var = schema_type.env_var();
         let schema_path = std::env::var(env_var)
-            .map_err(|_| format!("Environment variable '{}' not set", env_var))?;
-        let schema_string = std::fs::read_to_string(schema_path)?;
-        Schema::parse_str(&schema_string).map_err(|err| err.into())
+            .with_context(|| format!("Environment variable '{env_var}' not set"))?;
+        let schema_string =
+            std::fs::read_to_string(schema_path).context("Failed to read Avro schema")?;
+        Schema::parse_str(&schema_string).context("Failed to parse Avro schema")
     }
 }
 
-#[derive(Error, Debug)]
-pub enum AvroErrorExtended {
-    #[error("Avro error: {0}")]
-    Avro(#[from] apache_avro::Error),
-
-    #[error("The Avro payload was empty or missing expected data")]
-    EmptyPayload,
-}
-
 pub trait TryFromAvro: Sized {
-    fn try_from_avro(schema: &Schema, avro_value: Option<&[u8]>)
-                     -> Result<Self, AvroErrorExtended>;
+    fn try_from_avro(schema: &Schema, avro_value: Option<&[u8]>) -> Result<Self>;
 }
 
 #[cfg(test)]

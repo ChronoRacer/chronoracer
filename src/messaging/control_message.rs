@@ -56,20 +56,20 @@ impl TryFrom<PartialMessage> for CoreControlMessage {
 
     fn try_from(message: PartialMessage) -> Result<Self, Self::Error> {
         let Some(key_bytes) = &message.key else {
-                return Err(MessageParseError {
-                    message,
-                    kind: MessageParseErrorKind::MissingKey,
-                });
-            };
+            return Err(MessageParseError {
+                message,
+                kind: MessageParseErrorKind::MissingKey,
+            });
+        };
 
         match key_bytes.as_ref() {
             b"CHDRV" => {
                 let Some(payload_bytes) = message.payload.as_deref() else {
-                        return Err(MessageParseError {
-                            message,
-                            kind: MessageParseErrorKind::MissingPayload,
-                        });
-                    };
+                    return Err(MessageParseError {
+                        message,
+                        kind: MessageParseErrorKind::MissingPayload,
+                    });
+                };
                 match CompactString::from_utf8(payload_bytes) {
                     Ok(driver_id) => Ok(CoreControlMessage::CHDRV(ChangeDriverMessage {
                         new_driver_id: driver_id,
@@ -79,7 +79,7 @@ impl TryFrom<PartialMessage> for CoreControlMessage {
                         kind: MessageParseErrorKind::InvalidPayload(decoding_error),
                     }),
                 }
-            },
+            }
             b"SHUTDOWN" => Ok(CoreControlMessage::SHUTDOWN),
             unknown => Ok(CoreControlMessage::UNKNOWN(
                 String::from_utf8_lossy(unknown).into_owned(),

@@ -92,7 +92,10 @@ mod tests {
     ) -> Vec<u8> {
         let record = Value::Record(vec![
             ("sensor_id".to_string(), Value::String(sensor_id)),
-            ("timestamp".to_string(), Value::TimestampNanos(1_000_000_000)),
+            (
+                "timestamp".to_string(),
+                Value::TimestampNanos(1_000_000_000),
+            ),
             (
                 "readings".to_string(),
                 Value::Array(vec![Value::Record(vec![

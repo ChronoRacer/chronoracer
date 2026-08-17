@@ -1,10 +1,10 @@
+use crate::configuration::CoreConfig;
 use rdkafka::producer::{FutureProducer, FutureRecord};
 use rdkafka::util::Timeout;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::MissedTickBehavior;
 use tracing::{error, info};
-use crate::configuration::CoreConfig;
 
 pub struct HeartbeatHandler {
     producer: Arc<FutureProducer>,
@@ -14,15 +14,14 @@ pub struct HeartbeatHandler {
 }
 
 impl HeartbeatHandler {
-    pub fn new(
-        producer: Arc<FutureProducer>,
-        config: &'static CoreConfig,
-    ) -> Self {
+    pub fn new(producer: Arc<FutureProducer>, config: &'static CoreConfig) -> Self {
         Self {
             producer,
             heartbeat_topic: &config.kafka.heartbeat_topic.name,
             race_id: &config.race.race_id,
-            heartbeat_interval_s: Duration::from_secs(u64::from(config.runtime.heartbeat_interval_s)),
+            heartbeat_interval_s: Duration::from_secs(u64::from(
+                config.runtime.heartbeat_interval_s,
+            )),
         }
     }
 

@@ -1,5 +1,6 @@
 use crate::configuration::KafkaConfig;
 use crate::messaging::partial_message::PartialMessage;
+use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use log::info;
 use rdkafka::consumer::{Consumer, StreamConsumer};
@@ -17,7 +18,11 @@ pub struct MessageSink {
 
 impl MessageSink {
     #[must_use]
-    pub fn new(kafka_config: &KafkaConfig, topics: Vec<&'static str>, flush_tx: SinkTx) -> Self {
+    pub fn new(
+        kafka_config: &KafkaConfig,
+        topics: Vec<&'static str>,
+        flush_tx: SinkTx,
+    ) -> Result<Self> {
         let consumer: StreamConsumer = rdkafka::ClientConfig::new()
             .set("group.id", &kafka_config.group_id)
             .set("bootstrap.servers", kafka_config.brokers.join(","))
@@ -26,15 +31,15 @@ impl MessageSink {
             .set("heartbeat.interval.ms", "15000")
             .set("max.poll.interval.ms", "300000")
             .create()
-            .expect("Failed to create message sink consumer");
+            .context("Failed to create message sink consumer")?;
         consumer
             .subscribe(&topics)
-            .unwrap_or_else(|_| panic!("Failed to subscribe to {} topics", topics.join(",")));
-        Self {
+            .context("Failed to subscribe message sink")?;
+        Ok(Self {
             consumer,
             flush_tx,
             topics,
-        }
+        })
     }
 
     pub async fn ingest(&mut self) {
@@ -107,7 +112,6 @@ impl MessageSink {
             self.topics.join(",")
         );
     }
-
 }
 
 impl Drop for MessageSink {

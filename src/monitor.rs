@@ -4,6 +4,7 @@ use crate::gcp::pubsub::GcsPubSubManager;
 use crate::gcp::storage::Bucket;
 use crate::messaging::kafka_exporter::KafkaExporter;
 use crate::persistence::database_exporter::InfluxDbExporter;
+use anyhow::Result;
 use gcp::storage;
 use log::error;
 use std::path::PathBuf;
@@ -104,7 +105,8 @@ impl<'a> Monitor<'a> {
         match db_export {
             Ok(paths) => {
                 info!("Database export complete with {} files", paths.len());
-                if let Err(e) = Self::upload_to_gcs(&self.gcs_storage_manager, paths).await {
+                if let Err(e) = Self::upload_to_gcs(self.gcs_storage_manager.as_ref(), paths).await
+                {
                     error!("Failed to upload to GCS: {}", e);
                 }
             }
@@ -115,7 +117,7 @@ impl<'a> Monitor<'a> {
 
         if kafka_notification && db_notification {
             info!("Sending shutdown notification...");
-            if let Err(e) = Self::notify_shutdown_complete(&self.gcp_pubsub_manager).await {
+            if let Err(e) = Self::notify_shutdown_complete(self.gcp_pubsub_manager.as_ref()).await {
                 error!("Failed to send shutdown notification: {}", e);
             }
         }
@@ -124,9 +126,9 @@ impl<'a> Monitor<'a> {
     }
 
     async fn upload_to_gcs(
-        gcs_storage_manager: &Option<GcsStorageManager<'a>>,
+        gcs_storage_manager: Option<&GcsStorageManager<'a>>,
         file_paths: Vec<PathBuf>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<()> {
         if let Some(gcs_storage_manager) = gcs_storage_manager {
             info!("Uploading database export to GCS");
             return gcs_storage_manager
@@ -138,8 +140,8 @@ impl<'a> Monitor<'a> {
     }
 
     async fn notify_shutdown_complete(
-        gcp_pubsub_manager: &Option<GcsPubSubManager<'a>>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+        gcp_pubsub_manager: Option<&GcsPubSubManager<'a>>,
+    ) -> Result<()> {
         if let Some(gcp_pubsub_manager) = gcp_pubsub_manager {
             info!("Publishing shutdown notification");
             return gcp_pubsub_manager.publish_shutdown_message().await;

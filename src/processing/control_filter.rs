@@ -82,7 +82,8 @@ impl ControlRelay {
                 self.chdrv_handler.update(new_driver_id);
             }
             CoreControlMessage::SHUTDOWN => {
-                self.closed.store(true, std::sync::atomic::Ordering::Release);
+                self.closed
+                    .store(true, std::sync::atomic::Ordering::Release);
                 info!("Relay closed due to receiving shutdown event");
                 if let Ok(mut lock) = self.shutdown_handler_tx.lock() {
                     if let Some(tx) = lock.take() {

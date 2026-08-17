@@ -6,6 +6,7 @@ use crate::processing::control_filter::ControlFilter;
 use crate::processing::reading_collector::ReadingCollector;
 use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use crate::runtime_configuration::RetainReadTimeValue;
+use anyhow::Result;
 use compact_str::CompactString;
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -17,7 +18,6 @@ pub struct ProcessingLayerEntrypoint {
 }
 
 impl ProcessingLayerEntrypoint {
-
     #[must_use]
     pub fn init(
         sensor_sink_rx: SinkRx,
@@ -26,13 +26,12 @@ impl ProcessingLayerEntrypoint {
         chdrv_handler: &'static RetainReadTimeValue<CompactString>,
         shutdown_handler_tx: oneshot::Sender<()>,
         rayon_pool: Arc<rayon::ThreadPool>,
-    ) -> Self {
+    ) -> Result<Self> {
         let (processed_data_tx, processed_data_rx) = tokio::sync::mpsc::channel::<
             UnwoundSensorDataMessage,
         >(rayon_pool.current_num_threads());
 
-        let sensor_data_schema = SchemaRegistry::load_and_parse_from_env(AvroSchema::SensorData)
-            .expect("Failed to load sensor data schema");
+        let sensor_data_schema = SchemaRegistry::load_and_parse_from_env(AvroSchema::SensorData)?;
         let dlq_tx_arc = Arc::from(dlq_tx);
         let collector = ReadingCollector::new(
             sensor_sink_rx,
@@ -46,12 +45,12 @@ impl ProcessingLayerEntrypoint {
             dlq_tx_arc,
             chdrv_handler,
             rayon_pool,
-            shutdown_handler_tx
+            shutdown_handler_tx,
         );
-        Self {
+        Ok(Self {
             collector,
             processed_data_rx,
             control_filter,
-        }
+        })
     }
 }

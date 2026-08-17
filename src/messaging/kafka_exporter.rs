@@ -1,22 +1,11 @@
 use crate::configuration::{GcpConfig, KafkaConfig};
 use crate::gcp::gcp_utils::to_bucket_path;
+use anyhow::{Result, anyhow};
 use compact_str::CompactString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tokio::process::Command;
 use tracing::{error, info, warn};
-
-#[derive(Debug, thiserror::Error)]
-pub enum KafkaExporterError {
-    #[error("Redpanda CLI not available: {0}")]
-    CliUnavailable(#[from] which::Error),
-    #[error("Template file not found at: {0}")]
-    TemplateNotFound(PathBuf),
-    #[error("IO Error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Process failed after {attempts} attempts. Reason: {reason}")]
-    ProcessFailed { attempts: u16, reason: String },
-}
 
 pub struct KafkaExporter<'a> {
     race_id: &'a CompactString,
@@ -33,7 +22,7 @@ impl<'a> KafkaExporter<'a> {
         race_id: &'a CompactString,
         gcp_config: &'a GcpConfig,
         kafka_config: &'a KafkaConfig,
-    ) -> Result<Self, KafkaExporterError> {
+    ) -> Result<Self> {
         Self::ensure_redpanda_available()?;
 
         let template_dir = &kafka_config.export.redpanda_yaml_dir_path;
@@ -44,7 +33,10 @@ impl<'a> KafkaExporter<'a> {
 
         let raw_template_path = template_dir.join(template_file_name);
         if !raw_template_path.exists() {
-            return Err(KafkaExporterError::TemplateNotFound(raw_template_path));
+            return Err(anyhow!(
+                "Template file not found at {}",
+                raw_template_path.display()
+            ));
         }
 
         let rendered_template_path = raw_template_path
@@ -64,13 +56,13 @@ impl<'a> KafkaExporter<'a> {
         Ok(instance)
     }
 
-    fn ensure_redpanda_available() -> Result<(), KafkaExporterError> {
+    fn ensure_redpanda_available() -> Result<()> {
         let path = which::which(Self::REDPANDA_CLI)?;
         info!("Redpanda CLI available at: {}", path.display());
         Ok(())
     }
 
-    fn render_template(&self, raw_template_path: &Path) -> Result<(), KafkaExporterError> {
+    fn render_template(&self, raw_template_path: &Path) -> Result<()> {
         let mut content = std::fs::read_to_string(raw_template_path)?;
 
         let brokers = self
@@ -123,7 +115,7 @@ impl<'a> KafkaExporter<'a> {
         Ok(())
     }
 
-    pub async fn export_kafka(&self) -> Result<(), KafkaExporterError> {
+    pub async fn export_kafka(&self) -> Result<()> {
         let started_at = Instant::now();
         info!("Starting Kafka export");
 
@@ -136,7 +128,7 @@ impl<'a> KafkaExporter<'a> {
         outcome
     }
 
-    async fn execute_redpanda_with_retry(&self) -> Result<(), KafkaExporterError> {
+    async fn execute_redpanda_with_retry(&self) -> Result<()> {
         let max_retries = self.kafka_config.export.max_retries;
         let mut backoff = Duration::from_secs(1);
 
@@ -165,10 +157,9 @@ impl<'a> KafkaExporter<'a> {
 
             if attempt > max_retries {
                 error!("Process failed permanently. Last status: {}", status_msg);
-                return Err(KafkaExporterError::ProcessFailed {
-                    attempts: attempt,
-                    reason: status_msg,
-                });
+                return Err(anyhow!(
+                    "Process failed after {attempt} attempts. Reason: {status_msg}"
+                ));
             }
 
             warn!(
@@ -183,6 +174,6 @@ impl<'a> KafkaExporter<'a> {
             backoff *= 2;
         }
 
-        unreachable!()
+        Err(anyhow!("Retry count overflowed"))
     }
 }

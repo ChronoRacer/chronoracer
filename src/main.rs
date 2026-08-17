@@ -1,12 +1,14 @@
 #![warn(clippy::pedantic)]
 
 use crate::configuration::CoreConfig;
+use crate::gcp::gcp_entrypoint::GcpLayerEntrypoint;
 use crate::logger::init_logger;
 use crate::messaging::messaging_entrypoint::MessagingLayerEntrypoint;
 use crate::monitor::Monitor;
 use crate::persistence::persistence_entrypoint::PersistanceLayerEntryPoint;
 use crate::processing::processing_entrypoint::ProcessingLayerEntrypoint;
 use crate::runtime_configuration::RetainReadTimeValue;
+use anyhow::{Context, Result};
 use compact_str::CompactString;
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -14,24 +16,28 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{error, info, warn};
-use crate::gcp::gcp_entrypoint::GcpLayerEntrypoint;
 
 mod configuration;
+pub mod gcp;
 pub mod logger;
 pub mod messaging;
 pub mod monitor;
 pub mod persistence;
 pub mod processing;
 pub mod runtime_configuration;
-pub mod gcp;
 
 fn main() {
     // Logger
     let _logger_guard = init_logger();
 
     // Config
-    let config_val = CoreConfig::load_from_env()
-        .expect("Failed to load configuration. Config file path not set.");
+    if let Err(error) = run() {
+        error!(%error, "Chronoracer core failed");
+    }
+}
+
+fn run() -> Result<()> {
+    let config_val = CoreConfig::load_from_env().context("Failed to load configuration")?;
     let config: &'static CoreConfig = Box::leak(Box::new(config_val));
     info!("Configuration loaded: {:#?}", config);
     info!(
@@ -45,13 +51,13 @@ fn main() {
         .max_blocking_threads(config.runtime.tokio_blocking as usize)
         .enable_all()
         .build()
-        .expect("Tokio runtime build failed");
+        .context("Failed to build Tokio runtime")?;
 
     let rayon_pool = Arc::new(
         rayon::ThreadPoolBuilder::new()
             .num_threads(config.runtime.rayon_threads as usize)
             .build()
-            .expect("Failed to build Rayon pool"),
+            .context("Failed to build Rayon pool")?,
     );
     info!("Runtime initalized. Starting...");
 
@@ -71,7 +77,7 @@ fn main() {
         );
 
         // Messaging
-        let mut messaging_wrapper = MessagingLayerEntrypoint::init(config).await;
+        let mut messaging_wrapper = MessagingLayerEntrypoint::init(config).await?;
         info!("Messaging layer initalized");
 
         // Processing
@@ -82,27 +88,25 @@ fn main() {
             handler,
             shutdown_tx,
             rayon_pool,
-        );
+        )?;
         info!("Processing layer initalized");
 
         // Persistence
         let mut persistance_wrapper =
             PersistanceLayerEntryPoint::init(config, processing_layer.processed_data_rx, handler)
-                .await;
+                .await?;
         info!("Persistance layer initalized");
 
         // GCP
-        
-        let gcp_wrapper = GcpLayerEntrypoint::init(&config.race.race_id, &config.gcp).await;
+
+        let gcp_wrapper = GcpLayerEntrypoint::init(&config.race.race_id, &config.gcp).await?;
         let (storage, pubsub) = match gcp_wrapper {
             Some(w) => (Some(w.gcs_storage_manager), Some(w.gcs_pub_sub_manager)),
-            None => {
-                (None, None)
-            }
+            None => (None, None),
         };
-        
+
         info!("GCP layer initalized");
-        
+
         // Monitor
 
         let monitor = Monitor::new(
@@ -113,7 +117,7 @@ fn main() {
             messaging_wrapper.kafka_exporter,
             storage,
             pubsub,
-            config.runtime.notify_shutdown_on_failed_db_export, 
+            config.runtime.notify_shutdown_on_failed_db_export,
             config.runtime.notify_shutdown_on_failed_kafka_export,
         );
 
@@ -141,12 +145,14 @@ fn main() {
         control_tasks.spawn(async move { messaging_wrapper.heartbeat_handler.keep_alive().await });
         info!("Control plane initalized");
 
-        run(control_tasks, monitor, shutdown_rx).await;
-    });
+        run_tasks(control_tasks, monitor, shutdown_rx).await;
+        Ok::<(), anyhow::Error>(())
+    })?;
     info!("Run complete");
+    Ok(())
 }
 
-async fn run(
+async fn run_tasks(
     mut control_tasks: JoinSet<()>,
     monitor: Monitor<'_>,
     mut shutdown_rx: oneshot::Receiver<()>,
@@ -156,7 +162,7 @@ async fn run(
         tokio::select! {
             res = control_tasks.join_next() => {
                 match res {
-                    Some(Ok(_)) => {
+                    Some(Ok(())) => {
                         if control_tasks.is_empty() {
                             break;
                         }

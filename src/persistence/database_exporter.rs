@@ -1,4 +1,5 @@
 use crate::configuration::DatabaseExportConfig;
+use anyhow::{Context, Result, anyhow};
 use influxdb3_client::{Client, QueryResult, Row};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -19,7 +20,7 @@ impl InfluxDbExporter {
         }
     }
 
-    async fn execute_query_with_retry(&self, query: &str) -> Result<QueryResult, String> {
+    async fn execute_query_with_retry(&self, query: &str) -> Result<QueryResult> {
         let mut attempts = 0;
         let mut backoff = Duration::from_secs(1);
         let max_retries = self.database_export_config.max_retries;
@@ -29,7 +30,7 @@ impl InfluxDbExporter {
                 Err(err) => {
                     attempts += 1;
                     if attempts > max_retries {
-                        return Err(format!(
+                        return Err(anyhow!(
                             "Failed after {attempts} attempts. Last error: {err:?}"
                         ));
                     }
@@ -47,14 +48,15 @@ impl InfluxDbExporter {
         }
     }
 
-    pub async fn export_database(&self) -> Result<Vec<PathBuf>, String> {
-        if let Err(err) = tokio::fs::create_dir_all(&self.database_export_config.vm_export_dir).await {
-            return Err(format!(
-                "Unrecoverable error: Cannot create root export directory '{}': {}",
-                self.database_export_config.vm_export_dir.display(),
-                err
-            ));
-        }
+    pub async fn export_database(&self) -> Result<Vec<PathBuf>> {
+        tokio::fs::create_dir_all(&self.database_export_config.vm_export_dir)
+            .await
+            .with_context(|| {
+                format!(
+                    "Cannot create root export directory '{}'",
+                    self.database_export_config.vm_export_dir.display()
+                )
+            })?;
         let table_names = self.fetch_tables_to_export().await?;
 
         let total_count = table_names.len();
@@ -111,31 +113,25 @@ impl InfluxDbExporter {
         Ok(successful_exports)
     }
 
-    async fn fetch_tables_to_export(&self) -> Result<Vec<String>, String> {
+    async fn fetch_tables_to_export(&self) -> Result<Vec<String>> {
         const TABLE_NAMES_QUERY: &str = "SELECT table_name \
         FROM information_schema.tables \
         WHERE table_schema = 'public';";
 
         let result_set = self.execute_query_with_retry(TABLE_NAMES_QUERY).await?;
 
-        let rows: Vec<Row> = result_set
-            .rows()
-            .map_err(|err| format!("Failed to extract rows: {err:?}"))?;
+        let rows: Vec<Row> = result_set.rows().context("Failed to extract rows")?;
 
         rows.iter()
             .map(|row| {
                 row.get("table_name")
                     .map(ToString::to_string)
-                    .ok_or_else(|| "table name missing".to_string())
+                    .ok_or_else(|| anyhow!("table name missing"))
             })
             .collect::<Result<Vec<String>, _>>()
     }
 
-    async fn export_table(
-        &self,
-        table_name: &str,
-        export_destination: &Path,
-    ) -> Result<(), String> {
+    async fn export_table(&self, table_name: &str, export_destination: &Path) -> Result<()> {
         let path_str = export_destination.display().to_string().replace('\\', "/");
 
         let export_query: String = format!(
@@ -155,17 +151,16 @@ impl InfluxDbExporter {
         export_path
     }
 
-    async fn ensure_export_destination_valid(
-        &self,
-        export_destination: &Path,
-    ) -> Result<(), io::Error> {
-        if let Some(parent) = export_destination.parent() && !parent.as_os_str().is_empty() {
-                tokio::fs::create_dir_all(parent).await?;
+    async fn ensure_export_destination_valid(&self, export_destination: &Path) -> Result<()> {
+        if let Some(parent) = export_destination.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            tokio::fs::create_dir_all(parent).await?;
         }
         match tokio::fs::remove_file(export_destination).await {
             Ok(()) => Ok(()),
             Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(err) => Err(err),
+            Err(err) => Err(err.into()),
         }
     }
 }

@@ -1,4 +1,5 @@
 use crate::configuration::GcpConfig;
+use anyhow::Result;
 use compact_str::CompactString;
 use google_cloud_pubsub::client::Publisher;
 use google_cloud_pubsub::model::Message;
@@ -11,10 +12,7 @@ pub struct GcsPubSubManager<'a> {
 }
 
 impl<'a> GcsPubSubManager<'a> {
-    pub async fn new(
-        race_id: &'a CompactString,
-        gcp_config: &'a GcpConfig,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(race_id: &'a CompactString, gcp_config: &'a GcpConfig) -> Result<Self> {
         let publisher = Publisher::builder(&gcp_config.pubsub_topic_id)
             .build()
             .await?;
@@ -24,7 +22,7 @@ impl<'a> GcsPubSubManager<'a> {
         })
     }
 
-    pub async fn publish_shutdown_message(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn publish_shutdown_message(&self) -> Result<()> {
         let race_id = self.race_id.clone();
         let message = Message::new()
             .set_ordering_key("SHUTDOWN")
