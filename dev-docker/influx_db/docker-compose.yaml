@@ -1,0 +1,76 @@
+services:
+  influxdb3:
+    image: influxdb:3-core
+    container_name: influxdb3-core
+    env_file: [influxdb3.env]
+    ports:
+      - "8181:8181"
+    volumes:
+      - influxdb3_data:/var/lib/influxdb3
+      - ./admin-token.json:/etc/influxdb3/admin-token.json:ro
+      - ../../influxdb-plugins:/plugins
+      - ../../export/db:/export/db
+    command: serve --plugin-dir /plugins
+
+  influxdb3-export-trigger:
+    image: influxdb:3-core
+    depends_on:
+      influxdb3:
+        condition: service_started
+    env_file: [influxdb3.env]
+    volumes:
+      - ../../influxdb-plugins:/plugins:ro
+      - ./admin-token.json:/etc/influxdb3/admin-token.json:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        TOKEN=$$(sed -n 's/.*"token": *\([^,}]*\).*/\1/p' /etc/influxdb3/admin-token.json | tr -d '" ')
+        
+        echo "Installing Python dependencies..."
+        influxdb3 install package [YOUR_PACKAGES_HERE] \
+          --host http://influxdb3:8181 \
+          --token "$$TOKEN"
+        
+        echo "Checking if database 'chrono_db' exists..."
+        if influxdb3 show databases --host http://influxdb3:8181 --token "$$TOKEN" 2>/dev/null | grep -q "chrono_db"; then
+          echo "Database 'chrono_db' already exists."
+        else
+          echo "Creating database 'chrono_db'..."
+          influxdb3 create database chrono_db \
+            --host http://influxdb3:8181 \
+            --token "$$TOKEN"
+        fi
+        
+        if influxdb3 show database-triggers --host http://influxdb3:8181 --database chrono_db --token "$$TOKEN" 2>/dev/null | grep -q "database_export"; then
+          echo "Trigger 'database_export' already exists."
+        else
+          echo "Registering 'database_export' trigger..."
+          influxdb3 create trigger \
+            --host http://influxdb3:8181 \
+            --database chrono_db \
+            --token "$$TOKEN" \
+            --plugin-filename export_database.py \
+            --trigger-spec "request:export_database" \
+            database_export
+        fi
+        
+        cleanup() {
+          echo "Removing 'database_export' trigger..."
+          influxdb3 delete trigger \
+            --host http://influxdb3:8181 \
+            --database chrono_db \
+            --token "$$TOKEN" \
+            --force \
+            database_export
+          echo "Trigger cleanup complete."
+          exit 0
+        }
+        
+        trap cleanup TERM INT
+        
+        echo "Setup complete"
+        tail -f /dev/null & 
+        wait $$!
+
+volumes:
+  influxdb3_data:

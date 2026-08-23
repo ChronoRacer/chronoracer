@@ -1,0 +1,49 @@
+input:
+  read_until:
+    idle_timeout: "5s"
+    input:
+      kafka_franz:
+        seed_brokers: __KAFKA_BROKERS_ARRAY__
+        topics: __KAFKA_TOPICS_ARRAY__
+        consumer_group: '__RACE_ID__-export'
+        start_from_oldest: true
+        batching:
+          count: 10000
+          period: "2s"
+
+pipeline:
+  processors:
+    - mapping: |
+        root.topic = meta("kafka_topic")
+        root.partition = meta("kafka_partition").number()
+        root.offset = meta("kafka_offset").number()
+        root.timestamp = meta("kafka_timestamp_ms").number().catch(null)
+        root.key = meta("kafka_key").catch(null)
+        root.value = content().catch(null)
+        root.headers = meta().format_json()
+
+    - parquet_encode:
+        default_compression: zstd
+        schema:
+          - name: topic
+            type: UTF8
+          - name: partition
+            type: INT32
+          - name: offset
+            type: INT64
+          - name: timestamp
+            type: INT64
+            optional: true
+          - name: key
+            type: BYTE_ARRAY
+            optional: true
+          - name: value
+            type: BYTE_ARRAY
+            optional: true
+          - name: headers
+            type: UTF8
+            optional: true
+output:
+  file:
+    path: '__LOCAL_PATH__${! meta("kafka_topic") }.parquet'
+    codec: all-bytes
