@@ -61,7 +61,7 @@ sequenceDiagram
   CB->>CB: destroy race VMs and disks
   CB->>PS: build finished
   PS->>Relay: push wake
-  Relay->>FS: destroyed plus control last
+  Relay->>FS: update historical races
 ```
 
 1. Operator calls stop. Allowed from `applied` (including unhealthy), or retry from `stopping` when mutex not held. Reconcile first. Returns immediately. Does not publish shutdown yet.
@@ -71,7 +71,7 @@ sequenceDiagram
 5. Core drains, writes `{race_id}/export/db` and `{race_id}/export/kafka` (Influx dump, selected topics including DLQ). Cannot write `core-config.yaml`.
 6. Core publishes export-done (with `race_id` field). Relay accepts only if phase is `exporting` and mutex not held. Then stamps destroy, triggers Cloud Build. Ack export-done only after that stamp.
 7. Controller destroys race VMs and disks and deletes the DNS A record. Always-on stays.
-8. On destroy success: phase `destroyed`, `control/last` written, pointer cleared. Status no longer returns a usable Kafka address. Race doc remains. Status with no active race still returns last `raceId`, and export download access.
+8. On destroy success: phase `destroyed`, pointer cleared, historical races updated. Status no longer returns a usable Kafka address. Race doc remains. Status endpoint no longer returns any data.
 
 Shutdown must not start until `close_ingest` succeeds. `close_ingest` and `destroy` must never overlap.
 

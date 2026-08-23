@@ -9,8 +9,7 @@ Out of scope: Firestore admin, client libraries, backups, retention.
 Three documents:
 
 - `control/active` — pointer. `raceId` set or empty. Relay-only write. New start only when empty. Retry from `failed` keeps the same pointer.
-- `control/last` — last destroyed race (`raceId`, `destroyedAt`). Relay writes on destroy success. Status uses this when the pointer is empty.
-- `races/{raceId}` — one doc per race. Kept after destroy. Next new start always creates a new `raceId`.
+- `races/{raceId}` — one doc per race. Kept after destroy. Next new start always creates a new, unique `raceId`.
 
 Operators never read Firestore. They call Relay. Heartbeats do not live here. Liveness is Kafka: [2-race-provisioning.md](2-race-provisioning.md).
 
@@ -18,8 +17,8 @@ Operators never read Firestore. They call Relay. Heartbeats do not live here. Li
 
 Writers (only two):
 
-- **Relay:** pointer; `control/last`; creates the race doc in the same transaction as the pointer; uploads Core YAML to GCS; writes `starting`, `stopping`, `exporting`, `destroying`, `destroyed`; writes `failed` if Cloud Build produced no controller `applied` while still `starting`, if the trigger never started, or if the build failed without a controller write; writes `terraformRun` on stamp (`runToken`, `stampedAt`, empty `buildId`), on bind or trigger `buildId`, on trigger failure (`status` `failed`, not left `in_flight`), on bind-window expiry with no matching build, and on build-finished (push or status replay); writes `startedBy` and timestamps.
-- **Controller:** reads `terraformRun.action`, `runToken`, and `raceId`. Runs Terraform only if status is `in_flight` and `runToken` matches this build. Token mismatch: no Terraform, no Firestore write, success exit. Writes `applied` (only writer of `applied`) or `failed` only for `apply`, same write as terraform outputs, only if phase is still `starting` and the token still matches. Does not write Firestore on `close_ingest` or `destroy`. Does not parse YAML. Refuses apply if the GCS YAML object is missing. Does not touch `control/active`, `control/last`, the YAML object, or `terraformRun`.
+- **Relay:** pointer, race collection; creates the race doc in the same transaction as the pointer; uploads Core YAML to GCS; writes `starting`, `stopping`, `exporting`, `destroying`, `destroyed`; writes `failed` if Cloud Build produced no controller `applied` while still `starting`, if the trigger never started, or if the build failed without a controller write; writes `terraformRun` on stamp (`runToken`, `stampedAt`, empty `buildId`), on bind or trigger `buildId`, on trigger failure (`status` `failed`, not left `in_flight`), on bind-window expiry with no matching build, and on build-finished (push or status replay); writes `startedBy` and timestamps.
+- **Controller:** reads `terraformRun.action`, `runToken`, and `raceId`. Runs Terraform only if status is `in_flight` and `runToken` matches this build. Token mismatch: no Terraform, no Firestore write, success exit. Writes `applied` (only writer of `applied`) or `failed` only for `apply`, same write as terraform outputs, only if phase is still `starting` and the token still matches. Does not write Firestore on `close_ingest` or `destroy`. Does not parse YAML. Refuses apply if the GCS YAML object is missing. Does not touch `control/active`, the YAML object, or `terraformRun`.
 
 Not writers, not readers: Core, Kafka VM, devices, operators.
 
@@ -41,11 +40,6 @@ Exports land at `{raceId}/export/db` and `{raceId}/export/kafka` - location not 
 
 - `raceId` — string or empty
 - `updatedAt`
-
-### `control/last`
-
-- `raceId`
-- `destroyedAt`
 
 ### `races/{raceId}`
 
@@ -107,7 +101,7 @@ Legal transitions:
 - `applied` → `stopping` (graceful stop, mutex not held) or `destroying` (force, mutex not held)
 - `stopping` → `stopping` (retry `close_ingest`, mutex not held, new `runToken`) or `exporting` (Relay after `close_ingest` succeeds, then publishes shutdown) or `destroying` (force, mutex not held)
 - `exporting` → `destroying` (Relay on export-done, or operator force, mutex not held)
-- `destroying` → `destroyed` (Relay on destroy success, then `control/last`, pointer cleared)
+- `destroying` → `destroyed` (Relay on destroy success, then updates races, pointer cleared)
 - `destroying` may retry destroy if mutex not held (new `runToken`)
 - `destroyed` is terminal for that `raceId`
 - No graceful stop from `starting`. Force-destroy from `starting` / `stopping` / `exporting` only when mutex not held
@@ -119,14 +113,14 @@ Pointer: set only on new start, cleared only when that race reaches `destroyed`.
 
 ## Who writes which phase
 
-| Phase | Writer |
-| --- | --- |
-| starting | Relay |
-| applied | Controller (`apply` only; token + phase `starting`; with outputs) |
+| Phase | Writer                                                                                                                                                              |
+| --- |---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| starting | Relay                                                                                                                                                               |
+| applied | Controller (`apply` only; token + phase `starting`; with outputs)                                                                                                   |
 | failed | Controller on `apply` fail with token match, or Relay if trigger never started / bind window expired / build failed with no controller write while still `starting` |
-| stopping | Relay |
-| exporting | Relay (build-finished after `close_ingest`, push or status replay; then publishes shutdown) |
-| destroying | Relay (force-destroy API or export-done push) |
-| destroyed | Relay (build-finished after destroy, push or status replay); then `control/last` and pointer clear |
+| stopping | Relay                                                                                                                                                               |
+| exporting | Relay (build-finished after `close_ingest`, push or status replay; then publishes shutdown)                                                                         |
+| destroying | Relay (force-destroy API or export-done push)                                                                                                                       |
+| destroyed | Relay (build-finished after destroy, push or status replay); then updates races and pointer clear                                                                   |
 
 Core never writes Firestore. Export-done is Pub/Sub: [6-relay-api.md](6-relay-api.md).

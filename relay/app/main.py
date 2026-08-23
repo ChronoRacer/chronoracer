@@ -19,6 +19,7 @@ from .service import RelayService
 
 class StartRequest(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
+    race_id: str = Field(alias='raceId')
 
 
 def create_app(config: RelayConfig | None = None, service: RelayService | None = None) -> FastAPI:

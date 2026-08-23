@@ -56,13 +56,6 @@ class ActivePointer(BaseModel):
     race_id: str = Field('', alias='raceId')
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), alias='updatedAt')
 
-
-class LastRace(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-    race_id: str = Field(alias='raceId')
-    destroyed_at: datetime = Field(alias='destroyedAt')
-
-
 class BuildFinished(BaseModel):
     race_id: str
     action: TerraformAction

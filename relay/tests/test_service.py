@@ -3,9 +3,9 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import yaml
 
-from relay.app.models import BuildFinished, ExportDone, Phase, TerraformAction, TerraformStatus
 from relay.app.gcp.repository import InMemoryRaceRepository
 from relay.app.gcp.storage import DevObjectStore
+from relay.app.models import BuildFinished, ExportDone, Phase, TerraformAction, TerraformStatus
 from relay.app.service import RelayService
 
 
@@ -44,7 +44,7 @@ class FakeHeartbeat:
 
 async def started():
     service = RelayService(InMemoryRaceRepository(), builds=FakeBuilds())
-    await service.start({'x': 1}, 'operator')
+    await service.start('race1', {'x': 1}, 'operator')
     race = await service._active()
     race.terraform_run.build_id = 'b1'
     await service.repository.save_race(race)
@@ -74,7 +74,7 @@ async def test_mutex_rejects_stop_until_build_finishes():
 
 
 @pytest.mark.asyncio
-async def test_destroy_success_clears_pointer_and_writes_last():
+async def test_destroy_success_clears_pointer():
     service, race = await started()
     race.terraform_run.status = TerraformStatus.SUCCEEDED
     race.terraform_run.build_id = ''
@@ -88,7 +88,6 @@ async def test_destroy_success_clears_pointer_and_writes_last():
         BuildFinished(race_id=race.race_id, action=TerraformAction.DESTROY, run_token=current.terraform_run.run_token,
                       build_id='b2', success=True))
     assert (await service.repository.active()).race_id == ''
-    assert (await service.repository.last()).race_id == race.race_id
 
 
 @pytest.mark.asyncio
@@ -101,13 +100,13 @@ async def test_export_done_only_allowed_in_exporting():
 async def test_retry_from_failed_keeps_race_and_yaml_unchanged():
     builds = FakeBuilds()
     service = RelayService(InMemoryRaceRepository(), builds=builds)
-    first = await service.start({'port': 1}, 'operator')
+    first = await service.start('race1', {'port': 1}, 'operator')
     race = await service._active()
     race.phase = Phase.FAILED
     race.terraform_run.status = TerraformStatus.FAILED
     await service.repository.save_race(race)
 
-    retried = await service.start({'port': 999}, 'other-operator')
+    retried = await service.start('race1', {'port': 999}, 'other-operator')
     current = await service._active()
     assert retried['raceId'] == first['raceId']
     assert current.race_id == first['raceId']
@@ -122,7 +121,7 @@ async def test_trigger_failure_releases_mutex_and_marks_failed():
     service = RelayService(InMemoryRaceRepository(), builds=builds)
 
     with pytest.raises(RuntimeError):
-        await service.start({'x': 1})
+        await service.start('race1', {'x': 1})
     race = await service._active()
     assert race.phase is Phase.FAILED
     assert race.terraform_run.status is TerraformStatus.FAILED
@@ -134,7 +133,7 @@ async def test_trigger_failure_releases_mutex_and_marks_failed():
 async def test_apply_failure_marks_failed_and_clears_mutex():
     builds = FakeBuilds()
     service = RelayService(InMemoryRaceRepository(), builds=builds)
-    await service.start({}, 'operator')
+    await service.start('race1', {}, 'operator')
     race = await service._active()
 
     await service.build_finished(BuildFinished(
@@ -167,7 +166,7 @@ async def test_close_ingest_success_enters_exporting_and_publishes_shutdown():
     builds = FakeBuilds()
     shutdown = FakeShutdown()
     service = RelayService(InMemoryRaceRepository(), builds=builds, shutdown=shutdown)
-    await service.start({})
+    await service.start('race1', {})
     race = await service._active()
     race.phase = Phase.APPLIED
     race.terraform_run.status = TerraformStatus.SUCCEEDED
@@ -198,7 +197,7 @@ async def test_force_destroy_rejects_destroyed_phase():
 async def test_reconcile_expired_unbound_run_releases_mutex():
     builds = FakeBuilds()
     service = RelayService(InMemoryRaceRepository(), builds=builds)
-    await service.start({})
+    await service.start('race1', {})
     race = await service._active()
     race.terraform_run.build_id = ''
     race.terraform_run.stamped_at = datetime.now(timezone.utc) - timedelta(seconds=601)
@@ -216,7 +215,7 @@ async def test_start_keeps_generated_race_id_in_yaml():
     object_store = DevObjectStore()
     service = RelayService(InMemoryRaceRepository(), object_store=object_store, builds=FakeBuilds())
 
-    result = await service.start({'raceId': 'operator-supplied-id'}, 'operator')
+    result = await service.start('race1', {'raceId': 'operator-supplied-id'}, 'operator')
 
     stored = yaml.safe_load(object_store.objects[f"{result['raceId']}/core-config.yaml"])
     assert stored['raceId'] == result['raceId']
@@ -258,7 +257,7 @@ async def test_ready_status_includes_configured_kafka_port():
     service = RelayService(
         InMemoryRaceRepository(), builds=FakeBuilds(), heartbeat=FakeHeartbeat(), kafka_public_port=19092
     )
-    await service.start({})
+    await service.start('race1', {})
     race = await service._active()
     race.phase = Phase.APPLIED
     race.terraform_run.status = TerraformStatus.SUCCEEDED

@@ -109,7 +109,7 @@ Idempotent if already closed. Retry from `stopping` when mutex not held is this 
 
 ### `destroy`
 
-Terraform destroy of the race state. VMs, disks, public IP, A record, race firewall go away. Always-on untouched. Pointer clear and `control/last` are Relay’s job after the build. No Firestore phase write from the controller.
+Terraform destroy of the race state. VMs, disks, public IP, A record, race firewall go away. Always-on untouched. No Firestore phase write from the controller.
 
 Idempotent if already empty.
 

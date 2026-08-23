@@ -44,7 +44,7 @@ Caller: Okta. Input: none.
 
 If mutex held: reconcile, then re-read Firestore.
 
-If pointer empty: no active race; return `raceId` null. Do not return `control/last` or export URLs.
+If pointer empty: no active race; return `raceId` null.
 
 Else: `raceId`, phase, ready, unhealthy, `lastError`, `startedBy`, `startedAt`, `terraformRun`, `billableVms` true. Kafka hostname, port, and public IP only when ready. Do not return export URLs or last-race data.
 
@@ -109,7 +109,7 @@ Then mark `terraformRun.status` succeeded or failed, and:
 - **apply failure:** if phase is already `applied` with outputs: do not revert; mark `terraformRun` succeeded (controller committed). If phase is still `starting`: `failed`, `lastError`.
 - **close_ingest success:** phase `exporting`, then Relay publishes shutdown on the private control topic a shutdown message.
 - **close_ingest failure:** `lastError`; phase stays `stopping`. Operator retries stop once mutex is clear. Not force-destroy.
-- **destroy success:** phase `destroyed`; write `control/last`; clear `control/active`.
+- **destroy success:** phase `destroyed`; update races; clear `control/active`.
 - **destroy failure:** `lastError`; phase stays `destroying`. Operator retries force-destroy.
 
 Status replay uses this same handler.
@@ -146,10 +146,6 @@ flowchart LR
   shutdown --> exporting
   exportPush[Export-done PubSub] --> destroying
 ```
-
-## Firestore fields this API needs
-
-From [3-firestore.md](3-firestore.md): `terraformRun` (mutex, `runToken`, `buildId`); `control/last` after pointer clear. Do not add `pendingDestroy` or a second copy of mutex fields.
 
 ## Not in this document
 

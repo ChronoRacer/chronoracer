@@ -9,9 +9,16 @@ from .gcp.builds import BuildTrigger
 from .gcp.pubsub import ShutdownPublisher
 from .gcp.repository import RaceRepository
 from .gcp.storage import ObjectStore
-from .models import BuildFinished, ExportDone, LastRace, Phase, Race, TerraformAction, TerraformRun, \
+from .models import BuildFinished, ExportDone, Phase, Race, TerraformAction, TerraformRun, \
     TerraformStatus
 
+
+def ensure_race_id_valid(race_id: str):
+    if len(race_id) > 12:
+        # This is due to Core internals
+        raise ValueError('raceId length must not exceed 12 characters')
+    if not race_id.isalnum() or not race_id.isascii():
+        raise ValueError('raceId must be alphanumeric ASCII')
 
 class RelayService:
     def __init__(self, repository: RaceRepository, object_store: ObjectStore | None = None,
@@ -26,11 +33,12 @@ class RelayService:
         # This lock is enough - cloud run instances capped at 1 in GCP
         self._operation_lock = asyncio.Lock()
 
-    async def start(self, config: dict[str, Any], started_by='unknown'):
+    async def start(self, race_id: str, config: dict[str, Any], started_by='unknown'):
+        ensure_race_id_valid(race_id)
         async with self._operation_lock:
-            return await self._start(config, started_by)
+            return await self._start(race_id, config, started_by)
 
-    async def _start(self, config: dict[str, Any], started_by='unknown'):
+    async def _start(self, race_id: str, config: dict[str, Any], started_by='unknown'):
         logger.info("Starting race requested by {}", started_by)
         await self._reconcile()
         pointer = await self.repository.active()
@@ -41,11 +49,10 @@ class RelayService:
             race.phase = Phase.STARTING
         else:
             now = datetime.now(timezone.utc)
-            rid = str(uuid4())
-            race = Race(race_id=rid, phase=Phase.STARTING, started_by=started_by,
+            race = Race(race_id=race_id, phase=Phase.STARTING, started_by=started_by,
                         started_at=now)
             if self.object_store:
-                await self.object_store.put_yaml(f'{rid}/core-config.yaml', {**config, 'raceId': rid})
+                await self.object_store.put_yaml(f'{race_id}/core-config.yaml', {**config, 'raceId': race_id})
             await self.repository.create_race(race)
         self._stamp(race, TerraformAction.APPLY)
         await self.repository.save_race(race, {'phase', 'terraform_run'})
@@ -181,7 +188,7 @@ class RelayService:
             race.phase = Phase.DESTROYED
             now = datetime.now(timezone.utc)
             race.destroyed_at = now
-            await self.repository.complete_destroy(race, LastRace(race_id=race.race_id, destroyed_at=now))
+            await self.repository.complete_destroy(race)
             logger.info("Race {} transitioned to phase {}", race.race_id, race.phase.value)
             return
         elif not event.success:
