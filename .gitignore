@@ -2,3 +2,4 @@
 .idea
 /redpanda/export.yaml
 /export/
+/core/target/

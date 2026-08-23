@@ -27,10 +27,7 @@ pub mod processing;
 pub mod runtime_configuration;
 
 fn main() {
-    // Logger
     let _logger_guard = init_logger();
-
-    // Config
     if let Err(error) = run() {
         error!(%error, "Chronoracer core failed");
     }
@@ -99,7 +96,6 @@ fn run() -> Result<()> {
         info!("Persistance layer initalized");
 
         // GCP
-
         let gcp_wrapper = GcpLayerEntrypoint::init(&config.race.race_id, &config.gcp).await?;
         let (storage, pubsub) = match gcp_wrapper {
             Some(w) => (Some(w.gcs_storage_manager), Some(w.gcs_pub_sub_manager)),
@@ -109,7 +105,6 @@ fn run() -> Result<()> {
         info!("GCP layer initalized");
 
         // Monitor
-
         let monitor = Monitor::new(
             data_cancel_token.clone(),
             data_tracker,
@@ -138,7 +133,6 @@ fn run() -> Result<()> {
         info!("Data pipeline started");
 
         // Control tasks
-
         let mut control_tasks = JoinSet::new();
         control_tasks.spawn(async move { processing_layer.control_filter.ingest().await });
         control_tasks.spawn(async move { messaging_wrapper.control_sink.ingest().await });
