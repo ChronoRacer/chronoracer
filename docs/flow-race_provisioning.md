@@ -1,23 +1,21 @@
-# Part 2a. Race provisioning
+# Flow - Race provisioning
 
-Goal: start one race. Create the two race VMs, make Kafka ingestable, and only then hand operators the Kafka hostname, port, and public IP.
-
-Gate: start sequence and healthcheck are assigned. Reject rules: [6-relay-api.md](6-relay-api.md). Phases, mutex, writers: [3-firestore.md](3-firestore.md). Race resources: [4-terraform.md](4-terraform.md). Placement: [1-infrastructure.md](1-infrastructure.md).
+Goal: start one race. Create the two race VMs, ensure Kafka readiness, and only then hand operators the Kafka hostname, port, and public IP.
 
 Out of scope: Terraform internals, image build pipelines, exact heartbeat interval, Core YAML shape.
 
 ## Components in this flow
 
-| Component | Role in start |
-| --- | --- |
-| Relay | Operator start/status. Writes Firestore. Triggers Cloud Build. Wakes on Pub/Sub. On status: reconcile, then Firestore + heartbeat. |
-| Firestore | Lifecycle source of truth. |
-| Cloud Build | Runs the controller. Finite timeout; timeout is apply failure. Not a long-lived waiter. |
-| Controller | Reads Firestore, applies race Terraform, writes `applied` or `failed` on apply. |
-| Race Terraform | Race-scoped resources only. Stable names. |
-| Pub/Sub | Terminal Cloud Build → Relay. Status bind/replay if the push is missed. |
-| Secret Manager | Long-lived TLS cert. Always on. |
-| Kafka VM / Core VM | Prebaked images. Boot below. |
+| Component          | Role in start                                                                                                                      |
+|--------------------|------------------------------------------------------------------------------------------------------------------------------------|
+| Relay              | Operator start/status. Writes Firestore. Triggers Cloud Build. Wakes on Pub/Sub. On status: reconcile, then Firestore + heartbeat. |
+| Firestore          | Lifecycle source of truth.                                                                                                         |
+| Cloud Build        | Runs the controller. Finite timeout; timeout is apply failure. Not a long-lived waiter.                                            |
+| Controller         | Reads Firestore, applies race Terraform, writes `applied` or `failed` on apply.                                                    |
+| Race Terraform     | Race-scoped resources only. Stable names.                                                                                          |
+| Pub/Sub            | Terminal Cloud Build → Relay. Status bind/replay if the push is missed.                                                            |
+| Secret Manager     | Long-lived TLS cert. Always on.                                                                                                    |
+| Kafka VM / Core VM | Prebaked images. Boot below.                                                                                                       |
 
 Always-on stack is a separate Terraform stack. Race apply must not manage it. Relay is the only Cloud Build caller. Core is not in this flow except boot and heartbeat.
 
@@ -63,7 +61,7 @@ sequenceDiagram
   Relay->>Op: ready plus hostname port IP
 ```
 
-1. Operator calls start (Okta). Reject / retry / reconcile: [6-relay-api.md](6-relay-api.md).
+1. Operator calls start (Okta)
 2. New race: mint `raceId`; upload YAML to `{gcsPrefix}/core-config.yaml` (orphan YAML acceptable); one transaction sets pointer if empty and creates the race doc. Then stamp apply `in_flight` + `runToken`, trigger Cloud Build, write `buildId`. Returns immediately. Trigger/crash recovery: [3-firestore.md](3-firestore.md).
 3. Retry from `failed`: same `raceId`, original YAML kept, new apply run. Request config ignored. Missing YAML object → apply fails again; force-destroy and a new race.
 4. Controller: refuse Terraform unless `runToken` matches and status is `in_flight`; refuse apply if YAML object missing; apply race stack (ingest open). Token mismatch: no Terraform, no Firestore write, success exit. Does not parse YAML. First apply pins image ids in race state.
@@ -79,12 +77,10 @@ Both VMs in one apply. Core must tolerate Kafka not listening yet. No install-fr
 
 ## Healthcheck
 
-Core has no API. Health is a heartbeat on a private Kafka topic.
-
-- Heartbeat key `CORE` on heartbeat topic. Relay on status reads the last retained record. It does not start a consumer at latest and hope a beat arrives during the request.
-- Shutdown key `SHUTDOWN` on control topic. Core on connect reads retained `SHUTDOWN`. If present, Core exports. Tail-only consume is invalid. Stop path: [2-race-destruction.md](2-race-destruction.md).
-
-Heartbeat means: Core process is up, private Kafka is reachable, Influx is reachable. Relay does not probe Influx or the public listener. Kafka boot already refused to start without public TLS bind. If the heartbeat record can be read, private Kafka accepted a connection.
+Core has no API. Health is a heartbeat on a private Kafka topic. Heartbeat key `CORE` on heartbeat topic.
+Relay on status reads the last retained record. It does not start a consumer at latest and hope a beat arrives during the request.
+Heartbeat means: Core process is up, private Kafka is reachable, Influx is reachable. Relay does not probe Influx or the public listener.
+Kafka boot already refused to start without public TLS bind. If the heartbeat record can be read, private Kafka accepted a connection.
 
 Ready on status:
 

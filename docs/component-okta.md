@@ -1,4 +1,4 @@
-# Part 5. Okta
+# Deep dive - Okta
 
 We have 2 entry points that are or need to be publicly accessible over the internet:
 1. Kafka broker (via Kafka protocol)
@@ -8,7 +8,8 @@ They can be separated into two groups:
 1. Accessible to all authenticated users: Communication Relay
 2. Accessible to predetermined users (services): Kafka 
 
-Additionally, there is the matter of InfluxDB access. This can be easily handled via tokens: https://docs.influxdata.com/influxdb3/core/admin/tokens/ and is internal only.
+Additionally, there is the matter of InfluxDB access. This can be easily handled via database tokens and is internal only.
+Note that the free version of InfluxDB does not support roles or token permissions.
 
 ## Accessible to all authenticated users
 
@@ -24,8 +25,10 @@ Additionally, there is the matter of InfluxDB access. This can be easily handled
 
 Auth0 by Okta (Auth0’s Customer Identity Cloud platform).
 
-API: https://api.chronoracer.com (Chronoracer API)
-Applications: chronoracer-relay (client ID: `QwcTbS7a6Tn70WZo58UIl57mDxaJZp0V`, domain: `chronoracer.eu.auth0.com`)
+API: 
+ - Chronoracer API (https://api.chronoracer.com)
+Applications:
+- chronoracer-relay (client ID: `QwcTbS7a6Tn70WZo58UIl57mDxaJZp0V`, domain: `chronoracer.eu.auth0.com`)
 
 MVP scope: currently application has no roles or groups assigned to it.
 
@@ -43,4 +46,3 @@ curl --request POST \
     "grant_type":"client_credentials"
   }'
 ```
-

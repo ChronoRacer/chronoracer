@@ -1,13 +1,13 @@
-import json
-import time
-import random
 import io
-import uuid
-import sys
+import json
+import random
 import threading
-from fastavro import parse_schema, schemaless_writer
-from confluent_kafka import Producer
+import time
+import uuid
 from pathlib import Path
+
+from confluent_kafka import Producer
+from fastavro import parse_schema, schemaless_writer
 
 schema_path = Path(__file__).resolve().parents[1] / 'avro' / 'sensor_data.avsc'
 PARSED_SCHEMA = parse_schema(json.loads(schema_path.read_text()))

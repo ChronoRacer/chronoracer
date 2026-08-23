@@ -1,16 +1,24 @@
-# Part 6. Relay API
+# Deep dive - Relay
 
-Goal: every lifecycle operation has a caller, input, output, and reject rules. Reject rules match the phase machine in [3-firestore.md](3-firestore.md). Mutex and reconcile live there; this file does not restate them.
+Code at: [Relay root](../relay)
 
-Out of scope: implementation, HTTP framework, Core YAML shape. Operator config is a dict. Relay stores it into the YAML file and trusts it.
+Where: Cloud Run, public HTTPS. 
+
+Lifecycle: always deployed. Survives races. Scale-to-zero when idle. Firestore holds state so Relay stays stateless.
+
+Access: public. No Google invoker IAM for operators. Relay checks Okta on operator calls. Pub/Sub pushes use Google OIDC, not Okta. Operators are not Google identities.
+
+Responsibility: 
+- manage race lifecycle
+- allow for exported data download
 
 ## Callers
 
 Three identities.
 
-- **Operator:** valid Okta token. Any such user may call all four operator operations. No role matrix in v1. Cloud Run is public HTTPS; Relay checks Okta. Operators are not Google identities.
-- **Build-finished:** Pub/Sub push identity (OIDC) for the Cloud Build subscription. Not Okta. Cannot start, stop, or force-destroy.
-- **Export-done:** Pub/Sub push identity (OIDC) for the export-done subscription. Not Okta. Cannot start, stop, or force-destroy.
+- **Operator:** valid Okta token. Any such user may call all four operator operations. No role matrix in MVP. Cloud Run is public HTTPS; Relay checks Okta. Operators are not Google identities.
+- **Build-finished:** Pub/Sub push identity (OIDC) for the Cloud Build subscription. Not Okta. Scoped to one endpoint.
+- **Export-done:** Pub/Sub push identity (OIDC) for the export-done subscription. Not Okta. Scoped to one endpoint.
 
 Cloud Run does not wait on Terraform. Operator calls return immediately. Relay is the only Cloud Build caller.
 
@@ -28,7 +36,7 @@ Internal build-finished and export-done are separate paths on the same Relay ser
 
 Caller: Okta.
 
-Input: config dict. On retry from `failed`, config is ignored; original YAML stays.
+Input: `raceId`, config dict. On retry from `failed`, config is ignored; the original YAML stays.
 
 New race (pointer empty): mint `raceId`; render YAML; upload `{raceId}/core-config.yaml`; one transaction: atomic pointer set if empty **and** create race doc (reject if pointer already set); stamp apply `in_flight` + new `runToken` + `stampedAt` with empty `buildId`; trigger Cloud Build apply with substitutions `raceId`, `action`, `runToken`; write `buildId`. Trigger failure: phase `failed`, `terraformRun.status` `failed`, `lastError`, pointer stays.
 
@@ -55,7 +63,10 @@ Ready / unhealthy are derived. Not written back. Heartbeat only when phase is `a
 - Stale record or Kafka read fail: ready false, unhealthy true (`lastError` on read fail)
 - Other phases: both false
 
-Read fail still returns phase, `startedAt`, `billableVms`. Heartbeat meaning: [2-race-provisioning.md](2-race-provisioning.md).
+Ready means: Firestore phase `applied`, Kafka broker started (public TLS bound at boot), Core heartbeat fresh (Core up, private Kafka reachable, Influx reachable).
+Until then, Relay must not hand out hostname, port, or public IP as usable ingest.
+
+Read fail still returns phase, `startedAt`, `billableVms`.
 
 Export-done is not recovered here. Hung `exporting` uses force-destroy.
 

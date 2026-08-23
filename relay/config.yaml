@@ -9,7 +9,7 @@ gcp:
   enabled: false
   project_id: chronoracer-dev
   firestore_database: "(default)"
-  export_bucket: chronoracer-exports
+  export_bucket: chronoracer-race
   cloud_build_trigger_id: race-controller
   build_finished_audience: ""
   build_finished_service_account: build-finished-push@chronoracer-dev.iam.gserviceaccount.com

@@ -1,10 +1,6 @@
-# Part 4. Terraform
+# Deep dive - Terraform
 
-Goal: two stacks, two backends, resource lists locked, and a clear definition of each controller Terraform run.
-
-Gate: resources listed by lifecycle. Controller actions pinned. Relay is the only Cloud Build caller. Mutex and trigger sequence: [3-firestore.md](3-firestore.md).
-
-Out of scope: Terraform code, image-build pipelines, cert issuance.
+[!IMPORTANT] Document is a draft. Document is not aligned with other documents.
 
 ## Backends
 

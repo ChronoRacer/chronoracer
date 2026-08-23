@@ -1,8 +1,17 @@
-# Part 3. Firestore content
+# Deep dive - Firestore
 
-Goal: what is stored, who reads and writes, and the phase machine. This file is the source of truth for phases, fields, writers, and the mutex. Reject rules must match: [6-relay-api.md](6-relay-api.md).
+Where: GCP-managed
 
-Out of scope: Firestore admin, client libraries, backups, retention.
+Lifecycle: always available
+
+Access: private
+
+Core responsibility: 
+- ingest data from Kafka
+- process, validate data
+- batch and write to database
+- serve as a buffer for database
+- handle shutdown sequence export flow (for both database and Kafka)
 
 ## Shape
 
@@ -11,7 +20,7 @@ Three documents:
 - `control/active` — pointer. `raceId` set or empty. Relay-only write. New start only when empty. Retry from `failed` keeps the same pointer.
 - `races/{raceId}` — one doc per race. Kept after destroy. Next new start always creates a new, unique `raceId`.
 
-Operators never read Firestore. They call Relay. Heartbeats do not live here. Liveness is Kafka: [2-race-provisioning.md](2-race-provisioning.md).
+Operators never read Firestore. They call Relay.
 
 ## Writers and readers
 
@@ -51,8 +60,6 @@ Exports land at `{raceId}/export/db` and `{raceId}/export/kafka` - location not 
 - `startedBy` — Okta subject
 - timestamps: `startedAt`, `appliedAt`, `stoppedAt`, `destroyedAt`
 - `lastError`
-
-No config YAML field on the race doc. No standalone `action`, “latest Cloud Build id”, or queued-destroy field. No `pendingDestroy`.
 
 ## Mutex
 
@@ -113,14 +120,12 @@ Pointer: set only on new start, cleared only when that race reaches `destroyed`.
 
 ## Who writes which phase
 
-| Phase | Writer                                                                                                                                                              |
-| --- |---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| starting | Relay                                                                                                                                                               |
-| applied | Controller (`apply` only; token + phase `starting`; with outputs)                                                                                                   |
-| failed | Controller on `apply` fail with token match, or Relay if trigger never started / bind window expired / build failed with no controller write while still `starting` |
-| stopping | Relay                                                                                                                                                               |
-| exporting | Relay (build-finished after `close_ingest`, push or status replay; then publishes shutdown)                                                                         |
+| Phase      | Writer                                                                                                                                                              |
+|------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| starting   | Relay                                                                                                                                                               |
+| applied    | Controller (`apply` only; token + phase `starting`; with outputs)                                                                                                   |
+| failed     | Controller on `apply` fail with token match, or Relay if trigger never started / bind window expired / build failed with no controller write while still `starting` |
+| stopping   | Relay                                                                                                                                                               |
+| exporting  | Relay (build-finished after `close_ingest`, push or status replay; then publishes shutdown)                                                                         |
 | destroying | Relay (force-destroy API or export-done push)                                                                                                                       |
-| destroyed | Relay (build-finished after destroy, push or status replay); then updates races and pointer clear                                                                   |
-
-Core never writes Firestore. Export-done is Pub/Sub: [6-relay-api.md](6-relay-api.md).
+| destroyed  | Relay (build-finished after destroy, push or status replay); then updates races and pointer clear                                                                   |

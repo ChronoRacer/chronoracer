@@ -61,7 +61,7 @@ persistence:
     max_retries: 3
 gcp:
   enabled: false
-  export_bucket: "chronoracer-exports"
+  export_bucket: "chronoracer-race"
   max_retries: 2
   max_gcs_concurrent_uploads: 3
   project_id: "todo"

@@ -1,5 +1,21 @@
-
 # Deep dive - Core
+
+Code at: [Core root](../core)
+
+Where: one paid VM. Core and InfluxDB 3 Core (self-managed, single node) share that VM.
+Shared VM pain points: Core and database share similar load spikes which means that VM usage can spike greatly.
+
+Lifecycle: race-scoped. Created at the start. After export succeeds, VM and disk are destroyed.
+
+Access: private
+
+Core responsibility: 
+- ingest data from Kafka
+- process, validate data
+- batch and write to the database
+- serve as a buffer for the database
+- handle shutdown sequence export flow (for both database and Kafka)
+
 
 ## Layers
 
@@ -36,9 +52,9 @@ Main components:
 #### Layer 4 - Shutdown layer
 
 Name: Shutdown layer
-Purpose: Special layer used during shutdown sequence to handle exporting data
+Purpose: Special layer used during shutdown sequence. Includes exporting data
 Main components:
-- kafka exporter
+- Kafka exporter
 - database exporter
 - GCS writer
 - Google Pub/Sub publisher
@@ -48,7 +64,6 @@ Main components:
 
 ```mermaid
 flowchart TB
-    %% Groups
     subgraph kafka["Messaging layer"]
         dataSink["Sensor data sink"]
         dlqPublisher["DLQ Publisher"]
@@ -67,7 +82,6 @@ flowchart TB
         flusher[("Flusher")]
     end
 
-    %% Connections
     dataSink --> extract
     extract --> unwind
     extract --> dlqPublisher
@@ -85,7 +99,6 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    %% Groups
     subgraph kafka["Messaging layer"]
         heartbeatProducer["Heartbeat producer"]
     end
@@ -95,7 +108,6 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    %% Groups
     subgraph kafka["Messaging layer"]
         kafkaControl["Control event listener"]
     end
@@ -109,7 +121,6 @@ flowchart TB
         configurePersistence["Adjust configuration"]
     end
 
-    %% Connections
     kafkaControl --> filterControl
     filterControl --> configureProcess
     filterControl --> configurePersistence
@@ -120,7 +131,6 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    %% Groups
     subgraph kafka["Messaging layer"]
         kafkaControl["Control event listener"]
     end
@@ -138,7 +148,6 @@ flowchart TB
         notify["Broadcast export done"]
     end
 
-    %% Connections
     kafkaControl --> filterControl
     filterControl --> dataStop
     dataStop --> pipelineDrain
@@ -147,5 +156,22 @@ flowchart TB
     exportDb --> gcsWriter
     exportKafka --> notify
     gcsWriter --> notify
-
 ```
+
+Successful shutdown sequence means sending the export done event to Google Pub/Sub.
+Failure means not sending the event and thus forcing either operator to invoke the force-destroy flow after optional manual intervention.
+
+#### Kafka export
+
+Kafka data export and GCS upload are handled via Redpanda templates rendered during runtime: [Redpanda templates](../core/redpanda/README.md).
+Topics to be exported are defined in the Core configuration. Usually just DLQ, but any number of topics can be included. 
+Behaviour when trying to export a non-existing topic is not tested and thus undefined.
+
+Whether Kafka export failure marks the shutdown sequence as failed is defined in the Core configuration.
+
+#### InfluxDB export
+
+InfluxDB export handled via InfluxDB plugin: [plugin directory](../core/influxdb-plugins/README.md).
+After exporting files are uploaded to GCS.
+
+Whether InfluxDB export failure marks the shutdown sequence as failed is defined in the Core configuration.
