@@ -138,7 +138,7 @@ flowchart LR
 
 Two Compute Engine image families: Kafka, Core+Influx. Race `apply` picks current family, then pins that id in race state so `close_ingest` cannot replace VMs. Next race starts from empty state and picks up a newly published family image.
 
-Boot contracts (not this stack): Kafka broker does not start unless public TLS bound. Core on connect reads retained shutdown key `shutdown`. Controller image lives in Artifact Registry; that is not a VM image.
+Boot contracts (not this stack): Kafka broker does not start unless public TLS bound. Core on connect reads retained shutdown messages. Controller image lives in Artifact Registry; that is not a VM image.
 
 What Terraform stores: GCS path of Core YAML (Core metadata); Secret Manager secret id (Kafka metadata). Not YAML bytes. Not TLS private key.
 

@@ -16,13 +16,13 @@ Allowed phases and rejects: [6-relay-api.md](6-relay-api.md). One race Terraform
 
 ## Components in this flow
 
-| Component | Role in stop |
-| --- | --- |
-| Relay | Stop and force-destroy. Triggers `close_ingest` or `destroy`. Publishes shutdown key `shutdown`. Wakes on Pub/Sub. Replays terminal Cloud Build on status. |
-| Core | On shutdown: drain Kafka, write `{gcsPrefix}/export/`, publish export-done. No Cloud Build. No Firestore. |
-| Cloud Build + controller | `close_ingest`: public Kafka firewall only. `destroy`: race VMs, disks, DNS A record. |
-| Pub/Sub | Build-finished wakes Relay (status can replay). Export-done wakes Relay after Core finishes; status does **not** invent export-done. |
-| GCS | Export landing place. Survives destroy. Core writes `export/` only. Operators download through Relay. |
+| Component | Role in stop                                                                                                                                               |
+| --- |------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Relay | Stop and force-destroy. Triggers `close_ingest` or `destroy`. Publishes shutdown key `SHUTDOWN`. Wakes on Pub/Sub. Replays terminal Cloud Build on status. |
+| Core | On shutdown: drain Kafka, write `{gcsPrefix}/export/`, publish export-done. No Cloud Build. No Firestore.                                                  |
+| Cloud Build + controller | `close_ingest`: public Kafka firewall only. `destroy`: race VMs, disks, DNS A record.                                                                      |
+| Pub/Sub | Build-finished wakes Relay (status can replay). Export-done wakes Relay after Core finishes; status does **not** invent export-done.                       |
+| GCS | Export landing place. Survives destroy. Core writes `export/` only. Operators download through Relay.                                                      |
 
 Relay publishes shutdown itself on the private Kafka path. Cloud Build does not talk to Kafka.
 
@@ -66,7 +66,7 @@ sequenceDiagram
 
 1. Operator calls stop. Allowed from `applied` (including unhealthy), or retry from `stopping` when mutex not held. Reconcile first. Returns immediately. Does not publish shutdown yet.
 2. Controller closes the public Kafka firewall. Private listener stays up. Core and Relay can still use Kafka. This apply must not replace VMs, disks, metadata, or the public IP.
-3. On `close_ingest` success: phase `exporting`, then Relay publishes shutdown key `shutdown`. Core on connect reads retained `shutdown` and exports. Tail-only consume is invalid.
+3. On `close_ingest` success: phase `exporting`, then Relay publishes shutdown message. Core on connect reads shutdown message and exports. Tail-only consume is invalid.
 4. Firewall close is not a session kill. Some public produce may still arrive during drain. MVP accepts that. New public connections fail.
 5. Core drains, writes `{gcsPrefix}/export/` (Influx dump, selected topics including DLQ). Cannot write `core-config.yaml`.
 6. Core publishes export-done (`raceId`). Relay accepts only if phase is `exporting` and mutex not held. Then stamps destroy, triggers Cloud Build. Ack export-done only after that stamp.
@@ -101,4 +101,4 @@ If Core dies before export-done, graceful stop will not wake Relay to destroy. S
 
 If `close_ingest` fails: phase stays `stopping`, mutex clears. Operator retries stop (same `close_ingest`). Do not treat firewall-close failure as data-loss-only.
 
-If `close_ingest` succeeds and export never finishes: stay `exporting` until force-destroy. Do not retry graceful stop once phase is `exporting`. If shutdown never reached Core, force-destroy. Core on connect must observe retained `shutdown`; otherwise this hang is expected.
+If `close_ingest` succeeds and export never finishes: stay `exporting` until force-destroy. Do not retry graceful stop once phase is `exporting`. If shutdown never reached Core, force-destroy. Core on connect must observe retained shutdown messages, otherwise this hang is expected.

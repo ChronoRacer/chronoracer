@@ -40,7 +40,7 @@ InfluxDB 3 Core, self-managed, single node, same VM as Core. Race-scoped. Privat
 
 ### Message broker
 
-Apache Kafka, single node, race-scoped. Public ingest (TLS + Okta). Private path for Core and Relay. Broker does not start unless public TLS bound. Forwards device data to Core. Control topic: shutdown key `shutdown`, compacted heartbeat key `core`.
+Apache Kafka, single node, race-scoped. Public ingest (TLS + Okta). Private path for Core and Relay. Broker does not start unless public TLS bound. Forwards device data to Core and control data from Relay to Core
 
 ## Flow
 

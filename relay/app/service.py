@@ -33,6 +33,7 @@ class RelayService:
                 await self.object_store.put_yaml(f'{race.gcs_prefix}core-config.yaml', {'raceId': rid, **config})
             await self.repository.create_race(race)
         self._stamp(race, TerraformAction.APPLY)
+        await self.repository.save_race(race)
         await self._trigger(race)
         await self.repository.save_race(race)
         logger.info("Race {} entered starting phase with {} run", race.race_id, race.terraform_run.action.value)
@@ -43,11 +44,30 @@ class RelayService:
         if not pointer.race_id:
             logger.debug("Status requested with no active race")
             last = await self.repository.last()
-            return {'last': last.model_dump(mode='json') if last else None, 'billableVms': False}
+            result = {'last': last.model_dump(mode='json') if last else None, 'billableVms': False,
+                      'ready': False, 'unhealthy': False}
+            if last and self.object_store:
+                result['exportDownloadUrl'] = await self.object_store.signed_export_url(
+                    f'{last.gcs_prefix}export/')
+            return result
         race = await self._active()
-        return {'raceId': race.race_id, 'phase': race.phase.value, 'lastError': race.last_error,
+        result = {'raceId': race.race_id, 'phase': race.phase.value, 'gcsPrefix': race.gcs_prefix,
+                'startedBy': race.started_by, 'startedAt': race.started_at,
+                'appliedAt': race.applied_at, 'stoppedAt': race.stopped_at,
+                'destroyedAt': race.destroyed_at, 'lastError': race.last_error,
                 'terraformRun': race.terraform_run.model_dump(mode='json') if race.terraform_run else None,
                 'billableVms': True, 'ready': False, 'unhealthy': False}
+        if self.object_store:
+            result['exportDownloadUrl'] = await self.object_store.signed_export_url(
+                f'{race.gcs_prefix}export/')
+        if race.phase == Phase.APPLIED:
+            result.update({k: v for k, v in {
+                'kafkaInstance': race.kafka_instance,
+                'coreInstance': race.core_instance,
+                'kafkaPublicIp': race.kafka_public_ip,
+                'kafkaHostname': race.kafka_hostname,
+            }.items() if v is not None})
+        return result
 
     async def stop(self):
         race = await self._active()
@@ -57,6 +77,7 @@ class RelayService:
         race.phase = Phase.STOPPING
         race.stopped_at = datetime.now(timezone.utc)
         self._stamp(race, TerraformAction.CLOSE_INGEST)
+        await self.repository.save_race(race)
         await self._trigger(race)
         await self.repository.save_race(race)
         return {'raceId': race.race_id, 'phase': race.phase.value}
@@ -67,6 +88,7 @@ class RelayService:
         if self._locked(race): raise ValueError('race cannot be destroyed while a build is in flight')
         race.phase = Phase.DESTROYING
         self._stamp(race, TerraformAction.DESTROY)
+        await self.repository.save_race(race)
         await self._trigger(race)
         await self.repository.save_race(race)
         return {'raceId': race.race_id, 'phase': race.phase.value}
@@ -80,10 +102,17 @@ class RelayService:
             raise ValueError('build does not match active terraform run')
         if not run.locked: return
         run.status = TerraformStatus.SUCCEEDED if event.success else TerraformStatus.FAILED
-        if event.action == TerraformAction.APPLY and not event.success and race.phase == Phase.STARTING:
-            race.phase = Phase.FAILED
+        if event.action == TerraformAction.APPLY:
+            if event.success and race.phase == Phase.STARTING:
+                race.phase = Phase.FAILED
+                race.last_error = 'apply completed without controller outputs'
+            elif not event.success and race.phase == Phase.STARTING:
+                race.phase = Phase.FAILED
+            elif not event.success and race.phase == Phase.APPLIED:
+                run.status = TerraformStatus.SUCCEEDED
         elif event.action == TerraformAction.CLOSE_INGEST and event.success:
             race.phase = Phase.EXPORTING
+            await self.repository.save_race(race)
             if self.shutdown:
                 await self.shutdown.publish_shutdown(race.race_id)
         elif event.action == TerraformAction.DESTROY and event.success:
@@ -105,6 +134,7 @@ class RelayService:
             'export completion is not accepted')
         race.phase = Phase.DESTROYING
         self._stamp(race, TerraformAction.DESTROY)
+        await self.repository.save_race(race)
         await self._trigger(race)
         await self.repository.save_race(race)
 

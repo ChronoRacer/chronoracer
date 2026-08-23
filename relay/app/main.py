@@ -2,7 +2,7 @@ from typing import Any
 
 from auth0_fastapi.config import Auth0Config
 from auth0_fastapi.server.routes import register_auth_routes
-from fastapi import APIRouter, Depends, FastAPI, Request, status
+from fastapi import APIRouter, Depends, FastAPI, Request, HTTPException, status
 from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 from loguru import logger
@@ -50,9 +50,12 @@ def create_app(config: RelayConfig | None = None, service: RelayService | None =
         return {"status": "ok"}
 
     @app.post("/race/start", status_code=status.HTTP_202_ACCEPTED)
-    async def start(request: StartRequest, _: dict = Depends(auth0_user)):
+    async def start(request: StartRequest, user: dict = Depends(auth0_user)):
         logger.info("Received race start request")
-        return await app.state.service.start(request.config)
+        try:
+            return await app.state.service.start(request.config, user.get('sub', 'unknown'))
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/race/status")
     async def race_status(_: dict = Depends(auth0_user)):
@@ -62,24 +65,42 @@ def create_app(config: RelayConfig | None = None, service: RelayService | None =
     @app.post("/race/stop", status_code=status.HTTP_202_ACCEPTED)
     async def stop(_: dict = Depends(auth0_user)):
         logger.info("Received race stop request")
-        return await app.state.service.stop()
+        try:
+            return await app.state.service.stop()
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post("/race/force-destroy", status_code=status.HTTP_202_ACCEPTED)
     async def force_destroy(_: dict = Depends(auth0_user)):
         logger.warning("Received race force-destroy request")
-        return await app.state.service.force_destroy()
+        try:
+            return await app.state.service.force_destroy()
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post("/internal/pubsub/build-finished", status_code=status.HTTP_204_NO_CONTENT)
     async def build_finished(request: Request):
         logger.info("Received build-finished Pub/Sub message")
         await pubsub_push(request, config.gcp.build_finished_audience)
-        await app.state.service.build_finished(await request.json())
+        try:
+            payload = await request.json()
+            message = payload.get('message', payload)
+            data = message.get('data', message) if isinstance(message, dict) else message
+            await app.state.service.build_finished(data)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post("/internal/pubsub/export-done", status_code=status.HTTP_204_NO_CONTENT)
     async def export_done(request: Request):
         logger.info("Received export-done Pub/Sub message")
         await pubsub_push(request, config.gcp.export_done_audience)
-        await app.state.service.export_done(await request.json())
+        try:
+            payload = await request.json()
+            message = payload.get('message', payload)
+            data = message.get('data', message) if isinstance(message, dict) else message
+            await app.state.service.export_done(data)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     return app
 

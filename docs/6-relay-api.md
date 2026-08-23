@@ -97,7 +97,7 @@ Then mark `terraformRun.status` succeeded or failed, and:
 
 - **apply success:** controller should already have written `applied`. If it did not: phase `failed`, `lastError`. Do not invent `applied` without outputs.
 - **apply failure:** if phase is already `applied` with outputs: do not revert; mark `terraformRun` succeeded (controller committed). If phase is still `starting`: `failed`, `lastError`.
-- **close_ingest success:** phase `exporting`, then Relay publishes shutdown on the private control topic, key `shutdown`.
+- **close_ingest success:** phase `exporting`, then Relay publishes shutdown on the private control topic a shutdown message.
 - **close_ingest failure:** `lastError`; phase stays `stopping`. Operator retries stop once mutex is clear. Not force-destroy.
 - **destroy success:** phase `destroyed`; write `control/last`; clear `control/active`.
 - **destroy failure:** `lastError`; phase stays `destroying`. Operator retries force-destroy.
