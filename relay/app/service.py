@@ -102,7 +102,9 @@ class RelayService:
         await self.reconcile()
         race = await self._active()
         logger.warning("Force destroy requested for race {}", race.race_id)
-        if self._locked(race): raise ValueError('race cannot be destroyed while a build is in flight')
+        if race.phase not in (Phase.FAILED, Phase.STARTING, Phase.APPLIED, Phase.STOPPING,
+                              Phase.EXPORTING, Phase.DESTROYING) or self._locked(race):
+            raise ValueError('race cannot be destroyed in its current state')
         race.phase = Phase.DESTROYING
         self._stamp(race, TerraformAction.DESTROY)
         await self.repository.save_race(race)
@@ -125,6 +127,7 @@ class RelayService:
                 race.last_error = 'apply completed without controller outputs'
             elif not event.success and race.phase == Phase.STARTING:
                 race.phase = Phase.FAILED
+                race.last_error = event.error or 'terraform build failed'
             elif not event.success and race.phase == Phase.APPLIED:
                 run.status = TerraformStatus.SUCCEEDED
         elif event.action == TerraformAction.CLOSE_INGEST and event.success:
@@ -135,9 +138,8 @@ class RelayService:
         elif event.action == TerraformAction.DESTROY and event.success:
             race.phase = Phase.DESTROYED
             race.destroyed_at = datetime.now(timezone.utc)
-            await self.repository.set_last(
-                LastRace(race_id=race.race_id, gcs_prefix=race.gcs_prefix, destroyed_at=race.destroyed_at))
-            await self.repository.set_active(ActivePointer())
+            await self.repository.complete_destroy(
+                race, LastRace(race_id=race.race_id, gcs_prefix=race.gcs_prefix, destroyed_at=race.destroyed_at))
         elif not event.success:
             race.last_error = event.error or 'terraform build failed'
         await self.repository.save_race(race)

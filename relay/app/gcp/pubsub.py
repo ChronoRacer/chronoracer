@@ -1,12 +1,41 @@
 import asyncio
 from typing import Protocol
 
-from confluent_kafka import Producer, Message, KafkaException
+from confluent_kafka import Producer, Consumer, Message, KafkaException
+from datetime import datetime, timezone
 from loguru import logger
 
 
 class ShutdownPublisher(Protocol):
     async def publish_shutdown(self, race_id: str) -> None: ...
+
+class HeartbeatReader(Protocol):
+    async def read_last(self) -> datetime | None: ...
+
+class KafkaHeartbeatReader:
+    def __init__(self, bootstrap: str, topic: str = 'heartbeat'):
+        self.bootstrap, self.topic = bootstrap, topic
+
+    async def read_last(self) -> datetime | None:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._read_last_sync)
+
+    def _read_last_sync(self) -> datetime | None:
+        consumer = Consumer({'bootstrap.servers': self.bootstrap, 'group.id': 'relay-heartbeat-read',
+                             'enable.auto.commit': False, 'auto.offset.reset': 'latest'})
+        try:
+            partitions = consumer.list_topics(self.topic, timeout=5).topics[self.topic].partitions
+            if not partitions: return None
+            from confluent_kafka import TopicPartition
+            consumer.assign([TopicPartition(self.topic, p, -1) for p in partitions])
+            records = consumer.consume(num_messages=100, timeout=5)
+            records = [m for m in records if not m.error() and m.key() == b'CORE']
+            if not records: return None
+            timestamp_type, timestamp_ms = records[-1].timestamp()
+            if timestamp_ms is None or timestamp_ms < 0: return None
+            return datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+        finally:
+            consumer.close()
 
 
 class DevShutdownPublisher:

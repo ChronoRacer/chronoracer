@@ -21,6 +21,8 @@ class RaceRepository(Protocol):
 
     async def set_last(self, last: LastRace) -> None: ...
 
+    async def complete_destroy(self, race: Race, last: LastRace) -> None: ...
+
 
 class InMemoryRaceRepository:
     def __init__(self): self._active = ActivePointer(); self._races = {}; self._last = None
@@ -46,6 +48,11 @@ class InMemoryRaceRepository:
     async def last(self): return self._last.model_copy(deep=True) if self._last else None
 
     async def set_last(self, last): self._last = last.model_copy(deep=True)
+
+    async def complete_destroy(self, race, last):
+        self._races[race.race_id] = race.model_copy(deep=True)
+        self._last = last.model_copy(deep=True)
+        self._active = ActivePointer()
 
 
 class FirestoreRaceRepository:
@@ -91,3 +98,10 @@ class FirestoreRaceRepository:
 
     async def set_last(self, last):
         await self._db().collection('control').document('last').set(last.model_dump(mode='json'))
+
+    async def complete_destroy(self, race, last):
+        db = self._db()
+        async with db.transaction() as tx:
+            tx.set(db.collection('races').document(race.race_id), race.model_dump(mode='json'))
+            tx.set(db.collection('control').document('last'), last.model_dump(mode='json'))
+            tx.set(db.collection('control').document('active'), ActivePointer().model_dump(mode='json'))

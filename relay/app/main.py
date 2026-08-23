@@ -16,6 +16,7 @@ from .service import RelayService
 from .gcp.storage import DevObjectStore, GCSObjectStore
 from .gcp.builds import DevBuildTrigger, CloudBuildTrigger
 from .gcp.pubsub import DevShutdownPublisher, KafkaShutdownPublisher
+from .gcp.pubsub import KafkaHeartbeatReader
 
 
 class StartRequest(BaseModel):
@@ -42,9 +43,10 @@ def create_app(config: RelayConfig | None = None, service: RelayService | None =
         object_store = GCSObjectStore(config.gcp.project_id, config.gcp.export_bucket)
         builds = CloudBuildTrigger(config.gcp.project_id, config.gcp.cloud_build_trigger_id)
         shutdown = KafkaShutdownPublisher(config.gcp.kafka_private_bootstrap, config.gcp.kafka_control_topic)
+        heartbeat = KafkaHeartbeatReader(config.gcp.kafka_private_bootstrap)
     else:
-        repository, object_store, builds, shutdown = InMemoryRaceRepository(), DevObjectStore(), DevBuildTrigger(), DevShutdownPublisher(config.gcp.kafka_control_topic)
-    app.state.service = service or RelayService(repository, object_store, builds, shutdown)
+        repository, object_store, builds, shutdown, heartbeat = InMemoryRaceRepository(), DevObjectStore(), DevBuildTrigger(), DevShutdownPublisher(config.gcp.kafka_control_topic), None
+    app.state.service = service or RelayService(repository, object_store, builds, shutdown, heartbeat, config.service.heartbeat_freshness_seconds)
     logger.info("Relay application configured")
 
     @app.get("/healthz", include_in_schema=False)

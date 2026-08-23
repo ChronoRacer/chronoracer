@@ -17,8 +17,23 @@ class Auth0Authenticator:
         logger.debug("Validating authenticated browser session")
         return await self.client.require_session(request, response)
 
+    def validate_token(self, token: str) -> dict[str, Any]:
+        """Validate an Okta/Auth0 access token for API calls."""
+        try:
+            jwks = PyJWKClient(f"https://{self.config.domain}/.well-known/jwks.json")
+            key = jwks.get_signing_key_from_jwt(token).key
+            return jwt.decode(token, key, algorithms=["RS256"], audience=self.config.audience,
+                              issuer=f"https://{self.config.domain}/")
+        except Exception as exc:
+            logger.warning("Okta token validation failed: {}", type(exc).__name__)
+            raise HTTPException(status_code=401, detail="Invalid Okta access token") from exc
+
 
 async def auth0_user(request: Request, response: Response) -> dict[str, Any]:
+    authorization = request.headers.get("authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() == "bearer" and token:
+        return request.app.state.auth0.validate_token(token)
     return await request.app.state.auth0.require_session(request, response)
 
 
