@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from loguru import logger
 from pydantic import BaseModel, Field
 
 
@@ -67,4 +68,6 @@ def load_config(path: str | Path | None = None) -> RelayConfig:
             config_path = Path(__file__).resolve().parents[1] / "config.yaml"
     with config_path.open(encoding="utf-8") as stream:
         values: dict[str, Any] = yaml.safe_load(stream) or {}
-    return RelayConfig.model_validate(values)
+    config = RelayConfig.model_validate(values)
+    logger.info("Loaded Relay configuration from {}", config_path)
+    return config

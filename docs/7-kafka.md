@@ -101,7 +101,7 @@ Message schema: none, just new driver Id in the body. Core trusts as long as val
 
 Message sent when the shutdown process starts. Upon receiving, Core should drain Kafka and start InfluxDB and Kafka exporting process.
 Message key: `SHUTDOWN`
-Message schema: `TODO`
+Message schema: none
 
 
 ## DLQ

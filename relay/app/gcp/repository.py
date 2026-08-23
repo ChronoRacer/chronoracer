@@ -1,6 +1,7 @@
 from typing import Protocol
 
 from google.cloud.firestore_v1 import AsyncClient
+from loguru import logger
 
 from relay.app.models import ActivePointer, LastRace, Race
 
@@ -31,11 +32,14 @@ class InMemoryRaceRepository:
         return race.model_copy(deep=True) if race else None
 
     async def create_race(self, race):
+        logger.debug("Creating race {} in memory", race.race_id)
         if self._active.race_id or race.race_id in self._races: raise ValueError('active race already exists')
         self._races[race.race_id] = race.model_copy(deep=True)
         self._active = ActivePointer(race_id=race.race_id)
 
-    async def save_race(self, race): self._races[race.race_id] = race.model_copy(deep=True)
+    async def save_race(self, race):
+        logger.debug("Saving race {} in memory", race.race_id)
+        self._races[race.race_id] = race.model_copy(deep=True)
 
     async def set_active(self, pointer): self._active = pointer.model_copy(deep=True)
 
@@ -65,6 +69,7 @@ class FirestoreRaceRepository:
         return Race.model_validate(snap.to_dict()) if snap.exists else None
 
     async def create_race(self, race):
+        logger.info("Creating race {} in Firestore", race.race_id)
         db = self._db()
         async with db.transaction() as tx:
             pointer = db.collection('control').document('active')
@@ -74,6 +79,7 @@ class FirestoreRaceRepository:
             tx.set(pointer, ActivePointer(race_id=race.race_id).model_dump(mode='json'))
 
     async def save_race(self, race):
+        logger.debug("Saving race {} in Firestore", race.race_id)
         await self._db().collection('races').document(race.race_id).set(race.model_dump(mode='json'))
 
     async def set_active(self, pointer):

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
+from loguru import logger
 
 from .models import ActivePointer, BuildFinished, ExportDone, LastRace, Phase, Race, TerraformAction, TerraformRun, \
     TerraformStatus
@@ -16,6 +17,7 @@ class RelayService:
         self.object_store, self.builds, self.shutdown = object_store, builds, shutdown
 
     async def start(self, config: dict[str, Any], started_by='unknown'):
+        logger.info("Starting race requested by {}", started_by)
         pointer = await self.repository.active()
         if pointer.race_id:
             race = await self._active()
@@ -33,11 +35,13 @@ class RelayService:
         self._stamp(race, TerraformAction.APPLY)
         await self._trigger(race)
         await self.repository.save_race(race)
+        logger.info("Race {} entered starting phase with {} run", race.race_id, race.terraform_run.action.value)
         return {'raceId': race.race_id, 'phase': race.phase.value}
 
     async def status(self):
         pointer = await self.repository.active()
         if not pointer.race_id:
+            logger.debug("Status requested with no active race")
             last = await self.repository.last()
             return {'last': last.model_dump(mode='json') if last else None, 'billableVms': False}
         race = await self._active()
@@ -47,6 +51,7 @@ class RelayService:
 
     async def stop(self):
         race = await self._active()
+        logger.info("Stopping race {}", race.race_id)
         if race.phase not in (Phase.APPLIED, Phase.STOPPING) or self._locked(race): raise ValueError(
             'race cannot be stopped in its current state')
         race.phase = Phase.STOPPING
@@ -58,6 +63,7 @@ class RelayService:
 
     async def force_destroy(self):
         race = await self._active()
+        logger.warning("Force destroy requested for race {}", race.race_id)
         if self._locked(race): raise ValueError('race cannot be destroyed while a build is in flight')
         race.phase = Phase.DESTROYING
         self._stamp(race, TerraformAction.DESTROY)
@@ -67,6 +73,7 @@ class RelayService:
 
     async def build_finished(self, event: BuildFinished | dict[str, Any]):
         event = event if isinstance(event, BuildFinished) else BuildFinished.model_validate(event)
+        logger.info("Build finished for race {}: action={}, success={}", event.race_id, event.action.value, event.success)
         race = await self._active()
         run = race.terraform_run
         if event.race_id != race.race_id or not run or run.run_token != event.run_token or run.build_id != event.build_id or run.action != event.action:
@@ -88,9 +95,11 @@ class RelayService:
         elif not event.success:
             race.last_error = event.error or 'terraform build failed'
         await self.repository.save_race(race)
+        logger.info("Race {} transitioned to phase {}", race.race_id, race.phase.value)
 
     async def export_done(self, event: ExportDone | dict[str, Any]):
         event = event if isinstance(event, ExportDone) else ExportDone.model_validate(event)
+        logger.info("Export completed for race {}", event.race_id)
         race = await self._active()
         if race.race_id != event.race_id or race.phase != Phase.EXPORTING or self._locked(race): raise ValueError(
             'export completion is not accepted')
@@ -120,7 +129,9 @@ class RelayService:
         try:
             run = race.terraform_run
             run.build_id = await self.builds.trigger(race.race_id, run.action.value, run.run_token)
+            logger.info("Triggered {} build {} for race {}", run.action.value, run.build_id, race.race_id)
         except Exception as exc:
+            logger.exception("Failed to trigger {} build for race {}", race.terraform_run.action.value, race.race_id)
             race.terraform_run.status = TerraformStatus.FAILED
             race.last_error = str(exc)
             await self.repository.save_race(race)

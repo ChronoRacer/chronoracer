@@ -5,6 +5,7 @@ from auth0_fastapi.auth.auth_client import AuthClient
 from auth0_fastapi.config import Auth0Config
 from fastapi import HTTPException, Request, Response
 from jwt import PyJWKClient
+from loguru import logger
 
 
 class Auth0Authenticator:
@@ -13,6 +14,7 @@ class Auth0Authenticator:
         self.client = AuthClient(config)
 
     async def require_session(self, request: Request, response: Response) -> dict[str, Any]:
+        logger.debug("Validating authenticated browser session")
         return await self.client.require_session(request, response)
 
 
@@ -35,6 +37,7 @@ class OIDCAuthenticator:
             return jwt.decode(token, key, algorithms=["RS256"], audience=self.audience,
                               issuer="https://accounts.google.com")
         except Exception as exc:
+            logger.warning("Pub/Sub OIDC token validation failed: {}", type(exc).__name__)
             raise HTTPException(status_code=401, detail="Invalid Pub/Sub OIDC token") from exc
 
 
@@ -42,6 +45,7 @@ async def pubsub_push(request: Request, audience: str) -> dict[str, Any]:
     authorization = request.headers.get("authorization", "")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token or not audience:
+        logger.warning("Rejected Pub/Sub request with incomplete authorization")
         raise HTTPException(status_code=401, detail="Pub/Sub OIDC token required")
     authenticator = request.app.state.pubsub_auth.get(audience)
     if authenticator is None:
