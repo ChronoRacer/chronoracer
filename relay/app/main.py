@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI, Request, HTTPException, status, Query
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from relay.app.gcp.repository import FirestoreRaceRepository, InMemoryRaceRepository
+from .gcp.repository import FirestoreRaceRepository, InMemoryRaceRepository
 from .auth import OktaAuthenticator, okta_user, pubsub_push
 from .config import RelayConfig, load_config
 from .gcp.builds import DevBuildTrigger, CloudBuildTrigger
@@ -22,8 +22,8 @@ class StartRequest(BaseModel):
     race_id: str = Field(alias='raceId')
 
 
-def create_app(config: RelayConfig | None = None, service: RelayService | None = None) -> FastAPI:
-    config = config or load_config()
+def create_app() -> FastAPI:
+    config = load_config()
     logger.info("Creating Relay application (GCP enabled: {})", config.gcp.enabled)
     app = FastAPI(title="ChronoRacer Relay", version="1.0.0")
     app.state.config = config
@@ -38,13 +38,12 @@ def create_app(config: RelayConfig | None = None, service: RelayService | None =
     else:
         repository, object_store, builds, shutdown, heartbeat = InMemoryRaceRepository(), DevObjectStore(), DevBuildTrigger(), DevShutdownPublisher(
             config.gcp.kafka_control_topic), None
-    app.state.service = service or RelayService(
+    app.state.service = RelayService(
         repository, object_store, builds, shutdown, heartbeat,
         config.service.heartbeat_freshness_seconds,
         config.service.build_bind_window_seconds,
         config.gcp.kafka_public_port,
     )
-    logger.info("Relay application configured")
 
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, str]:
@@ -125,6 +124,3 @@ def create_app(config: RelayConfig | None = None, service: RelayService | None =
             logger.info("Acknowledging rejected export-done event: {}", exc)
 
     return app
-
-
-app = create_app()

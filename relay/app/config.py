@@ -51,15 +51,14 @@ class RelayConfig(BaseModel):
 RELAY_CONFIG_FILE_PATH_ENV = "RELAY_CONFIG_FILE_PATH"
 
 
-def load_config(path: str | Path | None = None) -> RelayConfig:
-    if path:
-        config_path = Path(path)
+def load_config() -> RelayConfig:
+    env_value = os.environ.get(RELAY_CONFIG_FILE_PATH_ENV)
+    if env_value:
+        config_path = Path(env_value)
     else:
-        env_value = os.environ.get(RELAY_CONFIG_FILE_PATH_ENV)
-        if env_value:
-            config_path = Path(env_value)
-        else:
-            config_path = Path(__file__).resolve().parents[1] / "config.yaml"
+        config_path = Path(__file__).resolve().parents[1] / "config.yaml"
+    if not config_path.is_file():
+        raise FileNotFoundError(f"Relay configuration file not found at {config_path}")
     with config_path.open(encoding="utf-8") as stream:
         values: dict[str, Any] = yaml.safe_load(stream) or {}
     config = RelayConfig.model_validate(values)

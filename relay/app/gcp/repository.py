@@ -3,7 +3,7 @@ from typing import Any, Protocol
 from google.cloud.firestore_v1 import AsyncClient
 from loguru import logger
 
-from relay.app.models import ActivePointer, Phase, Race, TerraformAction, TerraformStatus
+from ..models import ActivePointer, Phase, Race, TerraformAction, TerraformStatus
 
 
 class RaceRepository(Protocol):
