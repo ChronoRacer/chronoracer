@@ -1,9 +1,9 @@
 use crate::configuration::{KafkaConfig, TopicConfig};
-use anyhow::{Result, anyhow};
-use rdkafka::ClientConfig;
+use anyhow::{anyhow, Result};
 use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
 use rdkafka::client::DefaultClientContext;
 use rdkafka::error::{KafkaError, RDKafkaErrorCode};
+use rdkafka::ClientConfig;
 use std::time::Duration;
 use tracing::{error, info};
 

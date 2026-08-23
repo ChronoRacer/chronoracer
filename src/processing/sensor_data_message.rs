@@ -1,5 +1,5 @@
 use crate::processing::avro::TryFromAvro;
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use apache_avro::Schema;
 use serde::Deserialize;
 use std::io::Cursor;

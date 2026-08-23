@@ -5,7 +5,7 @@ use crate::persistence::sensor_data_flusher::{BatcherWiring, BatcherWiringType, 
 use crate::persistence::sensor_data_splitter::SensorDataSplitter;
 use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use crate::runtime_configuration::RetainReadTimeValue;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use compact_str::CompactString;
 use influxdb3_client::Client;
 use std::sync::Arc;
@@ -87,8 +87,8 @@ impl PersistanceLayerEntryPoint {
                 .build()
                 .map_err(|e| anyhow!("Invalid InfluxDB config: {e}"))?,
         )
-        .await
-        .context("Failed to create InfluxDb client")?;
+            .await
+            .context("Failed to create InfluxDb client")?;
 
         client
             .ping()
