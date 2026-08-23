@@ -108,7 +108,7 @@ Status replay uses this same handler.
 
 Caller: export-done push identity.
 
-Input: `raceId` from Core.
+Input: `raceId` from Core (value in message body under `race_id` key)
 
 Reject: caller is not that push identity; raceId does not match the pointer / race doc; phase is not `exporting`; mutex held.
 

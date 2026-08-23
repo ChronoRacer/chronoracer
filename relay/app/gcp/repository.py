@@ -1,9 +1,9 @@
-from typing import Protocol
+from typing import Any, Protocol
 
 from google.cloud.firestore_v1 import AsyncClient
 from loguru import logger
 
-from relay.app.models import ActivePointer, LastRace, Race
+from relay.app.models import ActivePointer, LastRace, Phase, Race, TerraformAction, TerraformStatus
 
 
 class RaceRepository(Protocol):
@@ -13,7 +13,7 @@ class RaceRepository(Protocol):
 
     async def create_race(self, race: Race) -> None: ...
 
-    async def save_race(self, race: Race) -> None: ...
+    async def save_race(self, race: Race, fields: set[str] | None = None) -> None: ...
 
     async def set_active(self, pointer: ActivePointer) -> None: ...
 
@@ -39,7 +39,7 @@ class InMemoryRaceRepository:
         self._races[race.race_id] = race.model_copy(deep=True)
         self._active = ActivePointer(race_id=race.race_id)
 
-    async def save_race(self, race):
+    async def save_race(self, race, fields=None):
         logger.debug("Saving race {} in memory", race.race_id)
         self._races[race.race_id] = race.model_copy(deep=True)
 
@@ -80,28 +80,62 @@ class FirestoreRaceRepository:
         db = self._db()
         async with db.transaction() as tx:
             pointer = db.collection('control').document('active')
-            if (await pointer.get(transaction=tx)).to_dict().get('raceId', ''):
+            pointer_data = (await pointer.get(transaction=tx)).to_dict() or {}
+            if pointer_data.get('raceId') or pointer_data.get('race_id'):
                 raise ValueError('active race already exists')
-            tx.create(db.collection('races').document(race.race_id), race.model_dump(mode='json'))
-            tx.set(pointer, ActivePointer(race_id=race.race_id).model_dump(mode='json'))
+            tx.create(db.collection('races').document(race.race_id), race.model_dump(by_alias=True))
+            tx.set(pointer, ActivePointer(race_id=race.race_id).model_dump(by_alias=True))
 
-    async def save_race(self, race):
+    async def save_race(self, race, fields=None):
         logger.debug("Saving race {} in Firestore", race.race_id)
-        await self._db().collection('races').document(race.race_id).set(race.model_dump(mode='json'))
+        ref = self._db().collection('races').document(race.race_id)
+        payload = race.model_dump(by_alias=True)
+        if fields is None:
+            await ref.set(payload)
+            return
+
+        updates = {Race.model_fields[field].alias or field: payload[Race.model_fields[field].alias or field]
+                   for field in fields}
+        async with self._db().transaction() as tx:
+            snapshot = await ref.get(transaction=tx)
+            current = snapshot.to_dict() or {}
+            self._protect_controller_state(current, payload, updates)
+            if updates:
+                tx.update(ref, updates)
 
     async def set_active(self, pointer):
-        await self._db().collection('control').document('active').set(pointer.model_dump(mode='json'))
+        await self._db().collection('control').document('active').set(pointer.model_dump(by_alias=True))
 
     async def last(self):
         snap = await self._db().collection('control').document('last').get()
         return LastRace.model_validate(snap.to_dict()) if snap.exists else None
 
     async def set_last(self, last):
-        await self._db().collection('control').document('last').set(last.model_dump(mode='json'))
+        await self._db().collection('control').document('last').set(last.model_dump(by_alias=True))
 
     async def complete_destroy(self, race, last):
         db = self._db()
         async with db.transaction() as tx:
-            tx.set(db.collection('races').document(race.race_id), race.model_dump(mode='json'))
-            tx.set(db.collection('control').document('last'), last.model_dump(mode='json'))
-            tx.set(db.collection('control').document('active'), ActivePointer().model_dump(mode='json'))
+            tx.set(db.collection('races').document(race.race_id), race.model_dump(by_alias=True))
+            tx.set(db.collection('control').document('last'), last.model_dump(by_alias=True))
+            tx.set(db.collection('control').document('active'), ActivePointer().model_dump(by_alias=True))
+
+    @staticmethod
+    def _protect_controller_state(current: dict[str, Any], payload: dict[str, Any], updates: dict[str, Any]) -> None:
+        """Do not let a stale Relay apply event replace Controller-committed state."""
+        current_phase = current.get('phase')
+        incoming_run = payload.get('terraformRun') or {}
+        current_run = current.get('terraformRun') or {}
+        same_apply = (incoming_run.get('action') == TerraformAction.APPLY.value and
+                      current_run.get('runToken') == incoming_run.get('runToken'))
+        if current_phase != Phase.APPLIED.value or not same_apply:
+            return
+
+        updates.pop('phase', None)
+        updates.pop('lastError', None)
+        desired_status = incoming_run.get('status')
+        current_status = current_run.get('status')
+        if desired_status == TerraformStatus.IN_FLIGHT.value and current_status != TerraformStatus.IN_FLIGHT.value:
+            updates.pop('terraformRun', None)
+        elif desired_status == TerraformStatus.FAILED.value:
+            updates['terraformRun'] = {**incoming_run, 'status': TerraformStatus.SUCCEEDED.value}

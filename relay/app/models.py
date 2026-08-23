@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,10 +22,10 @@ class TerraformStatus(StrEnum): IN_FLIGHT = 'in_flight'; SUCCEEDED = 'succeeded'
 
 
 class TerraformRun(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    run_token: str
-    stamped_at: datetime
-    build_id: str = ''
+    model_config = ConfigDict(extra='forbid', populate_by_name=True)
+    run_token: str = Field(alias='runToken')
+    stamped_at: datetime = Field(alias='stampedAt')
+    build_id: str = Field('', alias='buildId')
     action: TerraformAction
     status: TerraformStatus = TerraformStatus.IN_FLIGHT
 
@@ -33,29 +34,33 @@ class TerraformRun(BaseModel):
 
 
 class Race(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    race_id: str
+    model_config = ConfigDict(extra='forbid', populate_by_name=True)
+    race_id: str = Field(alias='raceId')
     phase: Phase
-    gcs_prefix: str
-    started_by: str
-    started_at: datetime
-    terraform_run: TerraformRun | None = None
-    kafka_instance: str | None = None
-    core_instance: str | None = None
-    kafka_public_ip: str | None = None
-    kafka_hostname: str | None = None
-    applied_at: datetime | None = None
-    stopped_at: datetime | None = None
-    destroyed_at: datetime | None = None
-    last_error: str | None = None
+    started_by: str = Field(alias='startedBy')
+    started_at: datetime = Field(alias='startedAt')
+    terraform_run: TerraformRun | None = Field(None, alias='terraformRun')
+    kafka_instance: str | None = Field(None, alias='kafkaInstance')
+    core_instance: str | None = Field(None, alias='coreInstance')
+    kafka_public_ip: str | None = Field(None, alias='kafkaPublicIp')
+    kafka_hostname: str | None = Field(None, alias='kafkaHostname')
+    kafka_port: int | None = Field(None, alias='kafkaPort')
+    applied_at: datetime | None = Field(None, alias='appliedAt')
+    stopped_at: datetime | None = Field(None, alias='stoppedAt')
+    destroyed_at: datetime | None = Field(None, alias='destroyedAt')
+    last_error: str | None = Field(None, alias='lastError')
 
 
 class ActivePointer(BaseModel):
-    race_id: str = ''
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    model_config = ConfigDict(populate_by_name=True)
+    race_id: str = Field('', alias='raceId')
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), alias='updatedAt')
 
 
-class LastRace(BaseModel): race_id: str; gcs_prefix: str; destroyed_at: datetime
+class LastRace(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    race_id: str = Field(alias='raceId')
+    destroyed_at: datetime = Field(alias='destroyedAt')
 
 
 class BuildFinished(BaseModel):
@@ -66,5 +71,34 @@ class BuildFinished(BaseModel):
     success: bool
     error: str | None = None
 
+    @classmethod
+    def from_cloud_build(cls, payload: dict[str, Any]) -> 'BuildFinished':
+        """Adapt the Cloud Build notification shape to the Relay event contract."""
+        substitutions = payload.get('substitutions') or {}
+        if not isinstance(substitutions, dict):
+            raise ValueError('invalid Cloud Build substitutions')
 
-class ExportDone(BaseModel): race_id: str
+        status = payload.get('status')
+        terminal_statuses = {'SUCCESS', 'FAILURE', 'INTERNAL_ERROR', 'TIMEOUT', 'CANCELLED'}
+        if status is not None and status not in terminal_statuses:
+            raise ValueError('Cloud Build event is not terminal')
+        if status is None and not isinstance(payload.get('success'), bool):
+            raise ValueError('Cloud Build event has no terminal status')
+
+        failure_info = payload.get('failureInfo') or payload.get('failure_info') or {}
+        error = payload.get('error')
+        if error is None and isinstance(failure_info, dict):
+            error = failure_info.get('detail')
+
+        return cls.model_validate({
+            'race_id': substitutions.get('_RACE_ID') or payload.get('race_id'),
+            'action': substitutions.get('_ACTION') or payload.get('action'),
+            'run_token': substitutions.get('_RUN_TOKEN') or payload.get('run_token'),
+            'build_id': payload.get('id') or payload.get('build_id') or payload.get('buildId'),
+            'success': status == 'SUCCESS' if status is not None else payload.get('success'),
+            'error': error,
+        })
+
+
+class ExportDone(BaseModel):
+    race_id: str

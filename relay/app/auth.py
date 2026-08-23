@@ -1,40 +1,33 @@
 from typing import Any
 
 import jwt
-from auth0_fastapi.auth.auth_client import AuthClient
-from auth0_fastapi.config import Auth0Config
-from fastapi import HTTPException, Request, Response
+from fastapi import HTTPException, Request
 from jwt import PyJWKClient
 from loguru import logger
 
 
-class Auth0Authenticator:
-    def __init__(self, config: Auth0Config):
-        self.config = config
-        self.client = AuthClient(config)
-
-    async def require_session(self, request: Request, response: Response) -> dict[str, Any]:
-        logger.debug("Validating authenticated browser session")
-        return await self.client.require_session(request, response)
+class OktaAuthenticator:
+    def __init__(self, issuer: str, audience: str):
+        self.issuer = issuer.rstrip('/')
+        self.audience = audience
+        self._jwks = PyJWKClient(f"{self.issuer}/v1/keys")
 
     def validate_token(self, token: str) -> dict[str, Any]:
-        """Validate an Okta/Auth0 access token for API calls."""
+        """Validate an Okta access token for operator API calls."""
         try:
-            jwks = PyJWKClient(f"https://{self.config.domain}/.well-known/jwks.json")
-            key = jwks.get_signing_key_from_jwt(token).key
-            return jwt.decode(token, key, algorithms=["RS256"], audience=self.config.audience,
-                              issuer=f"https://{self.config.domain}/")
+            key = self._jwks.get_signing_key_from_jwt(token).key
+            return jwt.decode(token, key, algorithms=["RS256"], audience=self.audience, issuer=self.issuer)
         except Exception as exc:
             logger.warning("Okta token validation failed: {}", type(exc).__name__)
             raise HTTPException(status_code=401, detail="Invalid Okta access token") from exc
 
 
-async def auth0_user(request: Request, response: Response) -> dict[str, Any]:
+async def okta_user(request: Request) -> dict[str, Any]:
     authorization = request.headers.get("authorization", "")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() == "bearer" and token:
-        return request.app.state.auth0.validate_token(token)
-    return await request.app.state.auth0.require_session(request, response)
+        return request.app.state.okta.validate_token(token)
+    raise HTTPException(status_code=401, detail="Okta bearer token required")
 
 
 class OIDCAuthenticator:
@@ -42,28 +35,33 @@ class OIDCAuthenticator:
 
     GOOGLE_CERTS = "https://www.googleapis.com/oauth2/v3/certs"
 
-    def __init__(self, audience: str):
+    def __init__(self, audience: str, service_account: str):
         self.audience = audience
+        self.service_account = service_account
         self._jwks = PyJWKClient(self.GOOGLE_CERTS)
 
     def validate(self, token: str) -> dict[str, Any]:
         try:
             key = self._jwks.get_signing_key_from_jwt(token).key
-            return jwt.decode(token, key, algorithms=["RS256"], audience=self.audience,
-                              issuer="https://accounts.google.com")
+            claims = jwt.decode(token, key, algorithms=["RS256"], audience=self.audience,
+                                issuer="https://accounts.google.com")
+            if claims.get("email") != self.service_account:
+                raise HTTPException(status_code=401, detail="Unexpected Pub/Sub service identity")
+            return claims
         except Exception as exc:
             logger.warning("Pub/Sub OIDC token validation failed: {}", type(exc).__name__)
             raise HTTPException(status_code=401, detail="Invalid Pub/Sub OIDC token") from exc
 
 
-async def pubsub_push(request: Request, audience: str) -> dict[str, Any]:
+async def pubsub_push(request: Request, audience: str, service_account: str) -> dict[str, Any]:
     authorization = request.headers.get("authorization", "")
     scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token or not audience:
+    if scheme.lower() != "bearer" or not token or not audience or not service_account:
         logger.warning("Rejected Pub/Sub request with incomplete authorization")
         raise HTTPException(status_code=401, detail="Pub/Sub OIDC token required")
-    authenticator = request.app.state.pubsub_auth.get(audience)
+    cache_key = (audience, service_account)
+    authenticator = request.app.state.pubsub_auth.get(cache_key)
     if authenticator is None:
-        authenticator = OIDCAuthenticator(audience)
-        request.app.state.pubsub_auth[audience] = authenticator
+        authenticator = OIDCAuthenticator(audience, service_account)
+        request.app.state.pubsub_auth[cache_key] = authenticator
     return authenticator.validate(token)

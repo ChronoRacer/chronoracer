@@ -2,18 +2,9 @@ server:
   host: 0.0.0.0
   port: 8080
   log_level: info
-auth0:
-  domain: example.eu.auth0.com
-  client_id: todo
-  client_secret: todo
-  app_base_url: http://localhost:8080
-  secret: todo
-  audience: todo
-  authorization_params: {}
-  pushed_authorization_requests: false
-  mount_routes: true
-  cookie_name: _a0_session
-  session_expiration: 259200
+okta:
+  issuer: https://example.okta.com/oauth2/default
+  audience: api://chronoracer-relay
 gcp:
   enabled: false
   project_id: chronoracer-dev
@@ -21,10 +12,14 @@ gcp:
   export_bucket: chronoracer-exports
   cloud_build_trigger_id: race-controller
   build_finished_audience: ""
+  build_finished_service_account: build-finished-push@chronoracer-dev.iam.gserviceaccount.com
   export_done_audience: ""
+  export_done_service_account: export-done-push@chronoracer-dev.iam.gserviceaccount.com
   build_finished_topic: build-finished
   export_done_topic: export-done
   kafka_private_bootstrap: kafka:9093
   kafka_control_topic: control
+  kafka_public_port: 9092
 service:
   heartbeat_freshness_seconds: 30
+  build_bind_window_seconds: 600

@@ -60,7 +60,7 @@ flowchart TB
         unwind["Unwind message"]
     end
 
-    subgraph persistance["Persistance layer"]
+    subgraph persistence["Persistance layer"]
         splitter["Splitter"]
         batcherFast["Fast batcher"]
         batcherNormal["Normal batcher"]
@@ -105,14 +105,14 @@ flowchart TB
         configureProcess["Adjust configuration"]
     end
 
-       subgraph persistance["Persistance layer"]
-        configurePersistance["Adjust configuration"]
+       subgraph persistence["Persistance layer"]
+        configurePersistence["Adjust configuration"]
     end
 
     %% Connections
     kafkaControl --> filterControl
     filterControl --> configureProcess
-    filterControl --> configurePersistance
+    filterControl --> configurePersistence
 
 ```
 
@@ -135,7 +135,7 @@ flowchart TB
         exportKafka["Export Kafka (via Redpanda)"]
         exportDb["Export database"]
         gcsWriter[("Upload exports to GCS")]
-        notify["Broadcast shutdown complete"]
+        notify["Broadcast export done"]
     end
 
     %% Connections

@@ -13,18 +13,9 @@ class ServerConfig(BaseModel):
     log_level: str
 
 
-class Auth0Config(BaseModel):
-    domain: str
-    client_id: str
-    client_secret: str
-    app_base_url: str
-    secret: str
+class OktaConfig(BaseModel):
+    issuer: str
     audience: str
-    authorization_params: dict[str, Any] = Field(default_factory=dict)
-    pushed_authorization_requests: bool
-    mount_routes: bool
-    cookie_name: str
-    session_expiration: int
 
 
 class GCPConfig(BaseModel):
@@ -34,20 +25,24 @@ class GCPConfig(BaseModel):
     export_bucket: str
     cloud_build_trigger_id: str
     build_finished_audience: str
+    build_finished_service_account: str
     export_done_audience: str
+    export_done_service_account: str
     build_finished_topic: str
     export_done_topic: str
     kafka_private_bootstrap: str
     kafka_control_topic: str
+    kafka_public_port: int = 9092
 
 
 class ServiceConfig(BaseModel):
     heartbeat_freshness_seconds: int
+    build_bind_window_seconds: int = 600
 
 
 class RelayConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
-    auth0: Auth0Config
+    okta: OktaConfig
     gcp: GCPConfig
     service: ServiceConfig = Field(default_factory=ServiceConfig)
 

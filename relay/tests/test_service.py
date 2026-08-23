@@ -35,8 +35,13 @@ class FakeShutdown:
         self.calls.append(race_id)
 
 
+class FakeHeartbeat:
+    async def read_last(self):
+        return datetime.now(timezone.utc)
+
+
 async def started():
-    service = RelayService(InMemoryRaceRepository())
+    service = RelayService(InMemoryRaceRepository(), builds=FakeBuilds())
     await service.start({'x': 1}, 'operator')
     race = await service._active()
     race.terraform_run.build_id = 'b1'
@@ -117,7 +122,7 @@ async def test_trigger_failure_releases_mutex_and_marks_failed():
     with pytest.raises(RuntimeError):
         await service.start({'x': 1})
     race = await service._active()
-    assert race.phase is Phase.STARTING
+    assert race.phase is Phase.FAILED
     assert race.terraform_run.status is TerraformStatus.FAILED
     assert not race.terraform_run.locked
     assert race.last_error == 'unavailable'
@@ -194,10 +199,51 @@ async def test_reconcile_expired_unbound_run_releases_mutex():
     await service.start({})
     race = await service._active()
     race.terraform_run.build_id = ''
-    race.terraform_run.stamped_at = datetime.now(timezone.utc) - timedelta(seconds=121)
+    race.terraform_run.stamped_at = datetime.now(timezone.utc) - timedelta(seconds=601)
     await service.repository.save_race(race)
 
     await service.reconcile()
     current = await service._active()
     assert current.terraform_run.status is TerraformStatus.FAILED
     assert current.last_error == 'Cloud Build trigger did not start'
+
+
+def test_cloud_build_notification_is_normalized_from_substitutions():
+    event = BuildFinished.from_cloud_build({
+        'id': 'build-1',
+        'status': 'SUCCESS',
+        'substitutions': {
+            '_RACE_ID': 'race-1',
+            '_ACTION': 'apply',
+            '_RUN_TOKEN': 'token-1',
+        },
+    })
+
+    assert event.race_id == 'race-1'
+    assert event.action is TerraformAction.APPLY
+    assert event.run_token == 'token-1'
+    assert event.build_id == 'build-1'
+    assert event.success is True
+
+
+def test_cloud_build_notification_rejects_non_terminal_status():
+    with pytest.raises(ValueError):
+        BuildFinished.from_cloud_build({'id': 'build-1', 'status': 'WORKING', 'substitutions': {}})
+
+
+@pytest.mark.asyncio
+async def test_ready_status_includes_configured_kafka_port():
+    service = RelayService(
+        InMemoryRaceRepository(), builds=FakeBuilds(), heartbeat=FakeHeartbeat(), kafka_public_port=19092
+    )
+    await service.start({})
+    race = await service._active()
+    race.phase = Phase.APPLIED
+    race.terraform_run.status = TerraformStatus.SUCCEEDED
+    race.kafka_hostname = 'kafka.example.test'
+    race.kafka_public_ip = '192.0.2.10'
+    await service.repository.save_race(race)
+
+    result = await service.status()
+
+    assert result['kafkaPort'] == 19092

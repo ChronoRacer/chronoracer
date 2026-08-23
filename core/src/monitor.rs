@@ -141,7 +141,7 @@ impl<'a> Monitor<'a> {
     ) -> Result<()> {
         if let Some(gcp_pubsub_manager) = gcp_pubsub_manager {
             info!("Publishing shutdown notification");
-            return gcp_pubsub_manager.publish_shutdown_message().await;
+            return gcp_pubsub_manager.publish_export_done_message().await;
         }
         warn!("Shutdown message publish skipped - pubsub manager not provided");
         Ok(())
