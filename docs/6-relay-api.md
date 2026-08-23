@@ -141,7 +141,7 @@ flowchart LR
 
 From [3-firestore.md](3-firestore.md): `terraformRun` (mutex, `runToken`, `buildId`); `control/last` after pointer clear. Do not add `pendingDestroy` or a second copy of mutex fields.
 
-## Not in this API
+## Not in this document
 
 - Core YAML schema (dict in, file out).
 - History list or get-by-id (last destroyed race on status is enough).
