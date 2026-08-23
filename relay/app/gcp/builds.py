@@ -5,6 +5,8 @@ from loguru import logger
 
 class BuildTrigger(Protocol):
     async def trigger(self, race_id: str, action: str, run_token: str) -> str: ...
+    async def get(self, build_id: str) -> dict | None: ...
+    async def find(self, race_id: str, run_token: str) -> dict | None: ...
 
 
 class DevBuildTrigger:
@@ -16,6 +18,9 @@ class DevBuildTrigger:
         self.calls.append((build_id, race_id, action, run_token))
         logger.debug("Queued development build {} for race {} ({})", build_id, race_id, action)
         return build_id
+
+    async def get(self, build_id): return None
+    async def find(self, race_id, run_token): return None
 
 
 class CloudBuildTrigger:
@@ -43,3 +48,23 @@ class CloudBuildTrigger:
 
         logger.info("Cloud Build {} triggered for race {}", build_id, race_id)
         return build_id
+
+    async def get(self, build_id):
+        async with cloudbuild_v1.CloudBuildAsyncClient() as client:
+            build = await client.get_build(project_id=self.project_id, id=build_id)
+            if build.status not in (cloudbuild_v1.Build.Status.SUCCESS, cloudbuild_v1.Build.Status.FAILURE,
+                                    cloudbuild_v1.Build.Status.TIMEOUT, cloudbuild_v1.Build.Status.CANCELLED):
+                return None
+            return {'buildId': build.id, 'success': build.status == cloudbuild_v1.Build.Status.SUCCESS,
+                    'error': build.failure_info.detail if build.failure_info else None}
+
+    async def find(self, race_id, run_token):
+        async with cloudbuild_v1.CloudBuildAsyncClient() as client:
+            builds = client.list_builds(project_id=self.project_id, filter=f'substitutions._RACE_ID="{race_id}" AND substitutions._RUN_TOKEN="{run_token}"')
+            async for build in builds:
+                if build.status not in (cloudbuild_v1.Build.Status.SUCCESS, cloudbuild_v1.Build.Status.FAILURE,
+                                        cloudbuild_v1.Build.Status.TIMEOUT, cloudbuild_v1.Build.Status.CANCELLED):
+                    continue
+                return {'buildId': build.id, 'success': build.status == cloudbuild_v1.Build.Status.SUCCESS,
+                        'error': build.failure_info.detail if build.failure_info else None}
+        return None

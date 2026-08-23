@@ -2,14 +2,13 @@ server:
   host: 0.0.0.0
   port: 8080
   log_level: info
-  config_file: relay/config.yaml
 auth0:
   domain: example.eu.auth0.com
-  client_id: your-auth0-client-id
-  client_secret: your-auth0-client-secret
+  client_id: todo
+  client_secret: todo
   app_base_url: http://localhost:8080
-  secret: replace-with-a-long-random-session-secret
-  audience: ""
+  secret: todo
+  audience: todo
   authorization_params: {}
   pushed_authorization_requests: false
   mount_routes: true
@@ -18,7 +17,6 @@ auth0:
 gcp:
   enabled: false
   project_id: chronoracer-dev
-  region: europe-west3
   firestore_database: "(default)"
   export_bucket: chronoracer-exports
   cloud_build_trigger_id: race-controller

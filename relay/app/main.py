@@ -4,6 +4,8 @@ from auth0_fastapi.config import Auth0Config
 from auth0_fastapi.server.routes import register_auth_routes
 from fastapi import APIRouter, Depends, FastAPI, Request, HTTPException, status
 from pydantic import BaseModel, Field
+import base64
+import json
 from starlette.middleware.sessions import SessionMiddleware
 from loguru import logger
 
@@ -84,8 +86,10 @@ def create_app(config: RelayConfig | None = None, service: RelayService | None =
         await pubsub_push(request, config.gcp.build_finished_audience)
         try:
             payload = await request.json()
-            message = payload.get('message', payload)
-            data = message.get('data', message) if isinstance(message, dict) else message
+            message = payload.get('message')
+            if not isinstance(message, dict) or not message.get('data'):
+                raise ValueError('invalid Pub/Sub envelope')
+            data = json.loads(base64.b64decode(message['data']))
             await app.state.service.build_finished(data)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -96,8 +100,10 @@ def create_app(config: RelayConfig | None = None, service: RelayService | None =
         await pubsub_push(request, config.gcp.export_done_audience)
         try:
             payload = await request.json()
-            message = payload.get('message', payload)
-            data = message.get('data', message) if isinstance(message, dict) else message
+            message = payload.get('message')
+            if not isinstance(message, dict) or not message.get('data'):
+                raise ValueError('invalid Pub/Sub envelope')
+            data = json.loads(base64.b64decode(message['data']))
             await app.state.service.export_done(data)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

@@ -8,10 +8,9 @@ from pydantic import BaseModel, Field
 
 
 class ServerConfig(BaseModel):
-    host: str = "0.0.0.0"
-    port: int = 8080
-    log_level: str = "info"
-    config_file: str = "relay/config.yaml"
+    host: str
+    port: int
+    log_level: str
 
 
 class Auth0Config(BaseModel):
@@ -20,23 +19,22 @@ class Auth0Config(BaseModel):
     client_secret: str
     app_base_url: str
     secret: str
-    audience: str = ""
+    audience: str
     authorization_params: dict[str, Any] = Field(default_factory=dict)
-    pushed_authorization_requests: bool = False
-    mount_routes: bool = True
-    cookie_name: str = "_a0_session"
-    session_expiration: int = 259200
+    pushed_authorization_requests: bool
+    mount_routes: bool
+    cookie_name: str
+    session_expiration: int
 
 
 class GCPConfig(BaseModel):
-    enabled: bool = False
+    enabled: bool
     project_id: str
-    region: str = "europe-west3"
-    firestore_database: str = "(default)"
+    firestore_database: str
     export_bucket: str
     cloud_build_trigger_id: str
-    build_finished_audience: str = ""
-    export_done_audience: str = ""
+    build_finished_audience: str
+    export_done_audience: str
     build_finished_topic: str
     export_done_topic: str
     kafka_private_bootstrap: str
@@ -44,7 +42,7 @@ class GCPConfig(BaseModel):
 
 
 class ServiceConfig(BaseModel):
-    heartbeat_freshness_seconds: int = 30
+    heartbeat_freshness_seconds: int
 
 
 class RelayConfig(BaseModel):

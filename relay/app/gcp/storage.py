@@ -33,5 +33,10 @@ class GCSObjectStore:
     async def signed_export_url(self, prefix):
         logger.debug("Creating signed export URL for {}", prefix)
         client = storage.Client(project=self.project_id)
-        blob = client.bucket(self.bucket).blob(prefix)
+        blobs = list(client.bucket(self.bucket).list_blobs(prefix=prefix))
+        if not blobs:
+            return None
+        # A prefix is not a GCS object. Return a short-lived URL for the first
+        # export object; callers can use the manifest/index object when present.
+        blob = next((b for b in blobs if not b.name.endswith('/')), blobs[0])
         return blob.generate_signed_url(version='v4', expiration=900, method='GET')

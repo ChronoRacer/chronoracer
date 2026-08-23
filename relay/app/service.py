@@ -12,12 +12,14 @@ from .gcp.pubsub import ShutdownPublisher
 
 
 class RelayService:
-    def __init__(self, repository: RaceRepository, object_store: ObjectStore | None = None, builds: BuildTrigger | None = None, shutdown: ShutdownPublisher | None = None):
+    def __init__(self, repository: RaceRepository, object_store: ObjectStore | None = None, builds: BuildTrigger | None = None, shutdown: ShutdownPublisher | None = None, heartbeat=None, heartbeat_freshness_seconds: int = 30):
         self.repository = repository
         self.object_store, self.builds, self.shutdown = object_store, builds, shutdown
+        self.heartbeat, self.heartbeat_freshness_seconds = heartbeat, heartbeat_freshness_seconds
 
     async def start(self, config: dict[str, Any], started_by='unknown'):
         logger.info("Starting race requested by {}", started_by)
+        await self.reconcile()
         pointer = await self.repository.active()
         if pointer.race_id:
             race = await self._active()
@@ -40,6 +42,7 @@ class RelayService:
         return {'raceId': race.race_id, 'phase': race.phase.value}
 
     async def status(self):
+        await self.reconcile()
         pointer = await self.repository.active()
         if not pointer.race_id:
             logger.debug("Status requested with no active race")
@@ -60,7 +63,19 @@ class RelayService:
         if self.object_store:
             result['exportDownloadUrl'] = await self.object_store.signed_export_url(
                 f'{race.gcs_prefix}export/')
-        if race.phase == Phase.APPLIED:
+        if race.phase == Phase.APPLIED and self.heartbeat:
+            try:
+                beat = await self.heartbeat.read_last()
+                if beat:
+                    age = (datetime.now(timezone.utc) - beat).total_seconds()
+                    result['ready'] = age <= self.heartbeat_freshness_seconds
+                    result['unhealthy'] = not result['ready']
+                else:
+                    result['ready'] = result['unhealthy'] = False
+            except Exception as exc:
+                result['unhealthy'] = True
+                result['lastError'] = str(exc)
+        if race.phase == Phase.APPLIED and result['ready']:
             result.update({k: v for k, v in {
                 'kafkaInstance': race.kafka_instance,
                 'coreInstance': race.core_instance,
@@ -70,6 +85,7 @@ class RelayService:
         return result
 
     async def stop(self):
+        await self.reconcile()
         race = await self._active()
         logger.info("Stopping race {}", race.race_id)
         if race.phase not in (Phase.APPLIED, Phase.STOPPING) or self._locked(race): raise ValueError(
@@ -83,6 +99,7 @@ class RelayService:
         return {'raceId': race.race_id, 'phase': race.phase.value}
 
     async def force_destroy(self):
+        await self.reconcile()
         race = await self._active()
         logger.warning("Force destroy requested for race {}", race.race_id)
         if self._locked(race): raise ValueError('race cannot be destroyed while a build is in flight')
@@ -166,3 +183,29 @@ class RelayService:
             race.last_error = str(exc)
             await self.repository.save_race(race)
             raise
+
+    async def reconcile(self):
+        """Recover missed pushes and bind builds whose trigger response was lost."""
+        if not self.builds:
+            return
+        race = await self._active_or_none()
+        if not race or not race.terraform_run or not race.terraform_run.locked:
+            return
+        run = race.terraform_run
+        build = await (self.builds.get(run.build_id) if run.build_id else self.builds.find(race.race_id, run.run_token))
+        if build and not run.build_id:
+            run.build_id = build['buildId']
+            await self.repository.save_race(race)
+        if build and run.build_id:
+            await self.build_finished(BuildFinished(race_id=race.race_id, action=run.action,
+                run_token=run.run_token, build_id=run.build_id, success=build['success'], error=build.get('error')))
+        elif not run.build_id:
+            age = (datetime.now(timezone.utc) - run.stamped_at).total_seconds()
+            if age > 120:
+                run.status = TerraformStatus.FAILED
+                race.last_error = 'Cloud Build trigger did not start'
+                await self.repository.save_race(race)
+
+    async def _active_or_none(self):
+        pointer = await self.repository.active()
+        return await self.repository.race(pointer.race_id) if pointer.race_id else None
