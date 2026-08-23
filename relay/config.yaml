@@ -3,14 +3,30 @@ server:
   port: 8080
   log_level: info
   config_file: relay/config.yaml
-okta:
-  issuer: https://example.okta.com/oauth2/default
-  audience: api://default
-  jwks_url: https://example.okta.com/oauth2/default/v1/keys
-  algorithms: [RS256]
-pubsub:
+auth0:
+  domain: example.eu.auth0.com
+  client_id: your-auth0-client-id
+  client_secret: your-auth0-client-secret
+  app_base_url: http://localhost:8080
+  secret: replace-with-a-long-random-session-secret
+  audience: ""
+  authorization_params: {}
+  pushed_authorization_requests: false
+  mount_routes: true
+  cookie_name: _a0_session
+  session_expiration: 259200
+gcp:
+  enabled: false
+  project_id: chronoracer-dev
+  region: europe-west3
+  firestore_database: "(default)"
+  export_bucket: chronoracer-exports
+  cloud_build_trigger_id: race-controller
   build_finished_audience: ""
   export_done_audience: ""
+  build_finished_topic: build-finished
+  export_done_topic: export-done
+  kafka_private_bootstrap: kafka:9093
+  kafka_control_topic: control
 service:
   heartbeat_freshness_seconds: 30
-

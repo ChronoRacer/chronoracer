@@ -1,38 +1,23 @@
 from typing import Any
 
 import jwt
-from fastapi import HTTPException, Request, status
+from auth0_fastapi.auth.auth_client import AuthClient
+from auth0_fastapi.config import Auth0Config
+from fastapi import HTTPException, Request, Response
 from jwt import PyJWKClient
 
-from .config import OktaConfig
 
-
-class OktaAuthenticator:
-    def __init__(self, config: OktaConfig):
+class Auth0Authenticator:
+    def __init__(self, config: Auth0Config):
         self.config = config
-        self._jwks = PyJWKClient(config.jwks_url)
+        self.client = AuthClient(config)
 
-    def validate(self, token: str) -> dict[str, Any]:
-        try:
-            signing_key = self._jwks.get_signing_key_from_jwt(token).key
-            return jwt.decode(
-                token,
-                signing_key,
-                algorithms=self.config.algorithms,
-                audience=self.config.audience,
-                issuer=self.config.issuer,
-            )
-        except Exception as exc:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Okta token") from exc
+    async def require_session(self, request: Request, response: Response) -> dict[str, Any]:
+        return await self.client.require_session(request, response)
 
 
-async def okta_user(request: Request) -> dict[str, Any]:
-    authenticator: OktaAuthenticator = request.app.state.okta
-    authorization = request.headers.get("authorization", "")
-    scheme, _, token = authorization.partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(status_code=401, detail="Bearer token required")
-    return authenticator.validate(token)
+async def auth0_user(request: Request, response: Response) -> dict[str, Any]:
+    return await request.app.state.auth0.require_session(request, response)
 
 
 class OIDCAuthenticator:
@@ -47,7 +32,8 @@ class OIDCAuthenticator:
     def validate(self, token: str) -> dict[str, Any]:
         try:
             key = self._jwks.get_signing_key_from_jwt(token).key
-            return jwt.decode(token, key, algorithms=["RS256"], audience=self.audience, issuer="https://accounts.google.com")
+            return jwt.decode(token, key, algorithms=["RS256"], audience=self.audience,
+                              issuer="https://accounts.google.com")
         except Exception as exc:
             raise HTTPException(status_code=401, detail="Invalid Pub/Sub OIDC token") from exc
 
