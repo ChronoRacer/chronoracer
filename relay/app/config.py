@@ -32,6 +32,7 @@ class GCPConfig(BaseModel):
     export_done_topic: str
     kafka_private_bootstrap: str
     kafka_control_topic: str
+    kafka_heartbeat_topic: str
     kafka_public_port: int = 9092
 
 

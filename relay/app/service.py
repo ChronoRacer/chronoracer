@@ -52,12 +52,7 @@ class RelayService:
         pointer = await self.repository.active()
         if not pointer.race_id:
             logger.debug("Status requested with no active race")
-            last = await self.repository.last()
-            result = {'last': last.model_dump(mode='json', by_alias=True) if last else None, 'billableVms': False,
-                      'ready': False, 'unhealthy': False}
-            if last and self.object_store:
-                result['exportDownloadUrl'] = await self.object_store.signed_export_url(f'{last.race_id}/export/')
-            return result
+            return {'raceId': None}
         race = await self._active()
         result = {'raceId': race.race_id, 'phase': race.phase.value,
                   'startedBy': race.started_by, 'startedAt': race.started_at,
@@ -66,8 +61,6 @@ class RelayService:
                   'terraformRun': race.terraform_run.model_dump(mode='json',
                                                                 by_alias=True) if race.terraform_run else None,
                   'billableVms': True, 'ready': False, 'unhealthy': False}
-        if self.object_store:
-            result['exportDownloadUrl'] = await self.object_store.signed_export_url(f'{race.race_id}/export/')
         if race.phase == Phase.APPLIED and self.heartbeat:
             try:
                 beat = await self.heartbeat.read_last()
@@ -88,6 +81,26 @@ class RelayService:
                 'kafkaHostname': race.kafka_hostname,
                 'kafkaPort': race.kafka_port or self.kafka_public_port,
             }.items() if v is not None})
+        return result
+
+    async def history(self):
+        pointer = await self.repository.active()
+        races = await self.repository.races()
+        historical = [race for race in races if race.race_id != pointer.race_id]
+        historical.sort(key=lambda race: race.started_at, reverse=True)
+        return [{'raceId': race.race_id, 'startedAt': race.started_at,
+                 'destroyedAt': race.destroyed_at} for race in historical]
+
+    async def historical_race(self, race_id: str, export_race: bool = False):
+        race = await self.repository.race(race_id)
+        if not race:
+            raise ValueError('historical race not found')
+        pointer = await self.repository.active()
+        if pointer.race_id == race_id:
+            raise ValueError('race is currently active, use active race status endpoint instead')
+        result = race.model_dump(mode='json', by_alias=True)
+        if export_race and self.object_store:
+            result['exportUrls'] = await self.object_store.signed_export_url(f'{race.race_id}/export/')
         return result
 
     async def stop(self):
@@ -144,9 +157,9 @@ class RelayService:
             race.phase = Phase.EXPORTING
         elif event.action == TerraformAction.DESTROY and event.success:
             race.phase = Phase.DESTROYED
-            race.destroyed_at = datetime.now(timezone.utc)
-            await self.repository.complete_destroy(
-                race, LastRace(race_id=race.race_id, destroyed_at=race.destroyed_at))
+            now = datetime.now(timezone.utc)
+            race.destroyed_at = now
+            await self.repository.complete_destroy(race, LastRace(race_id=race.race_id, destroyed_at=now))
             logger.info("Race {} transitioned to phase {}", race.race_id, race.phase.value)
             return
         elif not event.success:

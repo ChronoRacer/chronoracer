@@ -3,8 +3,8 @@ server:
   port: 8080
   log_level: info
 okta:
-  issuer: https://example.okta.com/oauth2/default
-  audience: api://chronoracer-relay
+  issuer: https://chronoracer.eu.auth0.com/
+  audience: https://api.chronoracer.com
 gcp:
   enabled: false
   project_id: chronoracer-dev
@@ -19,6 +19,7 @@ gcp:
   export_done_topic: export-done
   kafka_private_bootstrap: kafka:9093
   kafka_control_topic: control
+  kafka_heartbeat_topic: heartbeat
   kafka_public_port: 9092
 service:
   heartbeat_freshness_seconds: 30

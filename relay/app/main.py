@@ -2,7 +2,7 @@ import base64
 import json
 from typing import Any
 
-from fastapi import Depends, FastAPI, Request, HTTPException, status
+from fastapi import Depends, FastAPI, Request, HTTPException, status, Query
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -33,7 +33,7 @@ def create_app(config: RelayConfig | None = None, service: RelayService | None =
         object_store = GCSObjectStore(config.gcp.project_id, config.gcp.export_bucket)
         builds = CloudBuildTrigger(config.gcp.project_id, config.gcp.cloud_build_trigger_id)
         shutdown = KafkaShutdownPublisher(config.gcp.kafka_private_bootstrap, config.gcp.kafka_control_topic)
-        heartbeat = KafkaHeartbeatReader(config.gcp.kafka_private_bootstrap)
+        heartbeat = KafkaHeartbeatReader(config.gcp.kafka_private_bootstrap, topic=config.gcp.kafka_heartbeat_topic)
     else:
         repository, object_store, builds, shutdown, heartbeat = InMemoryRaceRepository(), DevObjectStore(), DevBuildTrigger(), DevShutdownPublisher(
             config.gcp.kafka_control_topic), None
@@ -59,8 +59,19 @@ def create_app(config: RelayConfig | None = None, service: RelayService | None =
 
     @app.get("/race/status")
     async def race_status(_: dict = Depends(okta_user)):
-        logger.debug("Received race status request")
         return await app.state.service.status()
+
+    @app.get("/race/history")
+    async def history(_: dict = Depends(okta_user)):
+        return await app.state.service.history()
+
+    @app.get("/race/history/{race_id}")
+    async def historical_race(race_id: str, _: dict = Depends(okta_user),
+                              export_race: bool = Query(False)):
+        try:
+            return await app.state.service.historical_race(race_id, export_race)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/race/stop", status_code=status.HTTP_202_ACCEPTED)
     async def stop(_: dict = Depends(okta_user)):

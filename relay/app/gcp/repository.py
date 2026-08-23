@@ -11,6 +11,8 @@ class RaceRepository(Protocol):
 
     async def race(self, race_id: str) -> Race | None: ...
 
+    async def races(self) -> list[Race]: ...
+
     async def create_race(self, race: Race) -> None: ...
 
     async def save_race(self, race: Race, fields: set[str] | None = None) -> None: ...
@@ -32,6 +34,9 @@ class InMemoryRaceRepository:
     async def race(self, race_id):
         race = self._races.get(race_id)
         return race.model_copy(deep=True) if race else None
+
+    async def races(self):
+        return [race.model_copy(deep=True) for race in self._races.values()]
 
     async def create_race(self, race):
         logger.debug("Creating race {} in memory", race.race_id)
@@ -74,6 +79,10 @@ class FirestoreRaceRepository:
     async def race(self, race_id):
         snap = await self._db().collection('races').document(race_id).get()
         return Race.model_validate(snap.to_dict()) if snap.exists else None
+
+    async def races(self):
+        snapshots = self._db().collection('races').stream()
+        return [Race.model_validate(snapshot.to_dict()) async for snapshot in snapshots]
 
     async def create_race(self, race):
         logger.info("Creating race {} in Firestore", race.race_id)

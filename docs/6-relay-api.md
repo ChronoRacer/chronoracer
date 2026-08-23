@@ -18,7 +18,7 @@ Before start retry / stop / force-destroy reject-on-mutex, and on every status: 
 
 ## Resource shape
 
-One current-race resource. Start still creates `races/{raceId}` in Firestore. The API does not list history. Status with no active race still returns `control/last` plus export download access.
+Start creates `races/{raceId}` in Firestore. The API exposes the active race and historical races through separate endpoints. Historical races are race documents whose ID is not the current `control/active` pointer.
 
 Internal build-finished and export-done are separate paths on the same Relay service.
 
@@ -30,7 +30,7 @@ Caller: Okta.
 
 Input: config dict. On retry from `failed`, config is ignored; original YAML stays.
 
-New race (pointer empty): mint `raceId`; render YAML; upload `{gcsPrefix}/core-config.yaml`; one transaction: atomic pointer set if empty **and** create race doc (reject if pointer already set); stamp apply `in_flight` + new `runToken` + `stampedAt` with empty `buildId`; trigger Cloud Build apply with substitutions `raceId`, `action`, `runToken`; write `buildId`. Trigger failure: phase `failed`, `terraformRun.status` `failed`, `lastError`, pointer stays.
+New race (pointer empty): mint `raceId`; render YAML; upload `{raceId}/core-config.yaml`; one transaction: atomic pointer set if empty **and** create race doc (reject if pointer already set); stamp apply `in_flight` + new `runToken` + `stampedAt` with empty `buildId`; trigger Cloud Build apply with substitutions `raceId`, `action`, `runToken`; write `buildId`. Trigger failure: phase `failed`, `terraformRun.status` `failed`, `lastError`, pointer stays.
 
 Retry (pointer set, phase `failed`, mutex not held): same `raceId`, no new YAML, new apply run, new `runToken`, phase `starting`, stamp, trigger, write `buildId`.
 
@@ -44,9 +44,9 @@ Caller: Okta. Input: none.
 
 If mutex held: reconcile, then re-read Firestore.
 
-If pointer empty: no active race. Return `last` from `control/last` (`raceId`, `gcsPrefix`, `destroyedAt`) when present, plus time-limited download access for `{gcsPrefix}/export/`. `billableVms` false. No Kafka address.
+If pointer empty: no active race; return `raceId` null. Do not return `control/last` or export URLs.
 
-Else: `raceId`, phase, ready, unhealthy, `gcsPrefix`, export download access, `lastError`, `startedBy`, `startedAt`, `terraformRun`, `billableVms` true. Kafka hostname, port, and public IP only when ready.
+Else: `raceId`, phase, ready, unhealthy, `lastError`, `startedBy`, `startedAt`, `terraformRun`, `billableVms` true. Kafka hostname, port, and public IP only when ready. Do not return export URLs or last-race data.
 
 Ready / unhealthy are derived. Not written back. Heartbeat only when phase is `applied`:
 
@@ -58,6 +58,16 @@ Ready / unhealthy are derived. Not written back. Heartbeat only when phase is `a
 Read fail still returns phase, `startedAt`, `billableVms`. Heartbeat meaning: [2-race-provisioning.md](2-race-provisioning.md).
 
 Export-done is not recovered here. Hung `exporting` uses force-destroy.
+
+### History list (operator)
+
+Caller: Okta. Input: none.
+
+Return every race ID and its race dates from the `races` collection, excluding the race referenced by `control/active`. The list is ordered newest first and includes `raceId`, `startedAt`, and `destroyedAt`.
+
+### Historical race (operator)
+
+Caller: Okta. Return the selected historical race document from the database. An active race is not a historical race and is rejected as not found. With query parameter `export_race=true`, also return `exportUrls` containing temporary GCS export URLs.
 
 ### Stop (operator)
 
@@ -144,7 +154,6 @@ From [3-firestore.md](3-firestore.md): `terraformRun` (mutex, `runToken`, `build
 ## Not in this document
 
 - Core YAML schema (dict in, file out).
-- History list or get-by-id (last destroyed race on status is enough).
 - Device ingest (Kafka, not Relay).
 - Controller Terraform (Cloud Build runs it; Relay only triggers).
 - Direct GCS access with Google accounts (download handled via Relay exposing temporary download links, not in this document scope).

@@ -3,3 +3,4 @@
 /redpanda/export.yaml
 /export/
 /core/target/
+/relay/venv/
