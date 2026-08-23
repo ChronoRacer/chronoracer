@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -22,10 +23,16 @@ class RelayService:
         self.heartbeat, self.heartbeat_freshness_seconds = heartbeat, heartbeat_freshness_seconds
         self.build_bind_window_seconds = build_bind_window_seconds
         self.kafka_public_port = kafka_public_port
+        # This lock is enough - cloud run instances capped at 1 in GCP
+        self._operation_lock = asyncio.Lock()
 
     async def start(self, config: dict[str, Any], started_by='unknown'):
+        async with self._operation_lock:
+            return await self._start(config, started_by)
+
+    async def _start(self, config: dict[str, Any], started_by='unknown'):
         logger.info("Starting race requested by {}", started_by)
-        await self.reconcile()
+        await self._reconcile()
         pointer = await self.repository.active()
         if pointer.race_id:
             race = await self._active()
@@ -38,7 +45,7 @@ class RelayService:
             race = Race(race_id=rid, phase=Phase.STARTING, started_by=started_by,
                         started_at=now)
             if self.object_store:
-                await self.object_store.put_yaml(f'{rid}/core-config.yaml', {'raceId': rid, **config})
+                await self.object_store.put_yaml(f'{rid}/core-config.yaml', {**config, 'raceId': rid})
             await self.repository.create_race(race)
         self._stamp(race, TerraformAction.APPLY)
         await self.repository.save_race(race, {'phase', 'terraform_run'})
@@ -48,40 +55,43 @@ class RelayService:
         return {'raceId': race.race_id, 'phase': race.phase.value}
 
     async def status(self):
-        await self.reconcile()
-        pointer = await self.repository.active()
-        if not pointer.race_id:
-            logger.debug("Status requested with no active race")
-            return {'raceId': None}
-        race = await self._active()
-        result = {'raceId': race.race_id, 'phase': race.phase.value,
-                  'startedBy': race.started_by, 'startedAt': race.started_at,
-                  'appliedAt': race.applied_at, 'stoppedAt': race.stopped_at,
-                  'destroyedAt': race.destroyed_at, 'lastError': race.last_error,
-                  'terraformRun': race.terraform_run.model_dump(mode='json',
-                                                                by_alias=True) if race.terraform_run else None,
-                  'billableVms': True, 'ready': False, 'unhealthy': False}
-        if race.phase == Phase.APPLIED and self.heartbeat:
-            try:
-                beat = await self.heartbeat.read_last()
-                if beat:
-                    age = (datetime.now(timezone.utc) - beat).total_seconds()
-                    result['ready'] = age <= self.heartbeat_freshness_seconds
-                    result['unhealthy'] = not result['ready']
-                else:
-                    result['ready'] = result['unhealthy'] = False
-            except Exception as exc:
-                result['unhealthy'] = True
-                result['lastError'] = str(exc)
-        if race.phase == Phase.APPLIED and result['ready']:
-            result.update({k: v for k, v in {
-                'kafkaInstance': race.kafka_instance,
-                'coreInstance': race.core_instance,
-                'kafkaPublicIp': race.kafka_public_ip,
-                'kafkaHostname': race.kafka_hostname,
-                'kafkaPort': race.kafka_port or self.kafka_public_port,
-            }.items() if v is not None})
-        return result
+        async with self._operation_lock:
+            await self._reconcile()
+            pointer = await self.repository.active()
+            if not pointer.race_id:
+                logger.debug("Status requested with no active race")
+                return {'raceId': None}
+            race = await self._active()
+            result = {'raceId': race.race_id, 'phase': race.phase.value,
+                      'startedBy': race.started_by, 'startedAt': race.started_at,
+                      'appliedAt': race.applied_at, 'stoppedAt': race.stopped_at,
+                      'destroyedAt': race.destroyed_at, 'lastError': race.last_error,
+                      'terraformRun': race.terraform_run.model_dump(mode='json',
+                                                                    by_alias=True) if race.terraform_run else None,
+                      'billableVms': True, 'ready': False, 'unhealthy': False}
+            if race.phase == Phase.APPLIED and self.heartbeat:
+                try:
+                    beat = await self.heartbeat.read_last()
+                    if beat:
+                        age = (datetime.now(timezone.utc) - beat).total_seconds()
+                        heartbeat_fresh = age <= self.heartbeat_freshness_seconds
+                        address_ready = bool(race.kafka_hostname and race.kafka_public_ip)
+                        result['ready'] = heartbeat_fresh and address_ready
+                        result['unhealthy'] = not result['ready']
+                    else:
+                        result['ready'] = result['unhealthy'] = False
+                except Exception as exc:
+                    result['unhealthy'] = True
+                    result['lastError'] = str(exc)
+            if race.phase == Phase.APPLIED and result['ready']:
+                result.update({k: v for k, v in {
+                    'kafkaInstance': race.kafka_instance,
+                    'coreInstance': race.core_instance,
+                    'kafkaPublicIp': race.kafka_public_ip,
+                    'kafkaHostname': race.kafka_hostname,
+                    'kafkaPort': race.kafka_port or self.kafka_public_port,
+                }.items() if v is not None})
+            return result
 
     async def history(self):
         pointer = await self.repository.active()
@@ -104,7 +114,11 @@ class RelayService:
         return result
 
     async def stop(self):
-        await self.reconcile()
+        async with self._operation_lock:
+            return await self._stop()
+
+    async def _stop(self):
+        await self._reconcile()
         race = await self._active()
         logger.info("Stopping race {}", race.race_id)
         if race.phase not in (Phase.APPLIED, Phase.STOPPING) or self._locked(race): raise ValueError(
@@ -118,7 +132,11 @@ class RelayService:
         return {'raceId': race.race_id, 'phase': race.phase.value}
 
     async def force_destroy(self):
-        await self.reconcile()
+        async with self._operation_lock:
+            return await self._force_destroy()
+
+    async def _force_destroy(self):
+        await self._reconcile()
         race = await self._active()
         logger.warning("Force destroy requested for race {}", race.race_id)
         if race.phase not in (Phase.FAILED, Phase.STARTING, Phase.APPLIED, Phase.STOPPING,
@@ -132,6 +150,10 @@ class RelayService:
         return {'raceId': race.race_id, 'phase': race.phase.value}
 
     async def build_finished(self, event: BuildFinished | dict[str, Any]):
+        async with self._operation_lock:
+            return await self._build_finished(event)
+
+    async def _build_finished(self, event: BuildFinished | dict[str, Any]):
         event = event if isinstance(event, BuildFinished) else BuildFinished.model_validate(event)
         logger.info("Build finished for race {}: action={}, success={}", event.race_id, event.action.value,
                     event.success)
@@ -168,6 +190,10 @@ class RelayService:
         logger.info("Race {} transitioned to phase {}", race.race_id, race.phase.value)
 
     async def export_done(self, event: ExportDone | dict[str, Any]):
+        async with self._operation_lock:
+            return await self._export_done(event)
+
+    async def _export_done(self, event: ExportDone | dict[str, Any]):
         event = event if isinstance(event, ExportDone) else ExportDone.model_validate(event)
         logger.info("Export completed for race {}", event.race_id)
         race = await self._active()
@@ -217,6 +243,10 @@ class RelayService:
             raise
 
     async def reconcile(self):
+        async with self._operation_lock:
+            return await self._reconcile()
+
+    async def _reconcile(self):
         """Recover missed pushes and bind builds whose trigger response was lost."""
         if not self.builds:
             return
@@ -232,15 +262,19 @@ class RelayService:
 
         build = await self.builds.get(run.build_id) if run.build_id else None
         if build and run.build_id:
-            await self.build_finished(BuildFinished(race_id=race.race_id, action=run.action,
-                                                    run_token=run.run_token, build_id=run.build_id,
-                                                    success=build['success'], error=build.get('error')))
+            await self._build_finished(BuildFinished(race_id=race.race_id, action=run.action,
+                                                     run_token=run.run_token, build_id=run.build_id,
+                                                     success=build['success'], error=build.get('error')))
         elif not run.build_id:
             age = (datetime.now(timezone.utc) - run.stamped_at).total_seconds()
             if age > self.build_bind_window_seconds:
                 run.status = TerraformStatus.FAILED
                 race.last_error = 'Cloud Build trigger did not start'
-                await self.repository.save_race(race, {'terraform_run', 'last_error'})
+                fields = {'terraform_run', 'last_error'}
+                if run.action == TerraformAction.APPLY and race.phase == Phase.STARTING:
+                    race.phase = Phase.FAILED
+                    fields.add('phase')
+                await self.repository.save_race(race, fields)
 
     async def _active_or_none(self):
         pointer = await self.repository.active()

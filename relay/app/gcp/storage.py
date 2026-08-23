@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 from typing import Protocol
 
@@ -28,12 +29,18 @@ class GCSObjectStore:
         self.project_id, self.bucket = project_id, bucket
 
     async def put_yaml(self, object_name, value):
+        await asyncio.to_thread(self._put_yaml_sync, object_name, value)
+
+    def _put_yaml_sync(self, object_name, value):
         logger.info("Writing object {} to bucket {}", object_name, self.bucket)
         client = storage.Client(project=self.project_id)
         blob = client.bucket(self.bucket).blob(object_name)
         blob.upload_from_string(yaml.safe_dump(value, sort_keys=False), content_type='application/yaml')
 
     async def signed_export_url(self, prefix: str) -> dict[str, str]:
+        return await asyncio.to_thread(self._signed_export_url_sync, prefix)
+
+    def _signed_export_url_sync(self, prefix: str) -> dict[str, str]:
         client = storage.Client(project=self.project_id)
         bucket = client.bucket(self.bucket)
         blobs = bucket.list_blobs(prefix=prefix)

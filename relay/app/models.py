@@ -78,6 +78,11 @@ class BuildFinished(BaseModel):
         if not isinstance(substitutions, dict):
             raise ValueError('invalid Cloud Build substitutions')
 
+        required_substitutions = ('_RACE_ID', '_ACTION', '_RUN_TOKEN')
+        if any(not isinstance(substitutions.get(key), str) or not substitutions[key]
+               for key in required_substitutions):
+            raise ValueError('Cloud Build substitutions are incomplete')
+
         status = payload.get('status')
         terminal_statuses = {'SUCCESS', 'FAILURE', 'INTERNAL_ERROR', 'TIMEOUT', 'CANCELLED'}
         if status is not None and status not in terminal_statuses:
@@ -91,9 +96,9 @@ class BuildFinished(BaseModel):
             error = failure_info.get('detail')
 
         return cls.model_validate({
-            'race_id': substitutions.get('_RACE_ID') or payload.get('race_id'),
-            'action': substitutions.get('_ACTION') or payload.get('action'),
-            'run_token': substitutions.get('_RUN_TOKEN') or payload.get('run_token'),
+            'race_id': substitutions['_RACE_ID'],
+            'action': substitutions['_ACTION'],
+            'run_token': substitutions['_RUN_TOKEN'],
             'build_id': payload.get('id') or payload.get('build_id') or payload.get('buildId'),
             'success': status == 'SUCCESS' if status is not None else payload.get('success'),
             'error': error,

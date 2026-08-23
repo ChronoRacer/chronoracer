@@ -33,23 +33,23 @@ class CloudBuildTrigger:
 
     async def trigger(self, race_id, action, run_token):
         logger.info("Triggering Cloud Build for race {} ({})", race_id, action)
-        client = cloudbuild_v1.CloudBuildAsyncClient()
-        source = cloudbuild_v1.RepoSource(
-            substitutions={
-                '_RACE_ID': str(race_id),
-                '_ACTION': str(action),
-                '_RUN_TOKEN': str(run_token),
-            }
-        )
+        async with cloudbuild_v1.CloudBuildAsyncClient() as client:
+            source = cloudbuild_v1.RepoSource(
+                substitutions={
+                    '_RACE_ID': str(race_id),
+                    '_ACTION': str(action),
+                    '_RUN_TOKEN': str(run_token),
+                }
+            )
 
-        request = cloudbuild_v1.RunBuildTriggerRequest(
-            project_id=self.project_id,
-            trigger_id=self.trigger_id,
-            source=source,
-        )
+            request = cloudbuild_v1.RunBuildTriggerRequest(
+                project_id=self.project_id,
+                trigger_id=self.trigger_id,
+                source=source,
+            )
 
-        op = await client.run_build_trigger(request=request)
-        build_id = op.metadata.build.id
+            op = await client.run_build_trigger(request=request)
+            build_id = op.metadata.build.id
 
         logger.info("Cloud Build {} triggered for race {}", build_id, race_id)
         return build_id

@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
+import yaml
 
 from relay.app.models import BuildFinished, ExportDone, Phase, TerraformAction, TerraformStatus
 from relay.app.gcp.repository import InMemoryRaceRepository
+from relay.app.gcp.storage import DevObjectStore
 from relay.app.service import RelayService
 
 
@@ -205,7 +207,19 @@ async def test_reconcile_expired_unbound_run_releases_mutex():
     await service.reconcile()
     current = await service._active()
     assert current.terraform_run.status is TerraformStatus.FAILED
+    assert current.phase is Phase.FAILED
     assert current.last_error == 'Cloud Build trigger did not start'
+
+
+@pytest.mark.asyncio
+async def test_start_keeps_generated_race_id_in_yaml():
+    object_store = DevObjectStore()
+    service = RelayService(InMemoryRaceRepository(), object_store=object_store, builds=FakeBuilds())
+
+    result = await service.start({'raceId': 'operator-supplied-id'}, 'operator')
+
+    stored = yaml.safe_load(object_store.objects[f"{result['raceId']}/core-config.yaml"])
+    assert stored['raceId'] == result['raceId']
 
 
 def test_cloud_build_notification_is_normalized_from_substitutions():
@@ -229,6 +243,14 @@ def test_cloud_build_notification_is_normalized_from_substitutions():
 def test_cloud_build_notification_rejects_non_terminal_status():
     with pytest.raises(ValueError):
         BuildFinished.from_cloud_build({'id': 'build-1', 'status': 'WORKING', 'substitutions': {}})
+
+
+def test_cloud_build_notification_requires_relay_substitutions():
+    with pytest.raises(ValueError):
+        BuildFinished.from_cloud_build({
+            'id': 'build-1', 'status': 'SUCCESS',
+            'race_id': 'race-1', 'action': 'apply', 'run_token': 'token-1',
+        })
 
 
 @pytest.mark.asyncio

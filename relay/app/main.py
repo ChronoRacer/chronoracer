@@ -100,9 +100,11 @@ def create_app(config: RelayConfig | None = None, service: RelayService | None =
             if not isinstance(message, dict) or not message.get('data'):
                 raise ValueError('invalid Pub/Sub envelope')
             data = json.loads(base64.b64decode(message['data']))
+            if not isinstance(data, dict):
+                raise ValueError('invalid Cloud Build event')
             await app.state.service.build_finished(BuildFinished.from_cloud_build(data))
         except ValueError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            logger.info("Acknowledging rejected build-finished event: {}", exc)
 
     @app.post("/internal/pubsub/export-done", status_code=status.HTTP_204_NO_CONTENT)
     async def export_done(request: Request):
@@ -115,9 +117,11 @@ def create_app(config: RelayConfig | None = None, service: RelayService | None =
             if not isinstance(message, dict) or not message.get('data'):
                 raise ValueError('invalid Pub/Sub envelope')
             data = json.loads(base64.b64decode(message['data']))
+            if not isinstance(data, dict):
+                raise ValueError('invalid export-done event')
             await app.state.service.export_done(data)
         except ValueError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            logger.info("Acknowledging rejected export-done event: {}", exc)
 
     return app
 
