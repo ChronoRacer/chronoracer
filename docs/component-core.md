@@ -28,11 +28,13 @@ The default contract is defined by [`core/default-config.yaml`](../core/default-
   queues up to 64 individual records. Increasing it increases memory pressure.
 
 The sink flushes on whichever comes first: 1,000 messages, 15 ms, cancellation, or stream shutdown. The collector
-deserializes each batch in parallel on the Rayon pool and emits one batch of successfully processed sensor messages,
-preserving the input order within that batch. Invalid messages remain individual DLQ records because their original
-partition, offset, and parse error are stored in per-record headers. The splitter partitions each processed batch into
-at most one fast-flush and one normal batch. The persistence batcher consumes those grouped messages and forms its
-database point batches using the existing fast/normal size and interval settings.
+processes batches concurrently on the Rayon pool, with at most one in-flight batch per Rayon worker; processing within
+each batch is serial. This bounded design applies backpressure before work can accumulate in the Rayon queue and emits
+one batch of successfully processed sensor messages, preserving the input order within that batch. Invalid messages
+remain individual DLQ records because their original partition, offset, and parse error are stored in per-record
+headers. The splitter partitions each processed batch into at most one fast-flush and one normal batch. The persistence
+batcher consumes those grouped messages and forms its database point batches using the fast/normal path and
+interval settings.
 
 The control path is intentionally separate: `InstantMessageSink` forwards each control record immediately on a
 single-message channel and uses `fetch.min.bytes=1`/`fetch.wait.max.ms=0`. Control events are not subject to the

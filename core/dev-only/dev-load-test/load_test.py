@@ -4,18 +4,18 @@ import random
 import threading
 import time
 import uuid
-from pathlib import Path
-
 from confluent_kafka import Producer
 from fastavro import parse_schema, schemaless_writer
+from pathlib import Path
 
 schema_path = Path(__file__).resolve().parents[2] / 'avro' / 'sensor_data.avsc'
 PARSED_SCHEMA = parse_schema(json.loads(schema_path.read_text()))
 CONFIG = json.loads((Path(__file__).resolve().parent / 'config.json').read_text())
 SENSOR_IDS = CONFIG["sensor_ids"]
 
+
 def generate_sensor_batch(base_timestamp_ns):
-    num_readings = random.randint(1, 10)
+    num_readings = random.randint(1, 15)
     readings = []
 
     current_delta = 0
@@ -29,7 +29,7 @@ def generate_sensor_batch(base_timestamp_ns):
 
         readings.append({
             "delta": current_delta,
-            "value": round(random.uniform(10.0, 100.0), 4)
+            "value": round(random.uniform(0.0, 300.0), 4)
         })
 
     return {
@@ -38,15 +38,18 @@ def generate_sensor_batch(base_timestamp_ns):
         "readings": readings
     }
 
+
 def serialize_record(record):
     bytes_writer = io.BytesIO()
     schemaless_writer(bytes_writer, PARSED_SCHEMA, record)
     return bytes_writer.getvalue()
 
+
 def delivery_report(err, msg):
     """Callback triggered by Kafka on successful or failed delivery."""
     if err is not None:
         print(f"Message delivery failed: {err}")
+
 
 def produce_sensor_messages(producer):
     """Thread function for producing Avro sensor messages to random topics."""
@@ -80,6 +83,7 @@ def produce_sensor_messages(producer):
         sleep_time = delay_between_messages - elapsed_in_loop
         if sleep_time > 0:
             time.sleep(sleep_time)
+
 
 def produce_change_driver_messages(producer):
     """Thread function for producing change_driver messages."""
@@ -127,11 +131,11 @@ def produce_change_driver_messages(producer):
 
     print("[Control] Finished sending control messages.")
 
+
 def produce_shutdown_message(producer):
     shutdown = CONFIG.get("shutdown", {})
     if not shutdown.get("enabled", False):
         return
-
 
     topic = shutdown.get("topic", "control")
     payload = ""
@@ -146,9 +150,10 @@ def produce_shutdown_message(producer):
 
     print("[Control] Sent shutdown message.")
 
+
 def main():
     global SENSOR_IDS
-    
+
     producer_conf = {
         'bootstrap.servers': CONFIG["broker"],
         'linger.ms': 5,
@@ -166,7 +171,6 @@ def main():
     print(f"- Batch Count: {CONFIG['batch_count']}")
     print(f"- CHDRV enabled: {chdrv_enabled}")
     print(f"- SHUTDOWN enabled: {shutdown_enabled}")
-    
 
     start_time = time.monotonic()
 
@@ -186,6 +190,7 @@ def main():
 
     actual_time = time.monotonic() - start_time
     print(f"Load test complete in {actual_time:.2f} seconds.")
+
 
 if __name__ == "__main__":
     main()

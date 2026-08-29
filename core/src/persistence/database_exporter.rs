@@ -5,7 +5,7 @@ use reqwest::header::AUTHORIZATION;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
 const EXPORT_TRIGGER_PATH: &str = "/api/v3/engine/export_database";
@@ -115,6 +115,7 @@ impl InfluxDbExporter {
     }
 
     pub async fn export_database(&self) -> Result<Vec<PathBuf>> {
+        let started_at = Instant::now();
         info!("Starting database export");
         // TODO: this might timeout
         let response = self.invoke_export_trigger().await?;
@@ -138,8 +139,8 @@ impl InfluxDbExporter {
             .collect::<Result<Vec<_>>>()?;
 
         info!(
-            "Database export finished. Exported {} out of {} tables",
-            response.tables_exported, response.tables_found
+            "Database export finished. Exported {} out of {} tables. Time taken: {:.2?}",
+            response.tables_exported, response.tables_found, started_at.elapsed()
         );
         Ok(exported_files)
     }
