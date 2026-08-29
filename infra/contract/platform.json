@@ -1,0 +1,11 @@
+{
+  "kafka_private_port": 9092,
+  "kafka_public_port": 9094,
+  "kafka_data_topic": "data",
+  "kafka_control_topic": "control",
+  "kafka_heartbeat_topic": "heartbeat",
+  "export_done_topic": "export-done",
+  "kafka_oauth_jwks_url": "https://chronoracer.eu.auth0.com/.well-known/jwks.json",
+  "kafka_oauth_issuer": "https://chronoracer.eu.auth0.com/",
+  "kafka_oauth_audience": "https://api.chronoracer.com"
+}
