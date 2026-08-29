@@ -1,0 +1,19 @@
+[Unit]
+Description=Chronoracer Kafka broker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+UMask=0077
+Environment=CHRONORACER_DIR=/chronoracer
+ExecStartPre=/chronoracer/fetch-tls.sh
+ExecStartPre=/chronoracer/render-server-properties.sh
+ExecStartPre=/chronoracer/format-kraft.sh
+ExecStart=/chronoracer/start-kafka.sh
+ExecStartPost=/chronoracer/wait-public-listener.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

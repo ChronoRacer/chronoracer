@@ -1,0 +1,16 @@
+[Unit]
+Description=Chronoracer Core
+After=influxdb3.service
+Requires=influxdb3.service
+
+[Service]
+Type=simple
+UMask=0077
+WorkingDirectory=/chronoracer
+EnvironmentFile=/chronoracer/core.env
+ExecStart=/chronoracer/core
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

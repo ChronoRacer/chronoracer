@@ -1,0 +1,19 @@
+# Cloud Build upload for control-plane image publish (not the VM Packer context).
+.git
+.cursor
+.idea
+**/.pytest_cache
+**/__pycache__
+**/.terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+core
+kafka
+docs
+infra/packer
+infra/bootstrap
+infra/race/README.md
+infra/race/terraform.tfvars.example
+target
+**/*.md
