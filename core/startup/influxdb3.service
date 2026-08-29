@@ -1,0 +1,14 @@
+[Unit]
+Description=InfluxDB 3 Core (Chronoracer)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+UMask=0077
+ExecStart=/usr/bin/env influxdb3 serve --node-id core --object-store file --data-dir /var/lib/influxdb3 --plugin-dir /chronoracer/influxdb-plugins --http-bind 127.0.0.1:8181 --admin-token-file /chronoracer/admin-token.json --package-manager disabled
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

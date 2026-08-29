@@ -5,29 +5,35 @@ Where: one VM. Single node, not cluster.
 Lifecycle: race-scoped. Created at the start. Destroyed after Core exports Influx and selected topics.
 
 Access: both public and private (two listeners)
+
 - Public: ingest from track devices. TLS terminated on Kafka. Okta OAuth required (client id and client secret on each device). Firewall opens the Kafka port only. No VPN. No IP allowlist.
 - Private: Core and Relay. VPC firewall only. No Okta on this listener. If Okta is down, devices cannot write, but Core can still drain the broker into Influx.
 
-Boot contract: broker does not start unless the public TLS listener is bound with the Secret Manager cert. Private-only Kafka is not a running Kafka.
+Boot contract: broker does not start unless the public TLS listener is bound with the Secret Manager cert. Private-only Kafka is not a running Kafka. Script sequence: [Kafka startup](../kafka/startup/README.md). Image pipeline: [Compute images](component-images.md).
 
-Responsibility: 
+Responsibility:
+
 - serve as data sink
 - handle internal control events
 - provide buffer for Core
 
-## [TODO - DRAFT SECTION] Public listener
+## Listeners
 
-[!IMPORTANT] DRAFT CONTENT IN THIS SECTION - NOT REFINED.
+KRaft combined broker+controller, single node. Ports and OAuth URLs: [`platform.json`](../infra/contract/platform.json). Assume Apache Kafka at `/opt/kafka` on family `chronoracer-kafka`.
 
-Cloud DNS zone and Kafka hostname , Secret Manager (Kafka TLS cert)
-Stable Cloud DNS hostname for Kafka. Zone and hostname always exist.
-A record is updated when the Kafka VM comes up. When ready, Relay returns hostname, port, and the applied public IP.
-Track clients may connect to the IP with SNI/verify on the hostname so DNS lag is not the critical path. Do not use that address unless status says ready.
-TLS on the public listener.
-One long-lived public certificate for the stable hostname lives in Secret Manager. Kafka VM attaches it at boot. Each race only updates the DNS A record (IP).
-Rotate the secret when the cert expires; do not issue a certificate per race. Private listener stays inside the VPC and does not use public TLS.
-Kafka A record uses a short TTL. Destroy deletes the A record. Do not leave a stale target pointing at a released ephemeral IP.
-Between races the hostname must not resolve to a leftover address.
+| Name       | Bind             | Advertised                                 | Protocol                                                                                                                                                                                       |
+|------------|------------------|--------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| PRIVATE    | `0.0.0.0:9092`   | `{kafka}.{zone}.c.{project}.internal:9092` | PLAINTEXT (Core, Relay). No Okta.                                                                                                                                                              |
+| PUBLIC     | `0.0.0.0:9094`   | `{kafka-fqdn}:9094`                        | SASL_SSL. TLS from the PKCS12 keystore. SASL/OAUTHBEARER validated with Apache `OAuthBearerValidatorCallbackHandler` against Auth0 JWKS (`kafka_oauth_*` in platform.json). No ACL authorizer. |
+| CONTROLLER | `127.0.0.1:9093` | not advertised                             | PLAINTEXT. Inter-broker uses PRIVATE.                                                                                                                                                          |
+
+## Public hostname and cert
+
+Zone, FQDN, A record, secret **resource**: [Terraform](component-terraform.md). Issue and upload PEM: [Kafka TLS runbook](operator-kafka-tls.md).
+
+When ready, Relay returns hostname, port, and the applied public IP. Track clients may connect to the IP with SNI/verify on the hostname so DNS lag is not the critical path. Do not use that address unless status says ready ([Race provisioning](flow-race_provisioning.md)).
+
+Topics are created by Core on the private listener, not at Kafka boot.
 
 ## Topics
 
@@ -35,14 +41,14 @@ All message keys are expected to be uppercase. Compact keys prefered.
 
 ### Sensors
 
-One topic for all sensors with multiple partitions. 
+One topic for all sensors with multiple partitions.
 
-Topic name: `data`
-Partition count: `TODO`
-Message key: `{sensorId}` (reference `ID` column in `sensors.xlsx` document)
-Delivery semantics: `exactly-once`
-Compression: `yes`, type: `TODO`
-Avro enabled: `yes`
+- Topic name: `data`
+- Partition count: `TODO`
+- Message key: `{sensorId}` (reference `ID` column in `sensors.xlsx` document)
+- Delivery semantics: `exactly-once`
+- Compression: `yes`, type: `TODO`
+- Avro enabled: `yes`
 
 #### Avro Message schema:
 
@@ -66,12 +72,12 @@ Message schema:
       "doc": "Sensor ID"
     },
     {
-        "name": "timestamp",
-        "type": {
-          "type": "long",
-          "logicalType": "timestamp-nanos"
-        }
-        "doc": "Timestamp of the first read in the batch"
+      "name": "timestamp",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-nanos"
+      }
+      "doc": "Timestamp of the first read in the batch"
     },
     {
       "name": "readings",
