@@ -3,7 +3,7 @@ use crate::messaging::dlq_handler::DLQHandler;
 use crate::messaging::heartbeat_handler::HeartbeatHandler;
 use crate::messaging::kafka_exporter::KafkaExporter;
 use crate::messaging::management::ensure_all_topics_exists;
-use crate::messaging::message_sink::{InstantMessageSink, SinkRx, BatchMessageSink, BatchSinkRx};
+use crate::messaging::message_sink::{BatchMessageSink, BatchSinkRx, InstantMessageSink, SinkRx};
 use crate::messaging::partial_message::{PartialMessage, PartialMessageWithError};
 use anyhow::{Context, Result};
 use rdkafka::producer::FutureProducer;

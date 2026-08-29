@@ -1,6 +1,6 @@
 use crate::configuration::{GcpConfig, KafkaConfig};
 use crate::gcp::gcp_utils::to_bucket_path;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use compact_str::CompactString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -74,7 +74,7 @@ impl<'a> KafkaExporter<'a> {
                 .iter()
                 .map(to_quoted)
                 .collect::<Vec<_>>()
-                .join(",")
+                .join(","),
         );
 
         let topics = to_array(
@@ -85,7 +85,7 @@ impl<'a> KafkaExporter<'a> {
                 .iter()
                 .map(to_quoted)
                 .collect::<Vec<_>>()
-                .join(",")
+                .join(","),
         );
 
         let mut local_path = self.kafka_config.export.local_path.display().to_string();

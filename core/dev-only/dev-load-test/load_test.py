@@ -9,7 +9,7 @@ from pathlib import Path
 from confluent_kafka import Producer
 from fastavro import parse_schema, schemaless_writer
 
-schema_path = Path(__file__).resolve().parents[1] / 'avro' / 'sensor_data.avsc'
+schema_path = Path(__file__).resolve().parents[2] / 'avro' / 'sensor_data.avsc'
 PARSED_SCHEMA = parse_schema(json.loads(schema_path.read_text()))
 CONFIG = json.loads((Path(__file__).resolve().parent / 'config.json').read_text())
 SENSOR_IDS = CONFIG["sensor_ids"]
@@ -51,7 +51,7 @@ def delivery_report(err, msg):
 def produce_sensor_messages(producer):
     """Thread function for producing Avro sensor messages to random topics."""
     topics = CONFIG["sensor_topics"]
-    count = CONFIG["point_count"]
+    count = CONFIG["batch_count"]
     total_time = CONFIG["testing_time"]
 
     delay_between_messages = total_time / count if count > 0 else 0
@@ -70,7 +70,6 @@ def produce_sensor_messages(producer):
             topic=target_topic,
             value=avro_bytes,
             on_delivery=delivery_report,
-            compression_type='lz4',
             key=record["sensor_id"]
         )
 
@@ -117,7 +116,6 @@ def produce_change_driver_messages(producer):
             topic=topic,
             value=payload,
             on_delivery=delivery_report,
-            compression_type='lz4',
             key="CHDRV"
         )
         producer.poll(0)
@@ -142,7 +140,6 @@ def produce_shutdown_message(producer):
         topic=topic,
         value=payload,
         on_delivery=delivery_report,
-        compression_type='lz4',
         key="SHUTDOWN"
     )
     producer.poll(0)
@@ -156,7 +153,8 @@ def main():
         'bootstrap.servers': CONFIG["broker"],
         'linger.ms': 5,
         'batch.num.messages': 300,
-        'queue.buffering.max.messages': 10000
+        'queue.buffering.max.messages': 10000,
+        'compression.type': 'lz4'
     }
 
     producer = Producer(producer_conf)
@@ -165,7 +163,7 @@ def main():
 
     print(f"Starting load test configuration:")
     print(f"- Total Time: {CONFIG['testing_time']}s")
-    print(f"- Point Count: {CONFIG['point_count']}")
+    print(f"- Batch Count: {CONFIG['batch_count']}")
     print(f"- CHDRV enabled: {chdrv_enabled}")
     print(f"- SHUTDOWN enabled: {shutdown_enabled}")
     

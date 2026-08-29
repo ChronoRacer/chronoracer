@@ -1,5 +1,5 @@
-use rdkafka::message::BorrowedMessage;
 use rdkafka::Message;
+use rdkafka::message::BorrowedMessage;
 
 #[derive(Debug)]
 pub struct PartialMessage {

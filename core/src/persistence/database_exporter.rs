@@ -1,5 +1,5 @@
 use crate::configuration::DatabaseExportConfig;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use influxdb3_client::Client;
 use reqwest::header::AUTHORIZATION;
 use serde::Deserialize;
@@ -77,7 +77,7 @@ impl InfluxDbExporter {
                         &mut backoff,
                         format!("HTTP {status}: {body}"),
                     )
-                        .await?;
+                    .await?;
                 }
                 Err(error) => {
                     self.retry_or_fail(&mut attempts, &mut backoff, error.to_string())

@@ -73,6 +73,7 @@ class KafkaShutdownPublisher(ShutdownPublisher):
             'retries': 3,
             'retry.backoff.ms': 250,
             'delivery.timeout.ms': self._delivery_timeout_seconds * 1000,
+            'compression.type': 'snappy'
         })
 
     async def publish_shutdown(self, race_id: str) -> None:
@@ -94,8 +95,7 @@ class KafkaShutdownPublisher(ShutdownPublisher):
                 topic=self.topic,
                 key="SHUTDOWN",
                 value="",
-                on_delivery=_delivery_callback,
-                compression_type='snappy',
+                on_delivery=_delivery_callback
             )
             remaining = self.producer.flush(self._delivery_timeout_seconds)
         except (BufferError, KafkaException) as exc:

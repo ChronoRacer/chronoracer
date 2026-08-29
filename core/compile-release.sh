@@ -18,6 +18,7 @@ rsync -a --delete \
     --exclude '.git' \
     ./ "$WSL_SRC_TMP/"
 
+cd "$WSL_CACHE_DIR"
 RUSTFLAGS="-C target-cpu=native" CARGO_TARGET_DIR="$WSL_CACHE_DIR" cargo build --profile release --manifest-path "$WSL_SRC_TMP/Cargo.toml"
 
 cp -f "$WSL_CACHE_DIR/release/$BINARY_NAME" "$OUTPUT_DIR/$BINARY_NAME"

@@ -1,9 +1,6 @@
-/target
 .idea
-/redpanda/export.yaml
-/export/
 /core/target/
-/relay/venv/
+*/venv/
 **/.terraform/
 *.tfstate
 *.tfstate.*
@@ -11,3 +8,5 @@ crash.log
 *.tfvars
 !*.tfvars.example
 /core/release/
+/core/redpanda/export.yaml
+/core/export/
