@@ -10,7 +10,6 @@ locals {
   kafka_private_bootstrap = "${local.names.kafka_vm}.${var.zone}.c.${var.project_id}.internal:${local.kafka_private_port}"
   kafka_hostname          = trimsuffix(var.kafka_fqdn, ".")
 
-  # HashiCorp Terraform has no cidrcontains (OpenTofu does). Overlap via IPv4 integers.
   cidr_ipv4 = {
     for key, ip in {
       subnet_first = cidrhost(var.subnet_cidr, 0)

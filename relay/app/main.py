@@ -1,17 +1,16 @@
 import base64
 import json
-from typing import Any
-
 from fastapi import Depends, FastAPI, Request, HTTPException, status, Query
 from loguru import logger
 from pydantic import BaseModel, Field
+from typing import Any
 
-from .gcp.repository import FirestoreRaceRepository, InMemoryRaceRepository
 from .auth import OktaAuthenticator, okta_user, pubsub_push
-from .config import RelayConfig, load_config
+from .config import load_config
 from .gcp.builds import DevBuildTrigger, CloudBuildTrigger
-from .gcp.pubsub import DevShutdownPublisher, KafkaShutdownPublisher
-from .gcp.pubsub import KafkaHeartbeatReader
+from kafka import DevShutdownPublisher, KafkaShutdownPublisher
+from kafka import KafkaHeartbeatReader
+from .gcp.repository import FirestoreRaceRepository, InMemoryRaceRepository
 from .gcp.storage import DevObjectStore, GCSObjectStore
 from .models import BuildFinished
 from .service import RelayService

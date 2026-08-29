@@ -1,5 +1,3 @@
-# Google-managed service agents. Creating them before IAM/bindings avoids first-apply
-# "service account does not exist" on a fresh project (API enable is not enough).
 locals {
   service_identity_apis = toset([
     "artifactregistry.googleapis.com",

@@ -1,4 +1,3 @@
-# Always-on resources. Missing object = plan fail (always-on not applied or renamed).
 data "google_compute_network" "chronoracer" {
   name    = local.names.vpc
   project = var.project_id
@@ -40,7 +39,7 @@ data "google_storage_bucket" "race" {
   name = local.names.race_bucket
 }
 
-# Family → concrete image id at first apply. ignore_changes = all on VMs so a moved family is not a replace.
+# Family into concrete image id at first apply. ignore_changes = all on VMs so a moved family is not a replace.
 data "google_compute_image" "kafka" {
   family  = local.names.kafka_family
   project = var.project_id

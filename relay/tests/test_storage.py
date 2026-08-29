@@ -1,9 +1,7 @@
+import pytest
+from app.gcp.storage import GCSObjectStore, iam_sign_params
 from types import SimpleNamespace
 from unittest.mock import MagicMock
-
-import pytest
-
-from app.gcp.storage import GCSObjectStore, iam_sign_params
 
 
 class _Creds:

@@ -1,9 +1,8 @@
-from typing import Any
-
 import jwt
 from fastapi import HTTPException, Request
 from jwt import PyJWKClient
 from loguru import logger
+from typing import Any
 
 
 class OktaAuthenticator:
@@ -26,6 +25,7 @@ class OktaAuthenticator:
         except Exception as exc:
             logger.warning("Token validation failed: {}", type(exc).__name__)
             raise HTTPException(status_code=401, detail="Invalid access token") from exc
+
 
 async def okta_user(request: Request) -> dict[str, Any]:
     authorization = request.headers.get("authorization", "")

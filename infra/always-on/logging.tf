@@ -1,10 +1,4 @@
 locals {
-  # Attach to project _Default sink via google_logging_project_exclusion.
-  # Excluded entries never ingest into Cloud Logging (no storage charge).
-  #
-  # Kept (not matched below): Relay Cloud Run stdout/stderr/requests (except probes),
-  # Cloud Build controller (race-controller), kafka/core VM syslog and app logs,
-  # GCE startup-script / metadata-script-runner, serial console (boot script stdout).
   log_exclusions = {
     compute_firewall = {
       description = "VPC firewall allow/deny hit logs."
@@ -44,7 +38,7 @@ locals {
     }
 
     gcp_health_checks = {
-      description = "Internal Google health-check and probe HTTP noise (Relay, L7 LB, GCE)."
+      description = "Internal Google health-check and probe HTTP noise."
       filter      = <<-EOT
         httpRequest.userAgent=~"GoogleHC|Google-Health-Check|GoogleHealthCheck|Google-Cloud-Run-Health-Checks"
         OR (

@@ -13,11 +13,11 @@ source "googlecompute" "kafka" {
   image_family            = local.names.kafka_family
   image_storage_locations = [var.image_storage_location]
   image_description       = "Chronoracer Kafka. /opt/kafka plus overlay at /chronoracer."
-  tags                    = ["packer"]
+  tags = ["packer"]
 }
 
 build {
-  name    = "chronoracer-kafka"
+  name = "chronoracer-kafka"
   sources = ["source.googlecompute.kafka"]
 
   provisioner "shell" {
@@ -26,7 +26,7 @@ build {
   }
 
   provisioner "shell" {
-    execute_command  = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash '{{ .Path }}'"
+    execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash '{{ .Path }}'"
     environment_vars = [
       "KAFKA_VERSION=${var.kafka_version}",
       "KAFKA_SCALA_BINARY=${var.kafka_scala_binary}",

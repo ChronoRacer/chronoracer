@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import json
 import subprocess
-from pathlib import Path
-
 from controller.terraform_cli import CliTerraform, _output_values
+from pathlib import Path
 
 
 def test_output_values_strip_dot():

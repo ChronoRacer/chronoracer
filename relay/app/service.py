@@ -1,13 +1,12 @@
 import asyncio
 import re
 from datetime import datetime, timezone
+from loguru import logger
 from typing import Any
 from uuid import uuid4
 
-from loguru import logger
-
 from .gcp.builds import BuildTrigger
-from .gcp.pubsub import ShutdownPublisher
+from .kafka import ShutdownPublisher
 from .gcp.repository import RaceRepository
 from .gcp.storage import ObjectStore
 from .models import BuildFinished, ExportDone, Phase, Race, TerraformAction, TerraformRun, \
@@ -22,6 +21,7 @@ def ensure_race_id_valid(race_id: str):
         raise ValueError(
             "raceId must be 1–12 chars, GCP label-safe: lowercase letters, digits, underscore, dash"
         )
+
 
 class RelayService:
     def __init__(self, repository: RaceRepository, object_store: ObjectStore | None = None,

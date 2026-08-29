@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Upload a locally built linux Core binary + InfluxDB plugins to gs://{artifacts}/core/current/.
-# Compile x86_64-unknown-linux-gnu yourself (rdkafka cmake-build needs a Linux toolchain).
+# Compile x86_64-unknown-linux-gnu (rdkafka cmake-build needs a Linux toolchain).
 #
 # Usage: publish-core-payload.sh /path/to/chronoracer-core
 set -euo pipefail

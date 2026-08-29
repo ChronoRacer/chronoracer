@@ -1,7 +1,6 @@
-from typing import Any, Protocol
-
 from google.cloud.firestore_v1 import DELETE_FIELD, AsyncClient
 from loguru import logger
+from typing import Any, Protocol
 
 from ..models import ActivePointer, Phase, Race, TerraformAction, TerraformStatus
 
@@ -23,9 +22,11 @@ class RaceRepository(Protocol):
 
 
 class InMemoryRaceRepository(RaceRepository):
-    def __init__(self): self._active = ActivePointer(); self._races = {}
+    def __init__(self):
+        self._active = ActivePointer(); self._races = {}
 
-    async def active(self): return self._active.model_copy(deep=True)
+    async def active(self):
+        return self._active.model_copy(deep=True)
 
     async def race(self, race_id):
         race = self._races.get(race_id)
@@ -45,14 +46,15 @@ class InMemoryRaceRepository(RaceRepository):
         logger.debug("Saving race {} in memory", race.race_id)
         self._races[race.race_id] = race.model_copy(deep=True)
 
-    async def set_active(self, pointer): self._active = pointer.model_copy(deep=True)
+    async def set_active(self, pointer):
+        self._active = pointer.model_copy(deep=True)
 
     async def complete_destroy(self, race):
         self._races[race.race_id] = race.model_copy(deep=True)
         self._active = ActivePointer()
 
 
-class FirestoreRaceRepository(RaceRepository,):
+class FirestoreRaceRepository(RaceRepository, ):
     """Firestore adapter for the three Relay-owned document locations."""
 
     def __init__(self, project_id: str, database: str):

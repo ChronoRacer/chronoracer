@@ -1,10 +1,8 @@
+import pytest
+from app.gcp.builds import CloudBuildTrigger
+from google.cloud.devtools import cloudbuild_v1
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
-
-import pytest
-from google.cloud.devtools import cloudbuild_v1
-
-from app.gcp.builds import CloudBuildTrigger
 
 PARENT = "projects/proj/locations/europe-west3"
 

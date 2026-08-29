@@ -1,9 +1,8 @@
 import asyncio
-from datetime import datetime, timezone
-from typing import Protocol
-
 from confluent_kafka import Consumer, KafkaException, Producer, TopicPartition
+from datetime import datetime, timezone
 from loguru import logger
+from typing import Protocol
 
 
 class ShutdownPublisher(Protocol):
@@ -93,6 +92,7 @@ class KafkaShutdownPublisher(ShutdownPublisher):
                 key="SHUTDOWN",
                 value="",
                 on_delivery=_delivery_callback,
+                compression_type='snappy',
             )
             remaining = self.producer.flush(self._delivery_timeout_seconds)
         except (BufferError, KafkaException) as exc:
