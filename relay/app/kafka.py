@@ -22,8 +22,11 @@ class KafkaHeartbeatReader:
         return await loop.run_in_executor(None, self._read_last_sync)
 
     def _read_last_sync(self) -> datetime | None:
-        consumer = Consumer({'bootstrap.servers': self.bootstrap, 'group.id': 'relay-heartbeat-read',
-                             'enable.auto.commit': False, 'auto.offset.reset': 'error'})
+        # DO NOT set auto commit or do any manual commits here. Group ID can be random
+        consumer = Consumer({'bootstrap.servers': self.bootstrap,
+                             'enable.auto.commit': False,
+                             'auto.offset.reset': 'error'}
+                            )
         try:
             partitions = consumer.list_topics(self.topic, timeout=5).topics[self.topic].partitions
             if not partitions: return None
