@@ -6,19 +6,18 @@ Lifecycle: always available
 
 Access: private
 
-Core responsibility: 
-- ingest data from Kafka
-- process, validate data
-- batch and write to database
-- serve as a buffer for database
-- handle shutdown sequence export flow (for both database and Kafka)
+Responsibility:
+
+- race lifecycle source of truth (pointer + race docs)
+- one-build mutex (`terraformRun` / `runToken`)
+- store apply outputs the controller writes (`applied`)
 
 ## Shape
 
 Three documents:
 
 - `control/active` — pointer. `raceId` set or empty. Relay-only write. New start only when empty. Retry from `failed` keeps the same pointer.
-- `races/{raceId}` — one doc per race. Kept after destroy. Next new start always creates a new, unique `raceId`.
+- `races/{raceId}` — one doc per race. Kept after destroy. Next new start needs a **new** operator `raceId`; destroyed ids are rejected.
 
 Operators never read Firestore. They call Relay.
 
@@ -27,39 +26,38 @@ Operators never read Firestore. They call Relay.
 Writers (only two):
 
 - **Relay:** pointer, race collection; creates the race doc in the same transaction as the pointer; uploads Core YAML to GCS; writes `starting`, `stopping`, `exporting`, `destroying`, `destroyed`; writes `failed` if Cloud Build produced no controller `applied` while still `starting`, if the trigger never started, or if the build failed without a controller write; writes `terraformRun` on stamp (`runToken`, `stampedAt`, empty `buildId`), on bind or trigger `buildId`, on trigger failure (`status` `failed`, not left `in_flight`), on bind-window expiry with no matching build, and on build-finished (push or status replay); writes `startedBy` and timestamps.
-- **Controller:** reads `terraformRun.action`, `runToken`, and `raceId`. Runs Terraform only if status is `in_flight` and `runToken` matches this build. Token mismatch: no Terraform, no Firestore write, success exit. Writes `applied` (only writer of `applied`) or `failed` only for `apply`, same write as terraform outputs, only if phase is still `starting` and the token still matches. Does not write Firestore on `close_ingest` or `destroy`. Does not parse YAML. Refuses apply if the GCS YAML object is missing. Does not touch `control/active`, the YAML object, or `terraformRun`.
+- **Controller:** bind, apply writes, and YAML HEAD: [Controller](component-controller.md). Does not touch `control/active`, the YAML object, or `terraformRun`. Does not write Firestore on `close_ingest` or `destroy`.
 
 Not writers, not readers: Core, Kafka VM, devices, operators.
 
 ## Core config blob
 
-Relay renders a small YAML from operator request values plus system constants (including `raceId`) and uploads it to `{raceId}/core-config.yaml` **before** the pointer transaction. Firestore does not store the file. Orphan YAML without a pointer is acceptable.
+Relay uploads the operator YAML mapping as-is to `{raceId}/core-config.yaml` **before** the pointer transaction. It does not inject brokers, `raceId`, or GCP project fields. Firestore does not store the file. Orphan YAML without a pointer is acceptable.
 
-Controller trusts the object and does not parse it. Race Terraform passes the GCS path as Core VM metadata. Core boot fetches the file. Core never uses Firestore.
+Controller trusts the object exists and does not parse it. Overlay at boot: [Core startup](../core/startup/README.md). Core never uses Firestore.
 
-`raceId` is a field on the race doc. Duplication with YAML contents is accepted.
+`raceId` on the race doc is the operator id. Boot overlay writes `race.race_id` from metadata `race-id`.
 
-YAML is immutable after start. Retry from `failed` keeps the original object. A different config requires force-destroy and a new race.
+Operator YAML is immutable after start. Retry from `failed` keeps the original object. A different config requires force-destroy and a new race.
 
-Exports land at `{raceId}/export/db` and `{raceId}/export/kafka` - location not stored in Firestore, derived from `raceId`. Always-on IAM: [1-infrastructure.md](1-infrastructure.md), [4-terraform.md](4-terraform.md).
+Export paths: [GCS](component-gcs_buckets.md). Always-on IAM: [Terraform](component-terraform.md).
 
 ## Schema
 
 ### `control/active`
 
-- `raceId` — string or empty
+- `raceId` — string or empty. New races: operator-supplied, unique, GCP label-safe, 1–12 chars (`^[a-z0-9]([a-z0-9_-]{0,11})$`). Never reused after destroy.
 - `updatedAt`
 
 ### `races/{raceId}`
 
 - `raceId`
 - `phase` — see machine below
-- `terraformRun` — `runToken` (uuid, stamped with `in_flight`, passed into Cloud Build), `stampedAt`, `buildId` (empty until trigger confirms or status binds it), `action` (`apply` | `close_ingest` | `destroy`), `status` (`in_flight` | `succeeded` | `failed`). Empty until the first stamp. Source of truth for the one-build mutex. Not inferred from phase. GCS Terraform state locking is not the mutex.
-- terraform outputs after apply: Kafka instance, Core instance, Kafka public IP
-- Kafka hostname (stable name, copied on apply for history)
+- `terraformRun` — `runToken` (uuid, stamped with `in_flight`, passed into Cloud Build), `stampedAt`, `buildId` (empty until trigger confirms or status binds it), `action` (`apply` | `close_ingest` | `destroy`), `status` (`in_flight` | `succeeded` | `failed`). Present from the create transaction on new start (never persist `starting` without an `in_flight` run). Source of truth for the one-build mutex. Not inferred from phase. GCS Terraform state locking is not the mutex.
+- terraform outputs after apply (controller): `kafkaInstance`, `coreInstance`, `kafkaPublicIp`, `kafkaHostname` (stable FQDN without trailing dot). Not `kafkaPort`.
 - `startedBy` — Okta subject
 - timestamps: `startedAt`, `appliedAt`, `stoppedAt`, `destroyedAt`
-- `lastError`
+- `lastError` — set on apply/trigger/build failure. Cleared when Relay stamps a new `terraformRun` (retry start / stop / force-destroy / export-done). Controller deletes it when writing `applied`.
 
 ## Mutex
 
@@ -76,11 +74,11 @@ Reconcile — on operator status, and before mutex checks on start retry / stop 
 
 Bind window: longer than Cloud Run request timeout. No always-on reconciler daemon.
 
-Every Relay trigger: stamp `in_flight` + new `runToken` + `stampedAt` with empty `buildId` → trigger with those substitutions → write `buildId`. Trigger failure: `status` `failed`, `lastError`, do not leave `in_flight`.
+Every Relay trigger: stamp `in_flight` + new `runToken` + `stampedAt` with empty `buildId` (new start: same transaction as pointer + race doc) → trigger with those substitutions → write `buildId`. Trigger failure: `status` `failed`, `lastError`, do not leave `in_flight`. Stamp clears `lastError`.
 
 ## Phase machine
 
-Firestore stores infrastructure phase only. It does not store `ready` or `unhealthy`. Ready/unhealthy are API output: [6-relay-api.md](6-relay-api.md). Detection: [2-race-provisioning.md](2-race-provisioning.md).
+Firestore stores infrastructure phase only. It does not store `ready` or `unhealthy`. Ready/unhealthy are API output: [Relay](component-relay.md). Detection: [Race provisioning](flow-race_provisioning.md).
 
 ```mermaid
 stateDiagram-v2
@@ -102,7 +100,7 @@ stateDiagram-v2
 
 Legal transitions:
 
-- No pointer → YAML upload, then one transaction creates `races/{raceId}` and sets pointer, phase `starting`, then stamps apply `in_flight` + `runToken`
+- No pointer → YAML upload, then one transaction creates `races/{raceId}` and sets pointer, phase `starting`, **and** stamps apply `in_flight` + `runToken`
 - `starting` → `applied` (Controller, token match, phase still `starting`) or `failed` (Controller on apply fail with token match; Relay if no `applied` while still `starting`, trigger never started, or bind window expired) or `destroying` (force, mutex not held)
 - `failed` → `starting` (retry, same raceId, same YAML, new `runToken`, mutex not held) or `destroying` (force, mutex not held)
 - `applied` → `stopping` (graceful stop, mutex not held) or `destroying` (force, mutex not held)
@@ -116,7 +114,7 @@ Legal transitions:
 
 No transition into ready/unhealthy.
 
-Pointer: set only on new start, cleared only when that race reaches `destroyed`. Retry from `failed` does not change the pointer. Destroyed race docs remain. Pointer and race doc are created together; never pointer without a doc.
+Pointer: set only on new start, cleared only when that race reaches `destroyed` (`control/active` written as empty `raceId`, not deleted). Retry from `failed` does not change the pointer. Destroyed race docs remain; that `raceId` cannot start again. Pointer and race doc are created together; never pointer without a doc; never `starting` without mutex.
 
 ## Who writes which phase
 

@@ -9,13 +9,17 @@ Lifecycle: race-scoped. Created at the start. After export succeeds, VM and disk
 
 Access: private
 
-Core responsibility: 
+Core responsibility:
+
 - ingest data from Kafka
 - process, validate data
 - batch and write to the database
 - serve as a buffer for the database
 - handle shutdown sequence export flow (for both database and Kafka)
 
+## Startup
+
+Boot scripts: [Core startup](../core/startup/README.md). Influx on this VM: [InfluxDB](component-influxdb.md). Image + payload: [Compute images](component-images.md).
 
 ## Layers
 
@@ -46,7 +50,7 @@ Main components:
 Name: Persistence layer
 Purpose: handle connection with the database, flush data
 Main components:
-- batcher collecting data into batches depending on time, batch size and sensor type 
+- batcher collecting data into batches depending on time, batch size and sensor type
 - flusher writing data into the database
 
 #### Layer 4 - Shutdown layer
@@ -161,10 +165,12 @@ flowchart TB
 Successful shutdown sequence means sending the export done event to Google Pub/Sub.
 Failure means not sending the event and thus forcing either operator to invoke the force-destroy flow after optional manual intervention.
 
+Race stop sequence around this: [Race destruction](flow-race_destruction.md). Export prefix: [GCS](component-gcs_buckets.md).
+
 #### Kafka export
 
 Kafka data export and GCS upload are handled via Redpanda templates rendered during runtime: [Redpanda templates](../core/redpanda/README.md).
-Topics to be exported are defined in the Core configuration. Usually just DLQ, but any number of topics can be included. 
+Topics to be exported are defined in the Core configuration. Usually just DLQ, but any number of topics can be included.
 Behaviour when trying to export a non-existing topic is not tested and thus undefined.
 
 Whether Kafka export failure marks the shutdown sequence as failed is defined in the Core configuration.

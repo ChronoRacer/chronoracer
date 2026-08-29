@@ -17,7 +17,7 @@ Note that the free version of InfluxDB does not support roles or token permissio
 
 ## Accessible to predetermined users
 
-- Public Kafka broker: integration with Okta via SASL/OAUTHBEARER auth method
+- Public Kafka broker: integration with Okta via SASL/OAUTHBEARER. Broker validates JWTs with Auth0 JWKS; URLs live in [`infra/contract/platform.json`](../infra/contract/platform.json). Overlay: [Kafka](component-kafka.md).
 - Internal Relay push endpoints: out of Okta scope, handled via Google keys check and identity verification)
 - Write Relay API (start/stop race, etc.): should be gated with Okta permissions/groups. In MVP, treated as accessible to all authenticated users.
 

@@ -2,13 +2,16 @@
 
 Code at: [Relay root](../relay)
 
-Where: Cloud Run, public HTTPS. 
+Where: Cloud Run, public HTTPS. Image from Artifact Registry (`ar_relay_image` in [`names.json`](../infra/contract/names.json)). Publish: [Control-plane images](operator-control-plane-images.md).
 
 Lifecycle: always deployed. Survives races. Scale-to-zero when idle. Firestore holds state so Relay stays stateless.
 
 Access: public. No Google invoker IAM for operators. Relay checks Okta on operator calls. Pub/Sub pushes use Google OIDC, not Okta. Operators are not Google identities.
 
-Responsibility: 
+IAM and Cloud Run instance caps: [Terraform](component-terraform.md). Cloud Build trigger location and regional APIs: [Controller](component-controller.md). Mutex, schema, reconcile: [Firestore](component-firestore.md). Ready/unhealthy detection: [Race provisioning](flow-race_provisioning.md).
+
+Responsibility:
+
 - manage race lifecycle
 - allow for exported data download
 
@@ -16,13 +19,13 @@ Responsibility:
 
 Three identities.
 
-- **Operator:** valid Okta token. Any such user may call all four operator operations. No role matrix in MVP. Cloud Run is public HTTPS; Relay checks Okta. Operators are not Google identities.
+- **Operator:** valid Okta token. Who may call which operation: [Okta](component-okta.md).
 - **Build-finished:** Pub/Sub push identity (OIDC) for the Cloud Build subscription. Not Okta. Scoped to one endpoint.
 - **Export-done:** Pub/Sub push identity (OIDC) for the export-done subscription. Not Okta. Scoped to one endpoint.
 
 Cloud Run does not wait on Terraform. Operator calls return immediately. Relay is the only Cloud Build caller.
 
-Before start retry / stop / force-destroy reject-on-mutex, and on every status: run the Firestore reconcile (bind orphan `buildId` by `runToken`, replay terminal Cloud Build).
+Before start retry / stop / force-destroy reject-on-mutex, and on every status: run the Firestore reconcile.
 
 ## Resource shape
 
@@ -36,15 +39,15 @@ Internal build-finished and export-done are separate paths on the same Relay ser
 
 Caller: Okta.
 
-Input: `raceId`, config dict. On retry from `failed`, config is ignored; the original YAML stays.
+Input: required `raceId` (no default; operator chooses) and config dict (opaque Core YAML mapping; partial OK). Relay does not mint `raceId` and does not schema-validate Core. `raceId` rules: [Firestore](component-firestore.md). On retry from `failed`, config is ignored; the original YAML stays. `raceId` must match the active race.
 
-New race (pointer empty): mint `raceId`; render YAML; upload `{raceId}/core-config.yaml`; one transaction: atomic pointer set if empty **and** create race doc (reject if pointer already set); stamp apply `in_flight` + new `runToken` + `stampedAt` with empty `buildId`; trigger Cloud Build apply with substitutions `raceId`, `action`, `runToken`; write `buildId`. Trigger failure: phase `failed`, `terraformRun.status` `failed`, `lastError`, pointer stays.
+New race (pointer empty): reject if `raceId` is invalid or `races/{raceId}` already exists (including destroyed races). Upload operator YAML as-is to `{raceId}/core-config.yaml` (no platform inject; overlay at boot: [Core](component-core.md)); one transaction stamps apply `in_flight` as [Firestore](component-firestore.md); trigger Cloud Build apply with substitutions `raceId`, `action`, `runToken`; write `buildId`. Trigger failure: phase `failed`, `terraformRun.status` `failed`, `lastError`, pointer stays. Stamp clears `lastError`.
 
 Retry (pointer set, phase `failed`, mutex not held): same `raceId`, no new YAML, new apply run, new `runToken`, phase `starting`, stamp, trigger, write `buildId`.
 
 Output: `raceId`, phase `starting`.
 
-Reject: pointer set and phase is not `failed`; `failed` but mutex held.
+Reject: invalid or reused `raceId`; pointer set and phase is not `failed`; `failed` but mutex held; `raceId` ≠ active race.
 
 ### Status (operator)
 
@@ -54,19 +57,9 @@ If mutex held: reconcile, then re-read Firestore.
 
 If pointer empty: no active race; return `raceId` null.
 
-Else: `raceId`, phase, ready, unhealthy, `lastError`, `startedBy`, `startedAt`, `terraformRun`, `billableVms` true. Kafka hostname, port, and public IP only when ready. Do not return export URLs or last-race data.
+Else: `raceId`, phase, ready, unhealthy, `lastError`, `startedBy`, `startedAt`, `terraformRun`. Kafka hostname, port, and public IP only when ready. Do not return export URLs or last-race data.
 
-Ready / unhealthy are derived. Not written back. Heartbeat only when phase is `applied`:
-
-- No record yet: ready false, unhealthy false
-- Fresh record: ready true, unhealthy false
-- Stale record or Kafka read fail: ready false, unhealthy true (`lastError` on read fail)
-- Other phases: both false
-
-Ready means: Firestore phase `applied`, Kafka broker started (public TLS bound at boot), Core heartbeat fresh (Core up, private Kafka reachable, Influx reachable).
-Until then, Relay must not hand out hostname, port, or public IP as usable ingest.
-
-Read fail still returns phase, `startedAt`, `billableVms`.
+Ready / unhealthy are derived. Not written back. Rules: [Race provisioning Healthcheck](flow-race_provisioning.md). Other phases: both false. Read fail still returns phase, `startedAt`.
 
 Export-done is not recovered here. Hung `exporting` uses force-destroy.
 
@@ -78,7 +71,7 @@ Return every race ID and its race dates from the `races` collection, excluding t
 
 ### Historical race (operator)
 
-Caller: Okta. Return the selected historical race document from the database. An active race is not a historical race and is rejected as not found. With query parameter `export_race=true`, also return `exportUrls` containing temporary GCS export URLs.
+Caller: Okta. Return the selected historical race document from the database. An active race is not a historical race and is rejected as not found. With query parameter `export_race=true`, also return `exportUrls` containing temporary GCS export URLs (15-minute GET, IAM `signBlob` from the Relay SA: [Terraform](component-terraform.md)).
 
 ### Stop (operator)
 
@@ -118,7 +111,7 @@ Then mark `terraformRun.status` succeeded or failed, and:
 
 - **apply success:** controller should already have written `applied`. If it did not: phase `failed`, `lastError`. Do not invent `applied` without outputs.
 - **apply failure:** if phase is already `applied` with outputs: do not revert; mark `terraformRun` succeeded (controller committed). If phase is still `starting`: `failed`, `lastError`.
-- **close_ingest success:** phase `exporting`, then Relay publishes shutdown on the private control topic a shutdown message.
+- **close_ingest success:** phase `exporting` and `terraformRun.status` `succeeded` persisted first (mutex clear, export-done gate open), then Relay publishes shutdown on the private control topic. Status replay while already `exporting` republishes shutdown (idempotent key).
 - **close_ingest failure:** `lastError`; phase stays `stopping`. Operator retries stop once mutex is clear. Not force-destroy.
 - **destroy success:** phase `destroyed`; update races; clear `control/active`.
 - **destroy failure:** `lastError`; phase stays `destroying`. Operator retries force-destroy.
@@ -153,14 +146,14 @@ flowchart LR
   buildPush --> exporting
   buildPush --> destroying
   buildPush --> destroyed
-  closeOk[close_ingest success] --> shutdown[Relay publishes shutdown key shutdown]
-  shutdown --> exporting
+  closeOk[close_ingest success] --> exporting
+  exporting --> shutdown[Relay publishes shutdown key shutdown]
   exportPush[Export-done PubSub] --> destroying
 ```
 
 ## Not in this document
 
-- Core YAML schema (dict in, file out).
+- Core YAML schema (operator dict in, opaque file out). Platform keys: [Core boot overlay](component-core.md).
 - Device ingest (Kafka, not Relay).
-- Controller Terraform (Cloud Build runs it; Relay only triggers).
-- Direct GCS access with Google accounts (download handled via Relay exposing temporary download links, not in this document scope).
+- Controller process: [Controller](component-controller.md).
+- Direct GCS access with Google accounts (download via Relay temporary links).

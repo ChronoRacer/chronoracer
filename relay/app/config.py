@@ -24,6 +24,7 @@ class GCPConfig(BaseModel):
     firestore_database: str
     export_bucket: str
     cloud_build_trigger_id: str
+    cloud_build_location: str
     build_finished_audience: str
     build_finished_service_account: str
     export_done_audience: str
@@ -33,7 +34,7 @@ class GCPConfig(BaseModel):
     kafka_private_bootstrap: str
     kafka_control_topic: str
     kafka_heartbeat_topic: str
-    kafka_public_port: int = 9092
+    kafka_public_port: int = 9094
 
 
 class ServiceConfig(BaseModel):

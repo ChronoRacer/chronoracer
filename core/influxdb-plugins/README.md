@@ -2,6 +2,8 @@
 
 Plugins inside this directory will be loaded into the InfluxDB instance during a race.
 
+Race image does not bake these files. Publish path: [Compute images](../../docs/component-images.md). Object prefix: [GCS](../../docs/component-gcs_buckets.md).
+
 ## `export_database.py`
 
 Caller: Core

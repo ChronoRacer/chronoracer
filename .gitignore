@@ -4,3 +4,9 @@
 /export/
 /core/target/
 /relay/venv/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+*.tfvars
+!*.tfvars.example

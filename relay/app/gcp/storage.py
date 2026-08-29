@@ -2,9 +2,29 @@ import asyncio
 import datetime
 from typing import Protocol
 
+import google.auth
+from google.auth.transport.requests import Request
 import yaml
 from google.cloud import storage
 from loguru import logger
+
+
+def iam_sign_params():
+    """Cloud Run ADC has a token, not a private key. V4 signing then needs IAM signBlob.
+
+    google-cloud-storage calls IAM only when both service_account_email and access_token
+    are set. Otherwise it demands Signing credentials and raises AttributeError.
+    """
+    credentials, _ = google.auth.default()
+    if not getattr(credentials, "token", None):
+        credentials.refresh(Request())
+    email = getattr(credentials, "service_account_email", None)
+    token = getattr(credentials, "token", None)
+    if not email or email == "default" or not token:
+        raise RuntimeError(
+            "cannot sign GCS URLs: ADC has no service account email and access token"
+        )
+    return credentials, email, token
 
 
 class ObjectStore(Protocol):
@@ -41,7 +61,8 @@ class GCSObjectStore:
         return await asyncio.to_thread(self._signed_export_url_sync, prefix)
 
     def _signed_export_url_sync(self, prefix: str) -> dict[str, str]:
-        client = storage.Client(project=self.project_id)
+        credentials, email, token = iam_sign_params()
+        client = storage.Client(project=self.project_id, credentials=credentials)
         bucket = client.bucket(self.bucket)
         blobs = bucket.list_blobs(prefix=prefix)
 
@@ -52,6 +73,8 @@ class GCSObjectStore:
             signed_urls[blob.name] = blob.generate_signed_url(
                 version="v4",
                 expiration=datetime.timedelta(minutes=15),
-                method="GET"
+                method="GET",
+                service_account_email=email,
+                access_token=token,
             )
         return signed_urls

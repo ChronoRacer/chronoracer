@@ -2,27 +2,13 @@
 
 Goal: stop ingest, drain work, export data to GCS, destroy race VMs. Keep always-on pieces.
 
+API: [Relay](component-relay.md). Phases and mutex: [Firestore](component-firestore.md). `close_ingest` / `destroy`: [Terraform](component-terraform.md). Export landing: [GCS](component-gcs_buckets.md). In-process export: [Core](component-core.md).
+
 ## Two stop paths
 
 Graceful stop (default): close public ingest, wait until that Terraform run finishes, then shutdown Core, export, then destroy.
 
 Force-destroy: skip export. Operator accepts data loss.
-
-One race Terraform at a time. No queued intent. Relay is the only Cloud Build caller.
-
-## Components in this flow
-
-| Component                | Role in stop                                                                                                                                               |
-|--------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Relay                    | Stop and force-destroy. Triggers `close_ingest` or `destroy`. Publishes shutdown key `SHUTDOWN`. Wakes on Pub/Sub. Replays terminal Cloud Build on status. |
-| Core                     | On shutdown: drain Kafka, write `{race_id}/export/`, publish export-done. No Cloud Build. No Firestore.                                                    |
-| Cloud Build + controller | `close_ingest`: public Kafka firewall only. `destroy`: race VMs, disks, DNS A record.                                                                      |
-| Pub/Sub                  | Build-finished wakes Relay (status can replay). Export-done wakes Relay after Core finishes; status does **not** invent export-done.                       |
-| GCS                      | Export landing place. Survives destroy. Core writes `export/` only. Operators download through Relay.                                                      |
-
-Relay publishes shutdown itself on the private Kafka path. Cloud Build does not talk to Kafka.
-
-Operator laptop sleep is fine: export-done push wakes Relay. That is why Core signals Pub/Sub, not “Relay polls until export”. Missed export-done after Pub/Sub exhaustion: operator force-destroys a hung `exporting` race.
 
 ## Graceful stop flow
 
@@ -41,7 +27,7 @@ sequenceDiagram
   Relay->>FS: stopping terraformRun close_ingest in_flight runToken empty buildId
   Relay->>CB: trigger close_ingest
   Relay->>FS: write buildId
-  CB->>CB: close public Kafka firewall
+  CB->>CB: apply ingest_open false delete public 9094 firewall
   CB->>PS: build finished
   PS->>Relay: push wake
   Relay->>FS: exporting
@@ -54,40 +40,37 @@ sequenceDiagram
   Relay->>FS: destroying terraformRun destroy in_flight runToken empty buildId
   Relay->>CB: trigger destroy
   Relay->>FS: write buildId
-  CB->>CB: destroy race VMs and disks
+  CB->>CB: terraform destroy race state
   CB->>PS: build finished
   PS->>Relay: push wake
   Relay->>FS: update historical races
 ```
 
-1. Operator calls stop. Allowed from `applied` (including unhealthy), or retry from `stopping` when mutex not held. Reconcile first. Returns immediately. Does not publish shutdown yet.
-2. Controller closes the public Kafka firewall. Private listener stays up. Core and Relay can still use Kafka. This apply must not replace VMs, disks, metadata, or the public IP.
-3. On `close_ingest` success: phase `exporting`, then Relay publishes shutdown message. Core on connect reads shutdown message and exports. Tail-only consume is invalid.
-4. Firewall close is not a session kill. Some public produce may still arrive during drain. MVP accepts that. New public connections fail.
-5. Core drains, writes `{race_id}/export/db` and `{race_id}/export/kafka` (Influx dump, selected topics including DLQ). Cannot write `core-config.yaml`.
-6. Core publishes export-done (with `race_id` field). Relay accepts only if phase is `exporting` and mutex not held. Then stamps destroy, triggers Cloud Build. Ack export-done only after that stamp.
-7. Controller destroys race VMs and disks and deletes the DNS A record. Always-on stays.
-8. On destroy success: phase `destroyed`, pointer cleared, historical races updated. Status no longer returns a usable Kafka address. Race doc remains. Status endpoint no longer returns any data.
+1. Operator stop. Allowed phases and rejects: [Relay stop](component-relay.md). Does not publish shutdown yet.
+2. Controller `close_ingest`. Private Kafka stays up. Relay publishes shutdown only after this run succeeds.
+3. Core on connect reads shutdown (`SHUTDOWN` on the control topic: [Kafka](component-kafka.md)), drains, writes export, publishes export-done.
+4. Relay accepts export-done only in `exporting` with mutex not held, then stamps destroy and triggers Cloud Build. Ack only after that stamp.
+5. Controller `destroy`. On success Relay moves to `destroyed` and clears the pointer. Status no longer returns a usable Kafka address. Race doc remains.
 
-Shutdown must not start until `close_ingest` succeeds. `close_ingest` and `destroy` must never overlap.
+Firewall delete is not a session kill. Some public produce may still arrive during drain. MVP accepts that. New public connections fail.
+
+`close_ingest` and `destroy` must never overlap.
+
+Relay publishes shutdown itself on the private Kafka path. Cloud Build does not talk to Kafka. Operator laptop sleep is fine: export-done push wakes Relay. Missed export-done after Pub/Sub exhaustion: operator force-destroys a hung `exporting` race.
 
 ## Export
 
-Owner: Core. It has Influx, disk, OS, and Kafka private access.
-
-Landing: `{raceId}/export/` in the always-on bucket (inside `db` and `kafka` directories). IAM: Core writes that prefix only.
+Owner: Core. Landing prefix and IAM: [GCS](component-gcs_buckets.md).
 
 Destroy on the graceful path waits for export-done. Force-destroy is the exception. Late export-done (`destroying` / `destroyed` / `raceId` mismatch): reject. No second destroy.
 
-Do not keep VM disks after a successful export. Prefix alone is not download access; Relay issues time-limited access on status.
-
-For details on export flow, see [Deep dive - Core](component-core.md).
+Do not keep VM disks after a successful export. Prefix alone is not download access; Relay issues time-limited access on historical status.
 
 ## Force-destroy flow
 
 Skip shutdown wait and export wait. Stamp destroy, trigger Cloud Build, return immediately. Pointer stays set until destroy succeeds.
 
-Use after `failed` start, hung `exporting`, unhealthy with a dead Core, trigger never confirmed, or leftover race VMs.
+Use after `failed` start, hung `exporting`, unhealthy with a dead Core, trigger never confirmed, or leftover race VMs. API: [Relay force-destroy](component-relay.md).
 
 Force-destroy while Core is mid-export may leave a partial GCS object. Operator treats GCS as incomplete. A later export-done is rejected.
 
@@ -97,6 +80,6 @@ Terraform destroy is idempotent. Retry force-destroy if the destroy build fails 
 
 If Core dies before export-done, graceful stop will not wake Relay to destroy. Status cannot invent export-done. Force-destroy.
 
-If `close_ingest` fails: phase stays `stopping`, mutex clears. Operator retries stop (same `close_ingest`). Do not treat firewall-close failure as data-loss-only.
+If `close_ingest` fails: phase stays `stopping`, mutex clears. Operator retries stop. Do not treat public-firewall delete failure as data-loss-only. Stuck GCS lock: human unlocks `race/default.tfstate` only, then retry.
 
 If `close_ingest` succeeds and export never finishes: stay `exporting` until force-destroy. Do not retry graceful stop once phase is `exporting`. If shutdown never reached Core, force-destroy. Core on connect must observe retained shutdown messages, otherwise this hang is expected.

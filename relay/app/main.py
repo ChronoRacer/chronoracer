@@ -19,7 +19,7 @@ from .service import RelayService
 
 class StartRequest(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
-    race_id: str = Field(alias='raceId')
+    race_id: str = Field(..., alias='raceId', min_length=1)
 
 
 def create_app() -> FastAPI:
@@ -32,7 +32,9 @@ def create_app() -> FastAPI:
     if config.gcp.enabled:
         repository = FirestoreRaceRepository(config.gcp.project_id, config.gcp.firestore_database)
         object_store = GCSObjectStore(config.gcp.project_id, config.gcp.export_bucket)
-        builds = CloudBuildTrigger(config.gcp.project_id, config.gcp.cloud_build_trigger_id)
+        builds = CloudBuildTrigger(
+            config.gcp.project_id, config.gcp.cloud_build_trigger_id, config.gcp.cloud_build_location,
+        )
         shutdown = KafkaShutdownPublisher(config.gcp.kafka_private_bootstrap, config.gcp.kafka_control_topic)
         heartbeat = KafkaHeartbeatReader(config.gcp.kafka_private_bootstrap, topic=config.gcp.kafka_heartbeat_topic)
     else:
@@ -53,7 +55,7 @@ def create_app() -> FastAPI:
     async def start(request: StartRequest, user: dict = Depends(okta_user)):
         logger.info("Received race start request")
         try:
-            return await app.state.service.start(request.config, user.get('sub', 'unknown'))
+            return await app.state.service.start(request.race_id, request.config, user.get('sub', 'unknown'))
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 

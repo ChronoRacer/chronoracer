@@ -1,4 +1,5 @@
 import asyncio
+import re
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -12,19 +13,21 @@ from .gcp.storage import ObjectStore
 from .models import BuildFinished, ExportDone, Phase, Race, TerraformAction, TerraformRun, \
     TerraformStatus
 
+# GCP label-safe, Core cap 12 chars. Operator supplies; Relay never mints.
+RACE_ID_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9_-]{0,11})$")
+
 
 def ensure_race_id_valid(race_id: str):
-    if len(race_id) > 12:
-        # This is due to Core internals
-        raise ValueError('raceId length must not exceed 12 characters')
-    if not race_id.isalnum() or not race_id.isascii():
-        raise ValueError('raceId must be alphanumeric ASCII')
+    if not race_id or not RACE_ID_PATTERN.fullmatch(race_id):
+        raise ValueError(
+            "raceId must be 1–12 chars, GCP label-safe: lowercase letters, digits, underscore, dash"
+        )
 
 class RelayService:
     def __init__(self, repository: RaceRepository, object_store: ObjectStore | None = None,
                  builds: BuildTrigger | None = None, shutdown: ShutdownPublisher | None = None, heartbeat=None,
-                 heartbeat_freshness_seconds: int = 30, build_bind_window_seconds: int = 600,
-                 kafka_public_port: int = 9092):
+                 heartbeat_freshness_seconds: int = 50, build_bind_window_seconds: int = 600,
+                 kafka_public_port: int = 9094):
         self.repository = repository
         self.object_store, self.builds, self.shutdown = object_store, builds, shutdown
         self.heartbeat, self.heartbeat_freshness_seconds = heartbeat, heartbeat_freshness_seconds
@@ -43,19 +46,24 @@ class RelayService:
         await self._reconcile()
         pointer = await self.repository.active()
         if pointer.race_id:
+            if race_id != pointer.race_id:
+                raise ValueError('raceId does not match the active race')
             race = await self._active()
             if race.phase != Phase.FAILED or self._locked(race): raise ValueError(
                 'race cannot be started in its current state')
             race.phase = Phase.STARTING
+            self._stamp(race, TerraformAction.APPLY)
+            await self.repository.save_race(race, {'phase', 'terraform_run', 'last_error'})
         else:
+            if await self.repository.race(race_id):
+                raise ValueError('raceId already exists')
             now = datetime.now(timezone.utc)
             race = Race(race_id=race_id, phase=Phase.STARTING, started_by=started_by,
                         started_at=now)
+            self._stamp(race, TerraformAction.APPLY)
             if self.object_store:
-                await self.object_store.put_yaml(f'{race_id}/core-config.yaml', {**config, 'raceId': race_id})
+                await self.object_store.put_yaml(f'{race_id}/core-config.yaml', config)
             await self.repository.create_race(race)
-        self._stamp(race, TerraformAction.APPLY)
-        await self.repository.save_race(race, {'phase', 'terraform_run'})
         await self._trigger(race)
         await self.repository.save_race(race, {'terraform_run'})
         logger.info("Race {} entered starting phase with {} run", race.race_id, race.terraform_run.action.value)
@@ -75,7 +83,7 @@ class RelayService:
                       'destroyedAt': race.destroyed_at, 'lastError': race.last_error,
                       'terraformRun': race.terraform_run.model_dump(mode='json',
                                                                     by_alias=True) if race.terraform_run else None,
-                      'billableVms': True, 'ready': False, 'unhealthy': False}
+                      'ready': False, 'unhealthy': False}
             if race.phase == Phase.APPLIED and self.heartbeat:
                 try:
                     beat = await self.heartbeat.read_last()
@@ -133,7 +141,7 @@ class RelayService:
         race.phase = Phase.STOPPING
         race.stopped_at = datetime.now(timezone.utc)
         self._stamp(race, TerraformAction.CLOSE_INGEST)
-        await self.repository.save_race(race, {'phase', 'stopped_at', 'terraform_run'})
+        await self.repository.save_race(race, {'phase', 'stopped_at', 'terraform_run', 'last_error'})
         await self._trigger(race)
         await self.repository.save_race(race, {'terraform_run'})
         return {'raceId': race.race_id, 'phase': race.phase.value}
@@ -151,7 +159,7 @@ class RelayService:
             raise ValueError('race cannot be destroyed in its current state')
         race.phase = Phase.DESTROYING
         self._stamp(race, TerraformAction.DESTROY)
-        await self.repository.save_race(race, {'phase', 'terraform_run'})
+        await self.repository.save_race(race, {'phase', 'terraform_run', 'last_error'})
         await self._trigger(race)
         await self.repository.save_race(race, {'terraform_run'})
         return {'raceId': race.race_id, 'phase': race.phase.value}
@@ -168,7 +176,13 @@ class RelayService:
         run = race.terraform_run
         if event.race_id != race.race_id or not run or run.run_token != event.run_token or run.build_id != event.build_id or run.action != event.action:
             raise ValueError('build does not match active terraform run')
-        if not run.locked: return
+        if not run.locked:
+            if (event.action == TerraformAction.CLOSE_INGEST and event.success
+                    and race.phase == Phase.EXPORTING):
+                if not self.shutdown:
+                    raise RuntimeError('shutdown publisher is not configured')
+                await self.shutdown.publish_shutdown(race.race_id)
+            return
         run.status = TerraformStatus.SUCCEEDED if event.success else TerraformStatus.FAILED
         if event.action == TerraformAction.APPLY:
             if event.success and race.phase == Phase.STARTING:
@@ -180,10 +194,13 @@ class RelayService:
             elif not event.success and race.phase == Phase.APPLIED:
                 run.status = TerraformStatus.SUCCEEDED
         elif event.action == TerraformAction.CLOSE_INGEST and event.success:
+            race.phase = Phase.EXPORTING
+            await self.repository.save_race(race, {'phase', 'terraform_run', 'last_error'})
             if not self.shutdown:
                 raise RuntimeError('shutdown publisher is not configured')
             await self.shutdown.publish_shutdown(race.race_id)
-            race.phase = Phase.EXPORTING
+            logger.info("Race {} transitioned to phase {}", race.race_id, race.phase.value)
+            return
         elif event.action == TerraformAction.DESTROY and event.success:
             race.phase = Phase.DESTROYED
             now = datetime.now(timezone.utc)
@@ -208,7 +225,7 @@ class RelayService:
             'export completion is not accepted')
         race.phase = Phase.DESTROYING
         self._stamp(race, TerraformAction.DESTROY)
-        await self.repository.save_race(race, {'phase', 'terraform_run'})
+        await self.repository.save_race(race, {'phase', 'terraform_run', 'last_error'})
         await self._trigger(race)
         await self.repository.save_race(race, {'terraform_run'})
 
@@ -225,6 +242,7 @@ class RelayService:
 
     @staticmethod
     def _stamp(race, action):
+        race.last_error = None
         race.terraform_run = TerraformRun(run_token=str(uuid4()), stamped_at=datetime.now(timezone.utc), action=action)
 
     async def _trigger(self, race):

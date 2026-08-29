@@ -1,6 +1,6 @@
 from typing import Any, Protocol
 
-from google.cloud.firestore_v1 import AsyncClient
+from google.cloud.firestore_v1 import DELETE_FIELD, AsyncClient
 from loguru import logger
 
 from ..models import ActivePointer, Phase, Race, TerraformAction, TerraformStatus
@@ -36,7 +36,8 @@ class InMemoryRaceRepository(RaceRepository):
 
     async def create_race(self, race):
         logger.debug("Creating race {} in memory", race.race_id)
-        if self._active.race_id or race.race_id in self._races: raise ValueError('active race already exists')
+        if race.race_id in self._races: raise ValueError('raceId already exists')
+        if self._active.race_id: raise ValueError('active race already exists')
         self._races[race.race_id] = race.model_copy(deep=True)
         self._active = ActivePointer(race_id=race.race_id)
 
@@ -83,7 +84,10 @@ class FirestoreRaceRepository(RaceRepository,):
             pointer_data = (await pointer.get(transaction=tx)).to_dict() or {}
             if pointer_data.get('raceId') or pointer_data.get('race_id'):
                 raise ValueError('active race already exists')
-            tx.create(db.collection('races').document(race.race_id), race.model_dump(by_alias=True))
+            race_ref = db.collection('races').document(race.race_id)
+            if (await race_ref.get(transaction=tx)).exists:
+                raise ValueError('raceId already exists')
+            tx.create(race_ref, race.model_dump(by_alias=True))
             tx.set(pointer, ActivePointer(race_id=race.race_id).model_dump(by_alias=True))
 
     async def save_race(self, race, fields=None):
@@ -96,6 +100,7 @@ class FirestoreRaceRepository(RaceRepository,):
 
         updates = {Race.model_fields[field].alias or field: payload[Race.model_fields[field].alias or field]
                    for field in fields}
+        updates = {key: DELETE_FIELD if value is None else value for key, value in updates.items()}
         async with self._db().transaction() as tx:
             snapshot = await ref.get(transaction=tx)
             current = snapshot.to_dict() or {}
@@ -110,7 +115,7 @@ class FirestoreRaceRepository(RaceRepository,):
         db = self._db()
         async with db.transaction() as tx:
             tx.set(db.collection('races').document(race.race_id), race.model_dump(by_alias=True))
-            tx.set(db.collection('control').document('active'), None)
+            tx.set(db.collection('control').document('active'), ActivePointer().model_dump(by_alias=True))
 
     @staticmethod
     def _protect_controller_state(current: dict[str, Any], payload: dict[str, Any], updates: dict[str, Any]) -> None:
