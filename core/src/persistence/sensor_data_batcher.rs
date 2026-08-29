@@ -78,8 +78,8 @@ impl SensorDataBatcher {
 
         loop {
             tokio::select! {
-                data = self.data_rx.recv() => {
-                    let Some(data) = data else {
+                data_batch = self.data_rx.recv() => {
+                    let Some(data_batch) = data_batch else {
                         if !buffer.is_empty() {
                             let _ = self.batch_tx.send(buffer).await;
                         }
@@ -87,19 +87,26 @@ impl SensorDataBatcher {
                         break;
                     };
 
-                    sensor_data_into_points(data, &mut buffer, &self.driver_id.get());
+                    let mut downstream_closed = false;
+                    for data in data_batch {
+                        sensor_data_into_points(data, &mut buffer, &self.driver_id.get());
 
-                    if buffer.len() >= self.flush_max_combined_batch_size {
-                        let to_flush = std::mem::replace(&mut buffer, get_buffer());
-                        if let Err(e) = self.batch_tx.send(to_flush).await {
-                            error!("Failed to flush data buffer, batch_type={wiring_type:?}: {e}");
-                            if self.batch_tx.is_closed() {
-                                warn!("Batch data buffer is closed. Closing ingestion loop, batch_type={wiring_type:?}");
-                                break;
+                        if buffer.len() >= self.flush_max_combined_batch_size {
+                            let to_flush = std::mem::replace(&mut buffer, get_buffer());
+                            if let Err(e) = self.batch_tx.send(to_flush).await {
+                                error!("Failed to flush data buffer, batch_type={wiring_type:?}: {e}");
+                                if self.batch_tx.is_closed() {
+                                    warn!("Batch data buffer is closed. Closing ingestion loop, batch_type={wiring_type:?}");
+                                    downstream_closed = true;
+                                    break;
+                                }
                             }
-                        }
 
-                        interval.reset();
+                            interval.reset();
+                        }
+                    }
+                    if downstream_closed {
+                        break;
                     }
                 }
 
@@ -133,4 +140,59 @@ fn sensor_data_into_points(
         value: reading.value,
         timestamp_nanos: reading.timestamp,
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::processing::sensor_data_message::{AbsoluteSensorReading, UnwoundSensorDataMessage};
+    use tokio::sync::mpsc;
+    use tokio::time::{Duration, timeout};
+
+    fn message(sensor_id: &str, value: f64) -> UnwoundSensorDataMessage {
+        UnwoundSensorDataMessage {
+            sensor_id: sensor_id.to_string(),
+            readings: Box::new([AbsoluteSensorReading {
+                value,
+                timestamp: 1_000_000,
+            }]),
+        }
+    }
+
+    #[tokio::test]
+    async fn ingest_converts_a_processed_batch_to_one_point_batch() {
+        let (data_tx, data_rx) = mpsc::channel(1);
+        let (batch_tx, mut batch_rx) = mpsc::channel(1);
+        let (_pool_tx, pool_rx) = mpsc::channel(1);
+        let driver_id = Box::leak(Box::new(RetainReadTimeValue::new(CompactString::from(
+            "driver",
+        ))));
+        let mut batcher = SensorDataBatcher::new(
+            100,
+            1_000,
+            data_rx,
+            batch_tx,
+            pool_rx,
+            driver_id,
+            BatcherWiringType::Normal,
+        );
+
+        let ingest_handle = tokio::spawn(async move { batcher.ingest().await });
+        data_tx
+            .send(vec![message("sensor-1", 1.0), message("sensor-2", 2.0)])
+            .await
+            .unwrap();
+        drop(data_tx);
+
+        let point_batch = timeout(Duration::from_secs(2), batch_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(point_batch.len(), 2);
+        assert_eq!(point_batch[0].measurement.as_ref(), "sensor-1");
+        assert_eq!(point_batch[1].measurement.as_ref(), "sensor-2");
+        assert_eq!(point_batch[0].driver.as_str(), "driver");
+
+        ingest_handle.await.unwrap();
+    }
 }

@@ -11,7 +11,8 @@ use influxdb3_client::Client;
 use std::sync::Arc;
 use tracing::info;
 
-pub type SensorDataRx = tokio::sync::mpsc::Receiver<UnwoundSensorDataMessage>;
+pub type SensorDataBatch = Vec<UnwoundSensorDataMessage>;
+pub type SensorDataRx = tokio::sync::mpsc::Receiver<SensorDataBatch>;
 
 pub struct PersistanceLayerEntryPoint {
     pub(crate) splitter: SensorDataSplitter,

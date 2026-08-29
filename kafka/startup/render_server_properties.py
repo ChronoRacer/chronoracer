@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import os
 
 
 def load_json(path: Path) -> dict:
@@ -60,6 +61,22 @@ def render(
         "num.partitions=1",
         "group.initial.rebalance.delay.ms=0",
     ]
+
+    num_cores = os.cpu_count()
+    lines.extend(
+        [
+            f"num.network.threads={max(4, num_cores)}",
+            f"num.io.threads={max(8, num_cores * 2)}",
+            "socket.send.buffer.bytes=1048576",
+            "socket.receive.buffer.bytes=1048576",
+            "socket.request.max.bytes=104857600",
+            "num.recovery.threads.per.data.dir=4",
+            "log.segment.bytes=1073741824",
+            "log.retention.hours=48",
+            "log.segment.delete.delay.ms=60000",
+            "offsets.retention.minutes=1440",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 

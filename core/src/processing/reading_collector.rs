@@ -1,15 +1,17 @@
 use crate::messaging::dlq_handler::InvalidMessageTx;
-use crate::messaging::message_sink::SinkRx;
+use crate::messaging::message_sink::BatchSinkRx;
 use crate::messaging::partial_message::PartialMessageWithError;
 use crate::processing::avro::TryFromAvro;
 use crate::processing::sensor_data_message::{SensorDataMessage, UnwoundSensorDataMessage};
+use rayon::prelude::*;
 use std::sync::Arc;
 use tracing::{error, info, warn};
+use crate::persistence::persistence_entrypoint::SensorDataBatch;
 
 pub struct ReadingCollector {
-    flush_rx: SinkRx,
+    flush_rx: BatchSinkRx,
     dlq_tx: Arc<InvalidMessageTx>,
-    processed_data_tx: Arc<tokio::sync::mpsc::Sender<UnwoundSensorDataMessage>>,
+    processed_data_tx: Arc<tokio::sync::mpsc::Sender<SensorDataBatch>>,
     sensor_data_schema: Arc<apache_avro::Schema>,
     rayon_pool: Arc<rayon::ThreadPool>,
 }
@@ -17,9 +19,9 @@ pub struct ReadingCollector {
 impl ReadingCollector {
     #[must_use]
     pub fn new(
-        flush_rx: SinkRx,
+        flush_rx: BatchSinkRx,
         dlq_tx: Arc<InvalidMessageTx>,
-        processed_data_tx: tokio::sync::mpsc::Sender<UnwoundSensorDataMessage>,
+        processed_data_tx: tokio::sync::mpsc::Sender<SensorDataBatch>,
         sensor_data_schema: apache_avro::Schema,
         rayon_pool: Arc<rayon::ThreadPool>,
     ) -> Self {
@@ -34,27 +36,35 @@ impl ReadingCollector {
 
     pub async fn ingest(&mut self) {
         info!("Starting Reading collector ingestion loop");
-        while let Some(partial_message) = self.flush_rx.recv().await {
+        while let Some(partial_messages) = self.flush_rx.recv().await {
             let schema = Arc::clone(&self.sensor_data_schema);
             let success_tx = Arc::clone(&self.processed_data_tx);
             let failure_tx = Arc::clone(&self.dlq_tx);
             self.rayon_pool.spawn(move || {
-                match SensorDataMessage::try_from_avro(&schema, partial_message.payload.as_deref())
+                let processed: Vec<_> = partial_messages
+                    .into_par_iter()
+                    .filter_map(|partial_message| {
+                        match SensorDataMessage::try_from_avro(
+                            &schema,
+                            partial_message.payload.as_deref(),
+                        ) {
+                            Ok(msg) => Some(UnwoundSensorDataMessage::from(msg)),
+                            Err(err) => {
+                                let failed_msg = PartialMessageWithError::new(partial_message, &err);
+                                // This should be okay: the channel has high capacity and invalid messages should be rare
+                                if let Err(e) = failure_tx.blocking_send(failed_msg) {
+                                    error!("Failed to send to dlq: {e}");
+                                }
+                                None
+                            }
+                        }
+                    })
+                    .collect();
+
+                if !processed.is_empty()
+                    && let Err(e) = success_tx.blocking_send(processed)
                 {
-                    Ok(deserialized_message) => {
-                        let unwound = UnwoundSensorDataMessage::from(deserialized_message);
-                        if let Err(e) = success_tx.blocking_send(unwound) {
-                            error!("Failed to send to downstream: {e}");
-                        }
-                    }
-                    Err(deserialization_error) => {
-                        if let Err(e) = failure_tx.blocking_send(PartialMessageWithError::new(
-                            partial_message,
-                            &deserialization_error,
-                        )) {
-                            error!("Failed to send to dlq: {e}");
-                        }
-                    }
+                    error!("Failed to send processed batch downstream: {e}");
                 }
             });
         }
@@ -71,6 +81,7 @@ mod tests {
     use std::time::Duration;
     use tokio::sync::mpsc;
     use tokio::time::timeout;
+    use crate::persistence::persistence_entrypoint::SensorDataBatch;
 
     fn build_pool() -> rayon::ThreadPool {
         rayon::ThreadPoolBuilder::new()
@@ -111,9 +122,9 @@ mod tests {
     async fn test_ingest_successful_processing() {
         let schema = load_avro_schema();
 
-        let (flush_tx, flush_rx) = mpsc::channel::<PartialMessage>(10);
+        let (flush_tx, flush_rx) = mpsc::channel::<Vec<PartialMessage>>(10);
         let (dlq_tx, mut dlq_rx) = mpsc::channel::<PartialMessageWithError>(10);
-        let (processed_tx, mut processed_rx) = mpsc::channel::<UnwoundSensorDataMessage>(10);
+        let (processed_tx, mut processed_rx) = mpsc::channel::<SensorDataBatch>(10);
 
         let mut collector = ReadingCollector::new(
             flush_rx,
@@ -140,7 +151,7 @@ mod tests {
             ))),
         };
         flush_tx
-            .send(message)
+            .send(vec![message])
             .await
             .expect("Failed to send message");
 
@@ -156,7 +167,9 @@ mod tests {
             processed_msg.is_some(),
             "Expected processed message, got None"
         );
-        let content = processed_msg.unwrap();
+        let processed_batch = processed_msg.unwrap();
+        assert_eq!(processed_batch.len(), 1);
+        let content = &processed_batch[0];
         assert_eq!(content.sensor_id, sensor_id);
         assert!(!content.readings.is_empty());
         assert_eq!(content.readings[0].value, first_reading_value);
@@ -169,9 +182,9 @@ mod tests {
     async fn test_ingest_routes_to_dlq_on_deserialization_error() {
         let schema = load_avro_schema();
 
-        let (flush_tx, flush_rx) = mpsc::channel::<PartialMessage>(10);
+        let (flush_tx, flush_rx) = mpsc::channel::<Vec<PartialMessage>>(10);
         let (dlq_tx, mut dlq_rx) = mpsc::channel::<PartialMessageWithError>(10);
-        let (processed_tx, mut processed_rx) = mpsc::channel::<UnwoundSensorDataMessage>(10);
+        let (processed_tx, mut processed_rx) = mpsc::channel::<SensorDataBatch>(10);
 
         let mut collector = ReadingCollector::new(
             flush_rx,
@@ -192,7 +205,7 @@ mod tests {
             payload: Some(vec![0xFF, 0xFF, 0xFF].into()),
         };
         flush_tx
-            .send(corrupt_message)
+            .send(vec![corrupt_message])
             .await
             .expect("Failed to send bad message");
 

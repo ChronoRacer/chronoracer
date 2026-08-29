@@ -8,8 +8,8 @@ services:
     volumes:
       - influxdb3_data:/var/lib/influxdb3
       - ./admin-token.json:/etc/influxdb3/admin-token.json:ro
-      - ../../influxdb-plugins:/plugins
-      - ../../export/db:/export/db
+      - ../../../influxdb-plugins:/plugins
+      - ../../../export/db:/export/db
     command: serve --plugin-dir /plugins
 
   influxdb3-export-trigger:
@@ -24,10 +24,11 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        sleep 20
         TOKEN=$$(sed -n 's/.*"token": *\([^,}]*\).*/\1/p' /etc/influxdb3/admin-token.json | tr -d '" ')
         
         echo "Installing Python dependencies..."
-        influxdb3 install package [YOUR_PACKAGES_HERE] \
+        influxdb3 install package pyarrow \
           --host http://influxdb3:8181 \
           --token "$$TOKEN"
         

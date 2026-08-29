@@ -18,6 +18,26 @@ Core responsibility:
 - serve as a buffer for the database
 - handle shutdown sequence export flow (for both database and Kafka)
 
+## Data pipeline batch contract
+
+The default contract is defined by [`core/default-config.yaml`](../core/default-config.yaml):
+
+- `processing.message_batch_size`: 1,000 Kafka messages per batch.
+- `processing.message_batch_flush_interval_ms`: 15 ms maximum in-memory wait before a partial batch is sent.
+- `processing.message_channel_buffer_size`: 64 buffered items. The sensor sink queues up to 64 batches; the control sink
+  queues up to 64 individual records. Increasing it increases memory pressure.
+
+The sink flushes on whichever comes first: 1,000 messages, 15 ms, cancellation, or stream shutdown. The collector
+deserializes each batch in parallel on the Rayon pool and emits one batch of successfully processed sensor messages,
+preserving the input order within that batch. Invalid messages remain individual DLQ records because their original
+partition, offset, and parse error are stored in per-record headers. The splitter partitions each processed batch into
+at most one fast-flush and one normal batch. The persistence batcher consumes those grouped messages and forms its
+database point batches using the existing fast/normal size and interval settings.
+
+The control path is intentionally separate: `InstantMessageSink` forwards each control record immediately on a
+single-message channel and uses `fetch.min.bytes=1`/`fetch.wait.max.ms=0`. Control events are not subject to the
+sensor-data batch size or timer because control events must be acted on as soon as they are available.
+
 ## Startup
 
 Boot scripts: [Core startup](../core/startup/README.md). Influx on this VM: [InfluxDB](component-influxdb.md). Image and
@@ -82,13 +102,13 @@ flowchart TB
         flusher[("Flusher")]
     end
 
-    dataSink --> extract
-    extract --> unwind
+    dataSink -->|message batches| extract
+    extract -->|processed batches| unwind
     extract --> dlqPublisher
     unwind --> dlqPublisher
-    unwind --> splitter
-    splitter --> batcherFast
-    splitter --> batcherNormal
+    unwind -->|processed batches| splitter
+    splitter -->|fast batches| batcherFast
+    splitter -->|normal batches| batcherNormal
     batcherFast --> flusher
     batcherNormal --> flusher
 

@@ -41,6 +41,7 @@ build {
   provisioner "file" {
     sources = [
       "../../kafka/startup/entrypoint.sh",
+      "../../kafka/startup/adjust-limits.sh",
       "../../kafka/startup/fetch-tls.sh",
       "../../kafka/startup/render-server-properties.sh",
       "../../kafka/startup/render_server_properties.py",
@@ -76,6 +77,7 @@ build {
       "command -v python3",
       "command -v curl",
       "test -x /chronoracer/entrypoint.sh",
+      "test -x /chronoracer/adjust-limits.sh"
       "test -x /chronoracer/fetch-tls.sh",
       "test -x /chronoracer/render-server-properties.sh",
       "test -x /chronoracer/format-kraft.sh",

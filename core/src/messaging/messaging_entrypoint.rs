@@ -3,18 +3,18 @@ use crate::messaging::dlq_handler::DLQHandler;
 use crate::messaging::heartbeat_handler::HeartbeatHandler;
 use crate::messaging::kafka_exporter::KafkaExporter;
 use crate::messaging::management::ensure_all_topics_exists;
-use crate::messaging::message_sink::{MessageSink, SinkRx};
+use crate::messaging::message_sink::{InstantMessageSink, SinkRx, BatchMessageSink, BatchSinkRx};
 use crate::messaging::partial_message::{PartialMessage, PartialMessageWithError};
 use anyhow::{Context, Result};
 use rdkafka::producer::FutureProducer;
 use std::sync::Arc;
 
 pub struct MessagingLayerEntrypoint<'a> {
-    pub sensor_data_sink: MessageSink,
-    pub sensor_sink_rx: SinkRx,
+    pub sensor_data_sink: BatchMessageSink,
+    pub sensor_sink_rx: BatchSinkRx,
     pub dlq_handler: DLQHandler<'a>,
     pub dlq_tx: tokio::sync::mpsc::Sender<PartialMessageWithError>,
-    pub control_sink: MessageSink,
+    pub control_sink: InstantMessageSink,
     pub control_sink_rx: SinkRx,
     pub heartbeat_handler: HeartbeatHandler,
     pub kafka_exporter: KafkaExporter<'a>,
@@ -29,18 +29,20 @@ impl<'a> MessagingLayerEntrypoint<'a> {
             .await
             .context("Failed to ensure Kafka topics exist")?;
 
-        let (sensor_sink_tx, sensor_sink_rx) = tokio::sync::mpsc::channel::<PartialMessage>(
+        let (sensor_sink_tx, sensor_sink_rx) = tokio::sync::mpsc::channel::<Vec<PartialMessage>>(
             config.processing.message_channel_buffer_size,
         );
-        let sensor_data_sink = MessageSink::new(
+        let sensor_data_sink = BatchMessageSink::new(
             &config.kafka,
             vec![&config.kafka.sensor_data_topic.name],
             sensor_sink_tx,
+            config.processing.message_batch_size,
+            config.processing.message_batch_flush_interval_ms,
         )?;
         let (control_sink_tx, control_sink_rx) = tokio::sync::mpsc::channel::<PartialMessage>(
             config.processing.message_channel_buffer_size,
         );
-        let control_sink = MessageSink::new(
+        let control_sink = InstantMessageSink::new(
             &config.kafka,
             vec![&config.kafka.control_event_topic.name],
             control_sink_tx,

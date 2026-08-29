@@ -4,6 +4,9 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+LimitNOFILE=100000
+LimitNPROC=100000
+LimitMEMLOCK=infinity
 Type=simple
 UMask=0077
 Environment=CHRONORACER_DIR=/chronoracer

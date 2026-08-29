@@ -63,6 +63,7 @@ impl KafkaExportConfig {
 pub struct KafkaConfig {
     pub brokers: Vec<String>,
     pub group_id: String,
+    pub sensor_data_consumer: KafkaConsumerConfig,
     pub sensor_data_topic: TopicConfig,
     pub control_event_topic: TopicConfig,
     pub dlq_config: DLQConfig,
@@ -74,6 +75,7 @@ impl KafkaConfig {
     pub fn mock_config() -> KafkaConfig {
         Self {
             group_id: "test_group".to_string(),
+            sensor_data_consumer: KafkaConsumerConfig::mock_config(),
             sensor_data_topic: TopicConfig::mock_config("data"),
             brokers: vec!["localhost:9092".to_string()],
             dlq_config: DLQConfig::mock_config(),
@@ -85,8 +87,35 @@ impl KafkaConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct KafkaConsumerConfig {
+    pub fetch_min_bytes: usize,
+    pub fetch_wait_max_ms: u32,
+    pub fetch_message_max_bytes: usize,
+    pub queued_min_messages: usize,
+    pub queued_max_messages_kbytes: usize,
+    pub socket_receive_buffer_bytes: usize,
+    pub auto_commit_interval_ms: u32,
+}
+
+impl KafkaConsumerConfig {
+    pub fn mock_config() -> KafkaConsumerConfig {
+        Self {
+            fetch_min_bytes: 32 * 1024,
+            fetch_wait_max_ms: 25,
+            fetch_message_max_bytes: 5 * 1024 * 1024,
+            queued_min_messages: 200_000,
+            queued_max_messages_kbytes: 256 * 1024,
+            socket_receive_buffer_bytes: 1024 * 1024,
+            auto_commit_interval_ms: 5_000,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ProcessingConfig {
     pub message_channel_buffer_size: usize,
+    pub message_batch_size: usize,
+    pub message_batch_flush_interval_ms: u32,
     pub dlq_channel_buffer_size: usize,
 }
 
@@ -94,6 +123,8 @@ impl ProcessingConfig {
     pub fn mock_config() -> ProcessingConfig {
         Self {
             message_channel_buffer_size: 0,
+            message_batch_size: 1_000,
+            message_batch_flush_interval_ms: 15,
             dlq_channel_buffer_size: 0,
         }
     }
