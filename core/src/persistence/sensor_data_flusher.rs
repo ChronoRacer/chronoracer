@@ -1,5 +1,5 @@
 use crate::configuration::PersistenceConfig;
-use crate::persistence::sensor_data_batcher::{SimplePoint, SIMPLE_POINT_PROTOCOL_MAX_LENGTH};
+use crate::persistence::sensor_data_batcher::{SIMPLE_POINT_PROTOCOL_MAX_LENGTH, SimplePoint};
 use compact_str::CompactString;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -100,12 +100,7 @@ impl InfluxDbFlusher {
             let db = Arc::clone(&client);
             let pool_tx = pool_tx.clone();
             let race_id = Arc::clone(&race_id);
-
-            info!(
-                "Received new batch to flush: batch_size={}, flush_type={:?}",
-                batch.len(),
-                wiring_type
-            );
+            
             write_tasks.push_back(tokio::spawn(async move {
                 let _permit = permit;
 

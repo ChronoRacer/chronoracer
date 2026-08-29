@@ -3,8 +3,8 @@ use anyhow::Result;
 use compact_str::CompactString;
 use google_cloud_pubsub::client::Publisher;
 use google_cloud_pubsub::model::Message;
-use std::sync::Arc;
 use serde_json::json;
+use std::sync::Arc;
 use tracing::info;
 
 pub struct GcsPubSubManager<'a> {

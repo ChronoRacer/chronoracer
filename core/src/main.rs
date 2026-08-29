@@ -26,6 +26,11 @@ pub mod persistence;
 pub mod processing;
 pub mod runtime_configuration;
 
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 fn main() {
     let _logger_guard = init_logger();
     if let Err(error) = run() {

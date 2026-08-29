@@ -2,11 +2,11 @@
   "broker": "localhost:9092",
   "sensor_topics": ["data"],
   "sensor_ids": ["sensor-1", "sensor-2", "sensor-3", "sensor-4", "sensor-5"],
-  "testing_time": 5.0,
-  "point_count": 1000,
+  "testing_time": 30.0,
+  "batch_count": 500000,
   "change_driver": {
-    "enabled": false,
-    "count": 1,
+    "enabled": true,
+    "count": 2,
     "initial_delay": 1.0,
     "topic": "control"
   },

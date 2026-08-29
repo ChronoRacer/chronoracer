@@ -103,9 +103,9 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rdkafka::Timestamp;
     use rdkafka::message::Headers;
     use rdkafka::producer::future_producer::Delivery;
-    use rdkafka::Timestamp;
     use std::sync::{Arc, Mutex};
     use tokio::sync::mpsc;
 

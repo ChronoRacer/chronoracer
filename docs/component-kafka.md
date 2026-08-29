@@ -66,7 +66,7 @@ Perquisite: immediate warnings are evaluated on the Car Computer. This means tha
 mean that dashboard data is updated a bit slower. Analysis also demands data from an extended period of time so batching
 at message is acceptable. Of course, the batch size can be reduced depending on the read frequency.
 
-Chosen batching frequency: 100 ms per batch (`TODO` adjust based on load and feed needs)
+Core handles batching internally, for more details see [core batching](component-core.md#data-pipeline-batch-contract)
 
 Message schema:
 

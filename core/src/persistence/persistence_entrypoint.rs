@@ -5,13 +5,14 @@ use crate::persistence::sensor_data_flusher::{BatcherWiring, BatcherWiringType, 
 use crate::persistence::sensor_data_splitter::SensorDataSplitter;
 use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use crate::runtime_configuration::RetainReadTimeValue;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use compact_str::CompactString;
 use influxdb3_client::Client;
 use std::sync::Arc;
 use tracing::info;
 
-pub type SensorDataRx = tokio::sync::mpsc::Receiver<UnwoundSensorDataMessage>;
+pub type SensorDataBatch = Vec<UnwoundSensorDataMessage>;
+pub type SensorDataRx = tokio::sync::mpsc::Receiver<SensorDataBatch>;
 
 pub struct PersistanceLayerEntryPoint {
     pub(crate) splitter: SensorDataSplitter,
@@ -87,8 +88,8 @@ impl PersistanceLayerEntryPoint {
                 .build()
                 .map_err(|e| anyhow!("Invalid InfluxDB config: {e}"))?,
         )
-            .await
-            .context("Failed to create InfluxDb client")?;
+        .await
+        .context("Failed to create InfluxDb client")?;
 
         client
             .ping()

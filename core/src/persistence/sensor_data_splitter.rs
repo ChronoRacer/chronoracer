@@ -1,22 +1,21 @@
 use crate::configuration::PersistenceConfig;
-use crate::persistence::persistence_entrypoint::SensorDataRx;
-use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
+use crate::persistence::persistence_entrypoint::{SensorDataBatch, SensorDataRx};
 use std::collections::HashSet;
 use tracing::{error, info, warn};
 
 pub struct SensorDataSplitter {
     fast_flush_sensor_ids: HashSet<String>,
-    data_rx: tokio::sync::mpsc::Receiver<UnwoundSensorDataMessage>,
-    fast_tx: tokio::sync::mpsc::Sender<UnwoundSensorDataMessage>,
-    normal_tx: tokio::sync::mpsc::Sender<UnwoundSensorDataMessage>,
+    data_rx: tokio::sync::mpsc::Receiver<SensorDataBatch>,
+    fast_tx: tokio::sync::mpsc::Sender<SensorDataBatch>,
+    normal_tx: tokio::sync::mpsc::Sender<SensorDataBatch>,
 }
 
 impl SensorDataSplitter {
     #[must_use]
     pub fn new(
         data_rx: SensorDataRx,
-        fast_tx: tokio::sync::mpsc::Sender<UnwoundSensorDataMessage>,
-        normal_tx: tokio::sync::mpsc::Sender<UnwoundSensorDataMessage>,
+        fast_tx: tokio::sync::mpsc::Sender<SensorDataBatch>,
+        normal_tx: tokio::sync::mpsc::Sender<SensorDataBatch>,
         persistence_config: &PersistenceConfig,
     ) -> Self {
         Self {
@@ -30,13 +29,22 @@ impl SensorDataSplitter {
     }
     pub async fn ingest(&mut self) {
         info!("Starting Splitter ingestion loop");
-        while let Some(data) = self.data_rx.recv().await {
-            if self.fast_flush_sensor_ids.contains(&data.sensor_id) {
-                if self.fast_tx.send(data).await.is_err() && self.normal_tx.is_closed() {
-                    error!("Downstream fast flush channel closed. Breaking ingestion loop");
-                    break;
-                }
-            } else if self.normal_tx.send(data).await.is_err() && self.fast_tx.is_closed() {
+        while let Some(data_batch) = self.data_rx.recv().await {
+            let (fast_batch, normal_batch): (Vec<_>, Vec<_>) = data_batch
+                .into_iter()
+                .partition(|data| self.fast_flush_sensor_ids.contains(&data.sensor_id));
+
+            if !fast_batch.is_empty()
+                && self.fast_tx.send(fast_batch).await.is_err()
+                && self.normal_tx.is_closed()
+            {
+                error!("Downstream fast flush channel closed. Breaking ingestion loop");
+                break;
+            }
+            if !normal_batch.is_empty()
+                && self.normal_tx.send(normal_batch).await.is_err()
+                && self.fast_tx.is_closed()
+            {
                 error!("Downstream normal flush channel closed. Breaking ingestion loop");
                 break;
             }
@@ -49,7 +57,7 @@ impl SensorDataSplitter {
 mod tests {
     use super::*;
     use crate::configuration::DatabaseExportConfig;
-    use crate::processing::sensor_data_message::AbsoluteSensorReading;
+    use crate::processing::sensor_data_message::{AbsoluteSensorReading, UnwoundSensorDataMessage};
     use tokio::sync::mpsc;
 
     fn create_message(sensor_id: &str) -> UnwoundSensorDataMessage {
@@ -84,14 +92,13 @@ mod tests {
 
         let mut splitter = SensorDataSplitter::new(data_rx, fast_tx, normal_tx, &config);
 
-        data_tx.send(create_message("sensor_fast_1")).await.unwrap();
         data_tx
-            .send(create_message("sensor_normal_1"))
-            .await
-            .unwrap();
-        data_tx.send(create_message("sensor_fast_2")).await.unwrap();
-        data_tx
-            .send(create_message("sensor_normal_2"))
+            .send(vec![
+                create_message("sensor_fast_1"),
+                create_message("sensor_normal_1"),
+                create_message("sensor_fast_2"),
+                create_message("sensor_normal_2"),
+            ])
             .await
             .unwrap();
 
@@ -100,17 +107,17 @@ mod tests {
         splitter.ingest().await;
 
         // Verify fast channel received correct messages
-        let fast_msg1 = fast_rx.recv().await.unwrap();
-        let fast_msg2 = fast_rx.recv().await.unwrap();
-        assert_eq!(fast_msg1.sensor_id, "sensor_fast_1");
-        assert_eq!(fast_msg2.sensor_id, "sensor_fast_2");
+        let fast_batch = fast_rx.recv().await.unwrap();
+        assert_eq!(fast_batch.len(), 2);
+        assert_eq!(fast_batch[0].sensor_id, "sensor_fast_1");
+        assert_eq!(fast_batch[1].sensor_id, "sensor_fast_2");
         assert!(fast_rx.try_recv().is_err());
 
         // Verify normal channel received correct messages
-        let normal_msg1 = normal_rx.recv().await.unwrap();
-        let normal_msg2 = normal_rx.recv().await.unwrap();
-        assert_eq!(normal_msg1.sensor_id, "sensor_normal_1");
-        assert_eq!(normal_msg2.sensor_id, "sensor_normal_2");
+        let normal_batch = normal_rx.recv().await.unwrap();
+        assert_eq!(normal_batch.len(), 2);
+        assert_eq!(normal_batch[0].sensor_id, "sensor_normal_1");
+        assert_eq!(normal_batch[1].sensor_id, "sensor_normal_2");
         assert!(normal_rx.try_recv().is_err());
     }
 
@@ -124,16 +131,20 @@ mod tests {
 
         let mut splitter = SensorDataSplitter::new(data_rx, fast_tx, normal_tx, &config);
 
-        data_tx.send(create_message("sensor_1")).await.unwrap();
-        data_tx.send(create_message("sensor_2")).await.unwrap();
+        data_tx
+            .send(vec![create_message("sensor_1"), create_message("sensor_2")])
+            .await
+            .unwrap();
         drop(data_tx);
 
         splitter.ingest().await;
 
         assert!(fast_rx.try_recv().is_err());
 
-        assert_eq!(normal_rx.recv().await.unwrap().sensor_id, "sensor_1");
-        assert_eq!(normal_rx.recv().await.unwrap().sensor_id, "sensor_2");
+        let normal_batch = normal_rx.recv().await.unwrap();
+        assert_eq!(normal_batch.len(), 2);
+        assert_eq!(normal_batch[0].sensor_id, "sensor_1");
+        assert_eq!(normal_batch[1].sensor_id, "sensor_2");
     }
 
     #[tokio::test]
@@ -149,7 +160,10 @@ mod tests {
         drop(fast_rx);
         drop(normal_rx);
 
-        data_tx.send(create_message("fast_sensor")).await.unwrap();
+        data_tx
+            .send(vec![create_message("fast_sensor")])
+            .await
+            .unwrap();
 
         splitter.ingest().await;
     }

@@ -5,6 +5,8 @@ umask 077
 
 export CHRONORACER_DIR="/chronoracer"
 
+/chronoracer/adjust-limits.sh
+
 install -m 644 "${CHRONORACER_DIR}/kafka.service" /etc/systemd/system/kafka.service
 systemctl daemon-reload
 systemctl enable --now kafka.service

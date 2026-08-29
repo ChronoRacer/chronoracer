@@ -22,8 +22,11 @@ class KafkaHeartbeatReader:
         return await loop.run_in_executor(None, self._read_last_sync)
 
     def _read_last_sync(self) -> datetime | None:
-        consumer = Consumer({'bootstrap.servers': self.bootstrap, 'group.id': 'relay-heartbeat-read',
-                             'enable.auto.commit': False, 'auto.offset.reset': 'error'})
+        # DO NOT set auto commit or do any manual commits here. Group ID can be random
+        consumer = Consumer({'bootstrap.servers': self.bootstrap,
+                             'enable.auto.commit': False,
+                             'auto.offset.reset': 'error'}
+                            )
         try:
             partitions = consumer.list_topics(self.topic, timeout=5).topics[self.topic].partitions
             if not partitions: return None
@@ -70,6 +73,7 @@ class KafkaShutdownPublisher(ShutdownPublisher):
             'retries': 3,
             'retry.backoff.ms': 250,
             'delivery.timeout.ms': self._delivery_timeout_seconds * 1000,
+            'compression.type': 'snappy'
         })
 
     async def publish_shutdown(self, race_id: str) -> None:
@@ -91,8 +95,7 @@ class KafkaShutdownPublisher(ShutdownPublisher):
                 topic=self.topic,
                 key="SHUTDOWN",
                 value="",
-                on_delivery=_delivery_callback,
-                compression_type='snappy',
+                on_delivery=_delivery_callback
             )
             remaining = self.producer.flush(self._delivery_timeout_seconds)
         except (BufferError, KafkaException) as exc:
