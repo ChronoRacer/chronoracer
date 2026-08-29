@@ -1,0 +1,5 @@
+project_id  = "YOUR_PROJECT"
+race_id     = "example-race-id"
+kafka_fqdn  = "kafka.example.com."
+ingest_open = true
+# zone      = "europe-west3-a"

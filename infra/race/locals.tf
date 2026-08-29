@@ -1,0 +1,15 @@
+locals {
+  names    = jsondecode(file("${path.module}/../contract/names.json"))
+  platform = jsondecode(file("${path.module}/../contract/platform.json"))
+
+  kafka_public_port = local.platform.kafka_public_port
+  kafka_hostname    = trimsuffix(var.kafka_fqdn, ".")
+
+  core_config_gcs_uri = "gs://${data.google_storage_bucket.race.name}/${var.race_id}/core-config.yaml"
+
+  # Inline so the controller image (copied *.tf only) does not need extra files at apply.
+  overlay_startup = <<-EOT
+#!/bin/bash
+exec /chronoracer/entrypoint.sh
+EOT
+}
