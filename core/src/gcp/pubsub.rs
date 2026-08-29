@@ -4,6 +4,7 @@ use compact_str::CompactString;
 use google_cloud_pubsub::client::Publisher;
 use google_cloud_pubsub::model::Message;
 use std::sync::Arc;
+use serde_json::json;
 use tracing::info;
 
 pub struct GcsPubSubManager<'a> {
@@ -22,11 +23,12 @@ impl<'a> GcsPubSubManager<'a> {
         })
     }
 
-    pub async fn publish_shutdown_message(&self) -> Result<()> {
-        let race_id = self.race_id.clone();
+    pub async fn publish_export_done_message(&self) -> Result<()> {
+        let payload = json!({ "race_id":  self.race_id.to_string() });
+
         let message = Message::new()
-            .set_ordering_key("SHUTDOWN")
-            .set_data(race_id.as_bytes().to_vec());
+            .set_ordering_key("EXPORT_DONE")
+            .set_data(payload.to_string());
 
         let message_id = self.publisher.publish(message).await?;
         info!("Published shutdown message, id={message_id}");

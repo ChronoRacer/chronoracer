@@ -287,10 +287,10 @@ mod tests {
     }
 
     #[test]
-    fn load_from_env_sample_config_loads_correctly() {
+    fn load_from_env_default_config_loads_correctly() {
         let _lock = env_lock();
         unsafe {
-            env::set_var(CoreConfig::CONFIG_PATH_ENV_VAR_NAME, "sample-config.yaml");
+            env::set_var(CoreConfig::CONFIG_PATH_ENV_VAR_NAME, "default-config.yaml");
         }
         let loaded = CoreConfig::load_from_env();
         match loaded {

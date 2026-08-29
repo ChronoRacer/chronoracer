@@ -35,6 +35,7 @@ impl HeartbeatHandler {
             ticker.tick().await;
 
             let record = FutureRecord::to(self.heartbeat_topic)
+                .key("CORE")
                 .payload("OK") // TODO: heartbeat status
                 .key(self.race_id);
 

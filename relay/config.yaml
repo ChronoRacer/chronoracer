@@ -1,0 +1,27 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+  log_level: info
+okta:
+  issuer: https://chronoracer.eu.auth0.com/
+  audience: https://api.chronoracer.com
+gcp:
+  enabled: false
+  project_id: chronoracer-dev
+  firestore_database: "(default)"
+  export_bucket: chronoracer-race
+  cloud_build_trigger_id: race-controller
+  cloud_build_location: europe-west3
+  build_finished_audience: ""
+  build_finished_service_account: build-finished-push@chronoracer-dev.iam.gserviceaccount.com
+  export_done_audience: ""
+  export_done_service_account: export-done-push@chronoracer-dev.iam.gserviceaccount.com
+  build_finished_topic: build-finished
+  export_done_topic: export-done
+  kafka_private_bootstrap: kafka:9092
+  kafka_control_topic: control
+  kafka_heartbeat_topic: heartbeat
+  kafka_public_port: 9094
+service:
+  heartbeat_freshness_seconds: 50
+  build_bind_window_seconds: 600

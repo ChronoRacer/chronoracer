@@ -29,7 +29,7 @@ kafka:
     dlq_unknown_key: "unknown"
     publish_timeout_sec: 5
   heartbeat_topic:
-    name: "core"
+    name: "heartbeat"
     num_partitions: 1
     replication_factor: 1
   export:
@@ -61,8 +61,8 @@ persistence:
     max_retries: 3
 gcp:
   enabled: false
-  export_bucket: "todo"
+  export_bucket: "chronoracer-race"
   max_retries: 2
   max_gcs_concurrent_uploads: 3
   project_id: "todo"
-  pubsub_topic_id: "todo"
+  pubsub_topic_id: "export-done"

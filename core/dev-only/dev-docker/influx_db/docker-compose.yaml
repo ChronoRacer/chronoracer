@@ -2,7 +2,7 @@ services:
   influxdb3:
     image: influxdb:3-core
     container_name: influxdb3-core
-    env_file: [influxdb3.env]
+    env_file: [ influxdb3.env ]
     ports:
       - "8181:8181"
     volumes:
@@ -17,7 +17,7 @@ services:
     depends_on:
       influxdb3:
         condition: service_started
-    env_file: [influxdb3.env]
+    env_file: [ influxdb3.env ]
     volumes:
       - ../../influxdb-plugins:/plugins:ro
       - ./admin-token.json:/etc/influxdb3/admin-token.json:ro
