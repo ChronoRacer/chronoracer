@@ -2,7 +2,9 @@
 
 Human/CI apply. What this stack creates, IAM, and residuals: [Terraform](../../docs/component-terraform.md).
 
-Requires `gs://chronoracer-state` from [../bootstrap](../bootstrap). Relay and controller images before a full apply: [Control-plane images](../../docs/operator-control-plane-images.md). VM families: [Compute images](../../docs/component-images.md). TLS upload: [Kafka TLS](../../docs/operator-kafka-tls.md).
+Requires `gs://chronoracer-state` from [../bootstrap](../bootstrap). Relay and controller images before a full
+apply: [Control-plane images](../../docs/operator-control-plane-images.md). VM
+families: [Compute images](../../docs/component-images.md). TLS upload: [Kafka TLS](../../docs/operator-kafka-tls.md).
 
 ```bash
 # After bootstrap + terraform.tfvars (project_id, DNS, image URIs).

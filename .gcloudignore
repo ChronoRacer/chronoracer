@@ -1,4 +1,4 @@
-# Cloud Build upload for control-plane image publish (not the VM Packer context).
+# Cloud Build upload for control-plane image publish
 .git
 .cursor
 .idea

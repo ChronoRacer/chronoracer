@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
-
 from controller.config import Config
 from controller.outputs import TerraformOutputs
 from controller.run import YAML_MISSING, run
 from controller.terraform_cli import TerraformResult
+from dataclasses import dataclass, field
+from pathlib import Path
 
 
 def _cfg(**overrides) -> Config:

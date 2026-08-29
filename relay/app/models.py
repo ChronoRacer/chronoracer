@@ -1,8 +1,7 @@
 from datetime import datetime, timezone
 from enum import StrEnum
-from typing import Any
-
 from pydantic import BaseModel, ConfigDict, Field
+from typing import Any
 
 
 class Phase(StrEnum):
@@ -55,6 +54,7 @@ class ActivePointer(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     race_id: str = Field('', alias='raceId')
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), alias='updatedAt')
+
 
 class BuildFinished(BaseModel):
     race_id: str

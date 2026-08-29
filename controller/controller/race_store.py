@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from typing import Protocol
-
+from controller.outputs import TerraformOutputs
 from google.cloud import firestore
 from loguru import logger
-
-from controller.outputs import TerraformOutputs
+from typing import Protocol
 
 LAST_ERROR_MAX = 2048
 
@@ -21,7 +19,7 @@ class RaceStore(Protocol):
     def get(self, race_id: str) -> dict | None: ...
 
     def try_write_applied(
-        self, race_id: str, run_token: str, outputs: TerraformOutputs
+            self, race_id: str, run_token: str, outputs: TerraformOutputs
     ) -> bool: ...
 
     def try_write_failed(self, race_id: str, run_token: str, last_error: str) -> bool: ...
@@ -39,7 +37,7 @@ class FirestoreRaceStore:
         return snap.to_dict() if snap.exists else None
 
     def try_write_applied(
-        self, race_id: str, run_token: str, outputs: TerraformOutputs
+            self, race_id: str, run_token: str, outputs: TerraformOutputs
     ) -> bool:
         return self._txn_update(
             race_id,

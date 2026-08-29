@@ -1,6 +1,3 @@
-# State bucket lives outside always-on and race state (docs: bootstrap exception).
-# Apply this root once with local state, then never put this bucket in another stack.
-
 locals {
   names = jsondecode(file("${path.module}/../contract/names.json"))
 }

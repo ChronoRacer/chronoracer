@@ -1,6 +1,5 @@
-from pathlib import Path
-
 from controller.names import race_bucket
+from pathlib import Path
 
 
 def test_race_bucket_from_contract():

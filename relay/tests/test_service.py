@@ -1,12 +1,10 @@
-from datetime import datetime, timedelta, timezone
-
 import pytest
 import yaml
-
 from app.gcp.repository import InMemoryRaceRepository
 from app.gcp.storage import DevObjectStore
 from app.models import BuildFinished, ExportDone, Phase, TerraformAction, TerraformStatus
 from app.service import RelayService
+from datetime import datetime, timedelta, timezone
 
 
 class FakeBuilds:

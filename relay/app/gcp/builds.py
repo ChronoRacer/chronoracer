@@ -1,7 +1,6 @@
-from typing import Protocol
-
 from google.cloud.devtools import cloudbuild_v1
 from loguru import logger
+from typing import Protocol
 
 
 class BuildTrigger(Protocol):

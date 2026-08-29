@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Create Artifact Registry (always-on -target), then push Relay + controller.
 # Cloud Run apply needs the Relay image to exist. Do this after bootstrap, before
-# a full always-on apply. From bash (Git Bash or WSL on Windows).
+# a full always-on apply.
 #
 #   cp terraform.tfvars.example terraform.tfvars   # fill project_id + DNS
 #   ./infra/always-on/publish-control-plane-images.sh
@@ -57,9 +57,9 @@ if [[ -z "${PROJECT_ID}" && -f "${TFVARS}" ]]; then
   PROJECT_ID="$(sed -n 's/^[[:space:]]*project_id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "${TFVARS}" | head -1)"
 fi
 if [[ -z "${PROJECT_ID}" ]]; then
-  PROJECT_ID="$(gcloud config get-value project 2>/dev/null || true)"
+  PROJECT_ID="$(gcloud config get-value project 2>/dev/null)"
 fi
-[[ -n "${PROJECT_ID}" && "${PROJECT_ID}" != "(unset)" && "${PROJECT_ID}" != "YOUR_PROJECT" ]] || {
+[[ -z "${PROJECT_ID}" || "${PROJECT_ID}" == "(unset)" ]] || {
   echo "set PROJECT_ID, gcloud config project, or project_id in ${TFVARS}" >&2
   exit 1
 }

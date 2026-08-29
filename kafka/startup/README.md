@@ -1,4 +1,4 @@
-# Kafka startup scripts (executed VM boot)
+# Kafka startup scripts (executed at VM boot)
 
 Listeners and boot contract: [Kafka](../../docs/component-kafka.md). Bake inventory: [Compute images](../../docs/component-images.md). TLS payload: [Kafka TLS runbook](../../docs/operator-kafka-tls.md). Race metadata keys: [Terraform](../../docs/component-terraform.md).
 

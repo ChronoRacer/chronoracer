@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import Protocol
-
 from google.cloud import storage
 from loguru import logger
+from typing import Protocol
 
 
 class YamlProbe(Protocol):
@@ -17,5 +16,5 @@ class GcsYamlProbe:
 
     def core_config_exists(self, race_id: str) -> bool:
         object_name = f"{race_id}/core-config.yaml"
-        logger.info("HEAD gs://{}/{}", self.bucket, object_name)
+        logger.info("Probing gs://{}/{}", self.bucket, object_name)
         return self._client.bucket(self.bucket).blob(object_name).exists()

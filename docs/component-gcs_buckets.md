@@ -1,6 +1,7 @@
 # Deep dive - GCS buckets
 
-Layout and IAM intent for the three buckets. Who creates the buckets: [Terraform](component-terraform.md). Core payload publish: [Compute images](component-images.md).
+Layout and IAM intent for the three buckets. Who creates the buckets: [Terraform](component-terraform.md). Core payload
+publish: [Compute images](component-images.md).
 
 ## Race bucket
 
@@ -9,12 +10,15 @@ Layout and IAM intent for the three buckets. Who creates the buckets: [Terraform
 - Written to: during race
 - Writers: Relay, Core
 - Read from: always
-- Readers: Cloud VM Core (`core-config.yaml` only); Cloud Build controller (`core-config.yaml` only); Operators via Relay (`export/` plus YAML Relay wrote)
+- Readers: Cloud VM Core (`core-config.yaml` only); Cloud Build controller (`core-config.yaml` only); Operators via
+  Relay (`export/` plus YAML Relay wrote)
 - Storage class: `STANDARD`
-- Access: private, read via signed URLs distributed by Relay. Relay mints 15-minute GET URLs with IAM `signBlob` (Cloud Run ADC has no private key). IAM: [Terraform](component-terraform.md). API: [Relay historical](component-relay.md).
+- Access: private, read via signed URLs distributed by Relay. Relay mints 15-minute GET URLs with IAM `signBlob` (Cloud
+  Run ADC has no private key). IAM: [Terraform](component-terraform.md). API: [Relay historical](component-relay.md).
 - Purpose: store race data
 
 Structure:
+
 ```
 /{raceId} (for each race)
 |---  /core-config.yaml
@@ -38,6 +42,7 @@ Structure:
 - Purpose: store Terraform state files
 
 Structure (Terraform GCS backend layout):
+
 ```
 /base/default.tfstate
 /race/default.tfstate
@@ -53,9 +58,11 @@ Structure (Terraform GCS backend layout):
 - Readers: Core SA (`roles/storage.objectViewer` on the whole bucket)
 - Storage class: `STANDARD`
 - Access: private. No secrets. Not race data.
-- Purpose: floating Core binary + InfluxDB plugins so the Core image family does not rebuild on every rust or plugin change
+- Purpose: floating Core binary + InfluxDB plugins so the Core image family does not rebuild on every rust or plugin
+  change
 
 Structure:
+
 ```
 /core/current/core
 /core/current/influxdb-plugins

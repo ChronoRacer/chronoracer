@@ -70,6 +70,7 @@ def produce_sensor_messages(producer):
             topic=target_topic,
             value=avro_bytes,
             on_delivery=delivery_report,
+            compression_type='lz4',
             key=record["sensor_id"]
         )
 
@@ -116,6 +117,7 @@ def produce_change_driver_messages(producer):
             topic=topic,
             value=payload,
             on_delivery=delivery_report,
+            compression_type='lz4',
             key="CHDRV"
         )
         producer.poll(0)
@@ -140,6 +142,7 @@ def produce_shutdown_message(producer):
         topic=topic,
         value=payload,
         on_delivery=delivery_report,
+        compression_type='lz4',
         key="SHUTDOWN"
     )
     producer.poll(0)

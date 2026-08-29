@@ -52,6 +52,7 @@ impl<'a> MessagingLayerEntrypoint<'a> {
         let producer: Arc<FutureProducer> = Arc::new(
             rdkafka::ClientConfig::new()
                 .set("bootstrap.servers", config.kafka.brokers.join(","))
+                .set("compression.type", "snappy")
                 .create()
                 .context("Failed to create DLQ producer")?,
         );

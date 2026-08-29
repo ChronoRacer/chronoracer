@@ -1,6 +1,7 @@
 # Race stack
 
-Controller-only. Module contract, `ingest_open`, image pin: [Terraform](../../docs/component-terraform.md). Overlay bake: [Compute images](../../docs/component-images.md).
+Controller-only. Module contract, `ingest_open`, image pin: [Terraform](../../docs/component-terraform.md). Overlay
+bake: [Compute images](../../docs/component-images.md).
 
 Do not apply from this README.
 

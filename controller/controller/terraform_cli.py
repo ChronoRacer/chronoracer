@@ -3,13 +3,11 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from controller.outputs import TerraformOutputs
 from dataclasses import dataclass
+from loguru import logger
 from pathlib import Path
 from typing import Protocol
-
-from loguru import logger
-
-from controller.outputs import TerraformOutputs
 
 LOCK_TIMEOUT = "5m"
 

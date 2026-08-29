@@ -13,11 +13,11 @@ source "googlecompute" "core" {
   image_family            = local.names.core_family
   image_storage_locations = [var.image_storage_location]
   image_description       = "Chronoracer Core base. InfluxDB 3 plus overlay. Binary and plugins from GCS at boot."
-  tags                    = ["packer"]
+  tags = ["packer"]
 }
 
 build {
-  name    = "chronoracer-core"
+  name = "chronoracer-core"
   sources = ["source.googlecompute.core"]
 
   provisioner "shell" {

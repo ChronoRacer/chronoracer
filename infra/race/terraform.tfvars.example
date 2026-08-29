@@ -1,4 +1,4 @@
-project_id  = "YOUR_PROJECT"
+project_id  = "PROJECT_ID"
 race_id     = "example-race-id"
 kafka_fqdn  = "kafka.example.com."
 ingest_open = true

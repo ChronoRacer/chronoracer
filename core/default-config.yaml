@@ -15,7 +15,7 @@ kafka:
   group_id: "chrono-core"
   sensor_data_topic:
     name: "data"
-    num_partitions: 3
+    num_partitions: 4
     replication_factor: 1
   control_event_topic:
     name: "control"
@@ -64,5 +64,5 @@ gcp:
   export_bucket: "chronoracer-race"
   max_retries: 2
   max_gcs_concurrent_uploads: 3
-  project_id: "todo"
+  project_id: "PROJECT_ID"
   pubsub_topic_id: "export-done"

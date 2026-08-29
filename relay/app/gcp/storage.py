@@ -1,12 +1,11 @@
 import asyncio
 import datetime
-from typing import Protocol
-
 import google.auth
-from google.auth.transport.requests import Request
 import yaml
+from google.auth.transport.requests import Request
 from google.cloud import storage
 from loguru import logger
+from typing import Protocol
 
 
 def iam_sign_params():

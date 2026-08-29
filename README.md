@@ -1,3 +1,3 @@
 # Chronoracer backend monorepo
 
-All documentation is located here: [docs](docs/README.md)
+For documentation, please see [the docs](docs/README.md). Start at the root document, explore by references to nested documents.

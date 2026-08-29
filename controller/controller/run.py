@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from loguru import logger
-
 from controller.config import Config
 from controller.race_store import RaceStore
 from controller.terraform_cli import TerraformResult, TerraformRunner
 from controller.yaml_probe import YamlProbe
+from loguru import logger
 
 YAML_MISSING = "core-config.yaml missing"
 
@@ -13,9 +12,9 @@ YAML_MISSING = "core-config.yaml missing"
 def bind_ok(doc: dict, run_token: str, action: str) -> bool:
     run = doc.get("terraformRun") or {}
     return (
-        run.get("status") == "in_flight"
-        and run.get("runToken") == run_token
-        and run.get("action") == action
+            run.get("status") == "in_flight"
+            and run.get("runToken") == run_token
+            and run.get("action") == action
     )
 
 
@@ -41,10 +40,10 @@ def _finish_apply(cfg: Config, store: RaceStore, result: TerraformResult) -> int
 
 
 def run(
-    cfg: Config,
-    store: RaceStore,
-    yaml_probe: YamlProbe,
-    terraform: TerraformRunner,
+        cfg: Config,
+        store: RaceStore,
+        yaml_probe: YamlProbe,
+        terraform: TerraformRunner,
 ) -> int:
     doc = store.get(cfg.race_id)
     if doc is None:
