@@ -10,18 +10,8 @@ Bake inventory: [Compute images](../../docs/component-images.md). Race metadata 
 
     - [`start-influx.sh`](start-influx.sh): offline admin token at `/chronoracer/admin-token.json` (mode `600`), `systemctl enable --now influxdb3`, wait for localhost:8181, create database `chrono_db` and export trigger `database_export`. Data dir `/var/lib/influxdb3` is `700`.
 
-      ```
-      influxdb3 serve \
-        --node-id core \
-        --object-store file \
-        --data-dir /var/lib/influxdb3 \
-        --plugin-dir /chronoracer/influxdb-plugins \
-        --http-bind 127.0.0.1:8181 \
-        --admin-token-file /chronoracer/admin-token.json \
-        --package-manager disabled
-      ```
-
-      `--package-manager disabled`: Core VM has no NAT. Token is merged into Core YAML as `persistence.db_password` (platform overlay wins). Rendered Core YAML is `600`.
+      Token is merged into Core YAML as `persistence.db_password` (platform overlay wins). Rendered Core YAML is `600`.
+      Core VM has no NAT - the build-time plugin venv and its all dependencies are documented with the [InfluxDB component](../../docs/component-influxdb.md#plugin-python-environment).
 
     - [`render-config.sh`](render-config.sh): render final Core YAML from the GCE metadata server (instance attributes + project/zone), operator YAML from GCS, and defaults (platform overlay wins). `yq strenv` needs the token **exported**. Writes `/chronoracer/core-config.yaml` and `/chronoracer/core.env` at mode `600`. Does not call the Compute API.
 

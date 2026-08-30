@@ -5,6 +5,9 @@ Plugins inside this directory will be loaded into the InfluxDB instance during a
 Race image does not bake these files. Publish path: [Compute images](../../docs/component-images.md). Object
 prefix: [GCS](../../docs/component-gcs_buckets.md).
 
+Runtime dependency setup is owned by the [InfluxDB component
+documentation](../../docs/component-influxdb.md#plugin-python-environment).
+
 ## `export_database.py`
 
 Caller: Core When: Core shutdown sequence Purpose: export tables from InfluxDB, compress into Parquet files, ensuring

@@ -99,6 +99,8 @@ build {
       "test -f /chronoracer/influxdb3.service",
       "test -f /chronoracer/chronoracer-core.service",
       "test -f /chronoracer/default-config.yaml",
+      "test -x /chronoracer/influxdb-plugin-venv/bin/python",
+      "/chronoracer/influxdb-plugin-venv/bin/python -c 'import pyarrow'",
       "test -f /chronoracer/redpanda/export.gcs.yaml",
       "test -f /chronoracer/redpanda/export.local.yaml",
       "test -f /chronoracer/names.json",
