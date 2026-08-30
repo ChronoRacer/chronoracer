@@ -143,7 +143,7 @@ fn run() -> Result<()> {
         control_tasks.spawn(async move { messaging_wrapper.control_sink.ingest().await });
         control_tasks.spawn(async move { messaging_wrapper.dlq_handler.ingest().await });
         control_tasks.spawn(async move { messaging_wrapper.heartbeat_handler.keep_alive().await });
-        info!("Control plane initalized");
+        info!("Control plane initialized");
 
         run_tasks(control_tasks, monitor, shutdown_rx).await;
         Ok::<(), anyhow::Error>(())

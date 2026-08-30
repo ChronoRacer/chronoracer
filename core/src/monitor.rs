@@ -30,7 +30,7 @@ impl<'a> Monitor<'a> {
     #[must_use]
     pub fn new(
         data_cancel_token: CancellationToken,
-        data_tracker: TaskTracker,
+        data_task_tracker: TaskTracker,
         config: &'static CoreConfig,
         database_exporter: InfluxDbExporter,
         kafka_exporter: KafkaExporter<'a>,
@@ -41,7 +41,7 @@ impl<'a> Monitor<'a> {
     ) -> Self {
         Self {
             data_cancel_token,
-            data_tracker,
+            data_tracker: data_task_tracker,
             config,
             database_exporter,
             kafka_exporter,
