@@ -9,10 +9,21 @@ use gcp::storage;
 use std::path::PathBuf;
 use std::time::Duration;
 use storage::GcsStorageManager;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::{error, info, warn};
+
+struct DataTaskTerminationNotifier {
+    sender: UnboundedSender<()>,
+}
+
+impl Drop for DataTaskTerminationNotifier {
+    fn drop(&mut self) {
+        let _ = self.sender.send(());
+    }
+}
 
 pub struct Monitor<'a> {
     data_cancel_token: CancellationToken,
@@ -24,6 +35,8 @@ pub struct Monitor<'a> {
     gcp_pubsub_manager: Option<GcsPubSubManager<'a>>,
     notify_shutdown_on_failed_db_export: bool,
     notify_shutdown_on_failed_kafka_export: bool,
+    data_task_termination_sender: UnboundedSender<()>,
+    data_task_termination_receiver: Option<UnboundedReceiver<()>>,
 }
 
 impl<'a> Monitor<'a> {
@@ -39,6 +52,8 @@ impl<'a> Monitor<'a> {
         notify_shutdown_on_failed_db_export: bool,
         notify_shutdown_on_failed_kafka_export: bool,
     ) -> Self {
+        let (data_task_termination_sender, data_task_termination_receiver) =
+            tokio::sync::mpsc::unbounded_channel();
         Self {
             data_cancel_token,
             data_tracker: data_task_tracker,
@@ -49,14 +64,33 @@ impl<'a> Monitor<'a> {
             gcp_pubsub_manager,
             notify_shutdown_on_failed_db_export,
             notify_shutdown_on_failed_kafka_export,
+            data_task_termination_sender,
+            data_task_termination_receiver: Some(data_task_termination_receiver),
         }
     }
     pub fn track_task<F>(&self, task: F)
     where
         F: Future + Send + 'static,
-        <F as Future>::Output: Send,
+        <F as Future>::Output: Send + 'static,
     {
-        self.data_tracker.spawn(task);
+        let termination_notifier = DataTaskTerminationNotifier {
+            sender: self.data_task_termination_sender.clone(),
+        };
+        self.data_tracker.spawn(async move {
+            let _termination_notifier = termination_notifier;
+            task.await;
+        });
+    }
+
+    pub fn take_data_task_termination_receiver(&mut self) -> UnboundedReceiver<()> {
+        self.data_task_termination_receiver
+            .take()
+            .expect("data task termination receiver already taken")
+    }
+
+    pub fn stop_data_pipeline(&self) {
+        self.data_cancel_token.cancel();
+        self.data_tracker.close();
     }
 
     pub async fn execute_shutdown_sequence(&self) {

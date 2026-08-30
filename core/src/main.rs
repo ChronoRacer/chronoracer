@@ -8,8 +8,9 @@ use crate::monitor::Monitor;
 use crate::persistence::persistence_entrypoint::PersistanceLayerEntryPoint;
 use crate::processing::processing_entrypoint::ProcessingLayerEntrypoint;
 use crate::runtime_configuration::RetainReadTimeValue;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use compact_str::CompactString;
+use std::process::ExitCode;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
@@ -31,11 +32,13 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-fn main() {
+fn main() -> ExitCode {
     let _logger_guard = init_logger();
     if let Err(error) = run() {
         error!(%error, "Chronoracer core failed");
+        return ExitCode::FAILURE;
     }
+    ExitCode::SUCCESS
 }
 
 #[tracing::instrument(err(Debug))]
@@ -145,7 +148,7 @@ fn run() -> Result<()> {
         control_tasks.spawn(async move { messaging_wrapper.heartbeat_handler.keep_alive().await });
         info!("Control plane initialized");
 
-        run_tasks(control_tasks, monitor, shutdown_rx).await;
+        run_tasks(control_tasks, monitor, shutdown_rx).await?;
         Ok::<(), anyhow::Error>(())
     })?;
     info!("Run complete");
@@ -154,12 +157,27 @@ fn run() -> Result<()> {
 
 async fn run_tasks(
     mut control_tasks: JoinSet<()>,
-    monitor: Monitor<'_>,
+    mut monitor: Monitor<'_>,
     mut shutdown_rx: oneshot::Receiver<()>,
-) {
+) -> Result<()> {
+    let mut data_task_termination_rx = monitor.take_data_task_termination_receiver();
     info!("Core running...");
     loop {
         tokio::select! {
+            biased;
+            data_task_termination = data_task_termination_rx.recv() => {
+                if data_task_termination.is_some() {
+                    if shutdown_rx.try_recv().is_ok() {
+                        monitor.execute_shutdown_sequence().await;
+                        control_tasks.abort_all();
+                        break;
+                    }
+                    error!("Data pipeline task terminated unexpectedly; stopping Core without export");
+                    control_tasks.abort_all();
+                    monitor.stop_data_pipeline();
+                    bail!("Data pipeline task terminated unexpectedly");
+                }
+            }
             res = control_tasks.join_next() => {
                 match res {
                     Some(Ok(())) => {
@@ -195,4 +213,5 @@ async fn run_tasks(
             }
         }
     }
+    Ok(())
 }

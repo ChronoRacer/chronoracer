@@ -182,6 +182,10 @@ flowchart TB
 Successful shutdown sequence means sending the export-done event to Google Pub/Sub. Failure means not sending the event
 and thus forcing either operator to invoke the force-destroy flow after optional manual intervention.
 
+If a tracked data-pipeline task terminates while Core is running, without the shutdown cancellation having started, Core
+logs the failure and exits with a failure status without starting the export flow. The service manager is responsible for
+restarting Core; no export-done event is sent for this failure path.
+
 Race stop sequence around this: [Race destruction](flow-race_destruction.md). Export
 prefix: [GCS](component-gcs_buckets.md).
 
