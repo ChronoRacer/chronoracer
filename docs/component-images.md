@@ -13,10 +13,11 @@ contract JSON change. That is rare.
 
 **Core:** hybrid. Packer bakes Debian, InfluxDB 3 Core, `rpk`, `yq`, Google Cloud CLI, overlay scripts,
 `default-config.yaml`, Redpanda templates, contract JSON, and the build-time InfluxDB plugin environment. It does
-**not** bake the Core rust binary or InfluxDB plugin source files.
+**not** bake the Core rust binary, Avro schema, or InfluxDB plugin source files.
 
-Publish binary + plugins with [`infra/packer/publish-core-payload.sh`](../infra/packer/publish-core-payload.sh) to the
-artifacts prefix in [GCS](component-gcs_buckets.md). Fetch at boot: [Core startup](../core/startup/README.md).
+Publish the binary, Avro schema, and plugins with
+[`infra/packer/publish-core-payload.sh`](../infra/packer/publish-core-payload.sh) to the artifacts prefix in
+[GCS](component-gcs_buckets.md). Fetch at boot: [Core startup](../core/startup/README.md).
 
 The GCS prefix `core/current/` is floating: the next race picks the latest upload without a new image.
 
@@ -67,7 +68,8 @@ the GCE metadata server. They do not call the Compute API. Core and Kafka servic
 `gce-metadata.sh`, `default-config.yaml`, `redpanda/*.yaml`, contract JSON, empty `influxdb-plugins/`, and the
 build-time `/chronoracer/influxdb-plugin-venv` (see [InfluxDB plugin environment](component-influxdb.md#plugin-python-environment)).
 Packer installs Debian `python3-yaml` (for `merge_config.py`). `need()` after payload: `influxdb3`, `python3` + PyYAML,
-`jq`, `yq`, `gcloud`, `rpk`, `curl`. Binary arrives as `/chronoracer/core`.
+`jq`, `yq`, `gcloud`, `rpk`, `curl`. Binary arrives as `/chronoracer/core`; the schema arrives as
+`/chronoracer/avro/sensor_data.avsc`.
 
 Boot order on the VM: [Kafka startup](../kafka/startup/README.md), [Core startup](../core/startup/README.md).
 
