@@ -148,7 +148,8 @@ If `pkcs12 -export` fails, do not upload.
 
 ## Upload to Secret Manager
 
-Always-on already created secret id `chronoracer-kafka-tls`, multi-region replication not needed. You only add a **version**.
+Always-on already created secret id `chronoracer-kafka-tls`, multi-region replication not needed. You only add a
+**version**.
 
 ```bash
 gcloud secrets versions add chronoracer-kafka-tls \

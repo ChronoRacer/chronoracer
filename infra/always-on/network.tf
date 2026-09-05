@@ -27,14 +27,14 @@ resource "google_compute_subnetwork" "chronoracer" {
   }
 }
 
-resource "google_vpc_access_connector" "relay" {
+resource "google_vpc_access_connector" "vpc_relay" {
   name          = local.names.vpc_connector
   project       = var.project_id
   region        = var.region
   network       = google_compute_network.chronoracer.name
   ip_cidr_range = var.vpc_connector_cidr
-  min_instances = 2
-  max_instances = 3
+  min_instances = 1
+  max_instances = 1
   machine_type  = "e2-micro"
 
   depends_on = [

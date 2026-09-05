@@ -61,7 +61,7 @@ resource "google_cloud_run_v2_service" "relay" {
     }
 
     vpc_access {
-      connector = google_vpc_access_connector.relay.id
+      connector = google_vpc_access_connector.vpc_relay.id
       egress    = "PRIVATE_RANGES_ONLY"
     }
 
