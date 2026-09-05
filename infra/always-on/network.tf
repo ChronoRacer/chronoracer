@@ -18,7 +18,7 @@ resource "google_compute_subnetwork" "chronoracer" {
   lifecycle {
     precondition {
       condition     = contains(data.google_compute_zones.available.names, var.zone)
-      error_message = "var.zone must be an UP Compute zone in var.region (europe-west3)."
+      error_message = "var.zone must be an UP Compute zone in var.region"
     }
     precondition {
       condition     = local.subnet_connector_no_overlap

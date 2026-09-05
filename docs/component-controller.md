@@ -66,8 +66,7 @@ Always-on trigger env (not Relay substitutions; values from always-on apply):
 | `KAFKA_FQDN` | `var.kafka_fqdn` (trailing dot) | `kafka_fqdn`     |
 | `ZONE`       | `var.zone`                      | `zone`           |
 
-`region` stays the race-module default `europe-west3`. Machine types and disk types stay module defaults. Do not pass
-them unless those defaults change in Terraform.
+Machine types and disk types stay module defaults. Do not pass them unless those defaults change in Terraform.
 
 Missing any required env: no Terraform, no Firestore write, non-zero exit.
 

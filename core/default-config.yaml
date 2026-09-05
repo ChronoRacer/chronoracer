@@ -1,9 +1,9 @@
 runtime:
   rayon_threads: 4
-  tokio_workers: 10
-  tokio_blocking: 3
+  tokio_workers: 2
+  tokio_blocking: 1
   heartbeat_interval_s: 30
-  data_pipeline_drain_timeout_s: 120
+  data_pipeline_drain_timeout_s: 180
   notify_shutdown_on_failed_db_export: false
   notify_shutdown_on_failed_kafka_export: true
 race:
@@ -57,12 +57,12 @@ persistence:
   db_port: 8181
   db_password: "apiv3_token"
   db_name: "chrono_db"
-  fast_flush_max_combined_batch_size: 1000
-  fast_flush_interval_ms: 1500
+  fast_flush_max_combined_batch_size: 3000
+  fast_flush_interval_ms: 2000
   fast_flush_sensor_ids:
     - "sensor-1"
-  flush_max_combined_batch_size: 5000
-  flush_interval_ms: 3000
+  flush_max_combined_batch_size: 7000
+  flush_interval_ms: 4000
   max_inflight_db_writes: 7
   export:
     compression_level: 6

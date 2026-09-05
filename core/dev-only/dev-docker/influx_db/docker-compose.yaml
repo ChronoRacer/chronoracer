@@ -39,6 +39,14 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 7500M
+        reservations:
+          cpus: '1.0'
+          memory: 4000M
 
   influxdb3-export-trigger:
     image: influxdb:3-core

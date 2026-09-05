@@ -4,14 +4,8 @@ variable "project_id" {
 }
 
 variable "region" {
-  type        = string
-  description = "All resources stay in this region."
-  default     = "europe-west3"
-
-  validation {
-    condition     = var.region == "europe-west3"
-    error_message = "Docs require europe-west3."
-  }
+  type    = string
+  default = "europe-west3"
 }
 
 variable "zone" {
@@ -48,7 +42,7 @@ variable "ingest_open" {
 variable "kafka_machine_type" {
   type        = string
   description = "Kafka VM. Changing mid-race is forbidden."
-  default     = "e2-standard-4"
+  default     = "e2-standard-2"
 }
 
 variable "core_machine_type" {

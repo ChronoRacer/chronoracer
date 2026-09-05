@@ -26,6 +26,14 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
     volumes:
       - kafka_data:/var/lib/kafka/data
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 7500M
+        reservations:
+          cpus: '1.0'
+          memory: 4000M
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest

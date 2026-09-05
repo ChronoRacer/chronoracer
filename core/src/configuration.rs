@@ -214,10 +214,10 @@ impl RuntimeConfig {
     pub fn mock_config() -> RuntimeConfig {
         Self {
             rayon_threads: 4,
-            tokio_workers: 8,
+            tokio_workers: 2,
             tokio_blocking: 1,
             heartbeat_interval_s: 30,
-            data_pipeline_drain_timeout_s: 120,
+            data_pipeline_drain_timeout_s: 180,
             notify_shutdown_on_failed_db_export: false,
             notify_shutdown_on_failed_kafka_export: true,
         }

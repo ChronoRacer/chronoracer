@@ -6,6 +6,8 @@ Packer templates live in [`infra/packer`](../infra/packer). Race Terraform does 
 Relay Cloud Run and the controller Cloud Build image are **not** Packer. Push those first so always-on can
 apply: [Control-plane images](operator-control-plane-images.md).
 
+For target VMs used, see [ADR - VM types](adr-vm-types.md).
+
 ## Split
 
 **Kafka:** full bake. Overlay + Apache Kafka at `/opt/kafka`. Rebuild the family when Kafka, Java, overlay scripts, or
@@ -29,7 +31,7 @@ Do not download vendor packages from the public internet on the race Core VM (no
 Operator credentials (`gcloud auth application-default login`). Roles: create/delete Compute instances and disks, create
 images. No dedicated Packer service account.
 
-Builder: `e2-small`, 20 GB disk, zone `europe-west3-a`. Disk contents become the image; race VM machine
+Builder: `e2-small`, 20 GB disk. Disk contents become the image; race VM machine
 types: [Terraform](component-terraform.md).
 
 ```bash
