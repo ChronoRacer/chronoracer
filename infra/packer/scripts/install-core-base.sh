@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# InfluxDB 3 Core, yq, rpk. No Core rust binary. Runs as root.
+# InfluxDB 3 Core, its plugin venv, yq, rpk. No Core rust binary. Runs as root.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 : "${YQ_VERSION:?YQ_VERSION not set}"
 : "${RPK_VERSION:?RPK_VERSION not set}"
 : "${INFLUXDB3_PACKAGE:?INFLUXDB3_PACKAGE not set}"
+
+INFLUXDB3_PYTHON="/usr/lib/influxdb3/python/bin/python3"
+PLUGIN_VENV="/chronoracer/influxdb-plugin-venv"
 
 curl --silent --location -O https://repos.influxdata.com/influxdata-archive.key
 gpg --show-keys --with-fingerprint --with-colons ./influxdata-archive.key 2>&1 \
@@ -48,3 +51,13 @@ command -v python3 >/dev/null
 command -v jq >/dev/null
 command -v gcloud >/dev/null
 python3 -c 'import yaml'
+
+[[ -x "${INFLUXDB3_PYTHON}" ]] || {
+  echo "InfluxDB bundled Python not found: ${INFLUXDB3_PYTHON}" >&2
+  exit 1
+}
+
+install -d -m 755 /chronoracer
+"${INFLUXDB3_PYTHON}" -m venv "${PLUGIN_VENV}"
+"${PLUGIN_VENV}/bin/python" -m pip install --no-cache-dir pyarrow
+"${PLUGIN_VENV}/bin/python" -c 'import pyarrow'

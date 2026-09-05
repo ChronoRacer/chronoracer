@@ -1,6 +1,5 @@
 # Publish Relay + controller to Artifact Registry. Run from repository root.
 # Local wrapper: ./infra/always-on/publish-control-plane-images.sh --remote
-# Wrapper passes --region=europe-west3. Do not submit this config as a global build.
 #
 # substitutions: _TAG (required from the wrapper). PROJECT_ID is built-in.
 # _REGION / _REPO / image names must match always-on region + names.json.

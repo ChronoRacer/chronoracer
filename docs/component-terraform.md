@@ -123,10 +123,12 @@ not create SAs or IAM bindings.
 
 VM defaults (Terraform variables; changing them mid-race is forbidden — see close_ingest invariant):
 
-| VM                   | Name    | Machine         | Boot disk     | Network                                                |
-|----------------------|---------|-----------------|---------------|--------------------------------------------------------|
-| Kafka                | `kafka` | `e2-standard-4` | `pd-balanced` | Public + private IP (ephemeral public `access_config`) |
-| Core (with InfluxDB) | `core`  | `n2-standard-4` | `pd-ssd`      | Private IP only                                        |
+| VM                   | Name    | Network                                                |
+|----------------------|---------|--------------------------------------------------------|
+| Kafka                | `kafka` | Public + private IP (ephemeral public `access_config`) |
+| Core (with InfluxDB) | `core`  | Private IP only                                        |
+
+For rationale on VM types, see [ADR - VM types](adr-vm-types.md).
 
 Network tags: `kafka`, `core`. Label `race-id` = `raceId`. No extra data disks. No preemptible.
 

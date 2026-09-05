@@ -18,7 +18,7 @@ resource "google_compute_subnetwork" "chronoracer" {
   lifecycle {
     precondition {
       condition     = contains(data.google_compute_zones.available.names, var.zone)
-      error_message = "var.zone must be an UP Compute zone in var.region (europe-west3)."
+      error_message = "var.zone must be an UP Compute zone in var.region"
     }
     precondition {
       condition     = local.subnet_connector_no_overlap
@@ -27,14 +27,14 @@ resource "google_compute_subnetwork" "chronoracer" {
   }
 }
 
-resource "google_vpc_access_connector" "relay" {
+resource "google_vpc_access_connector" "vpc_relay" {
   name          = local.names.vpc_connector
   project       = var.project_id
   region        = var.region
   network       = google_compute_network.chronoracer.name
   ip_cidr_range = var.vpc_connector_cidr
-  min_instances = 2
-  max_instances = 3
+  min_instances = 1
+  max_instances = 1
   machine_type  = "e2-micro"
 
   depends_on = [

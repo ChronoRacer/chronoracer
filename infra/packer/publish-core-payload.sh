@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Upload a locally built linux Core binary + InfluxDB plugins to gs://{artifacts}/core/current/.
+# Upload a locally built linux Core binary, Avro schema, and InfluxDB plugins to
+# gs://{artifacts}/core/current/.
 # Compile x86_64-unknown-linux-gnu (rdkafka cmake-build needs a Linux toolchain).
 #
 # Usage: publish-core-payload.sh /path/to/chronoracer-core
@@ -9,6 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 NAMES_JSON="${REPO_ROOT}/infra/contract/names.json"
 PLUGIN_SRC="${REPO_ROOT}/core/influxdb-plugins"
+SCHEMA_SRC="${REPO_ROOT}/core/avro/sensor_data.avsc"
 
 [[ $# -eq 1 ]] || {
   echo "usage: $0 /path/to/linux/chronoracer-core" >&2
@@ -18,6 +20,10 @@ PLUGIN_SRC="${REPO_ROOT}/core/influxdb-plugins"
 BIN="$1"
 [[ -s "${BIN}" ]] || {
   echo "binary missing or empty: ${BIN}" >&2
+  exit 1
+}
+[[ -s "${SCHEMA_SRC}" ]] || {
+  echo "Avro schema missing or empty: ${SCHEMA_SRC}" >&2
   exit 1
 }
 
@@ -40,6 +46,7 @@ DEST="gs://${BUCKET}/core/current"
 echo "Publishing Core payload to ${DEST}"
 
 gcloud storage cp "${BIN}" "${DEST}/core"
+gcloud storage cp "${SCHEMA_SRC}" "${DEST}/avro/sensor_data.avsc"
 
 if gcloud storage ls "${DEST}/influxdb-plugins" >/dev/null 2>&1; then
   gcloud storage rm --recursive "${DEST}/influxdb-plugins" || true
@@ -55,4 +62,4 @@ for py in "${plugins[@]}"; do
   gcloud storage cp "${py}" "${DEST}/influxdb-plugins/$(basename "${py}")"
 done
 
-echo "Published ${DEST}/core and ${#plugins[@]} plugin(s)"
+echo "Published ${DEST}/core, ${DEST}/avro/sensor_data.avsc, and ${#plugins[@]} plugin(s)"

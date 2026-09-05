@@ -7,7 +7,9 @@ use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use crate::runtime_configuration::RetainReadTimeValue;
 use anyhow::{Context, Result, anyhow};
 use compact_str::CompactString;
-use influxdb3_client::Client;
+use influxdb3_client::{Client, WriteOptions};
+use std::cmp::max;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
@@ -81,10 +83,21 @@ impl PersistanceLayerEntryPoint {
                 ))
                 .token(&persistence_config.db_password)
                 .database(&persistence_config.db_name)
-                .write_accept_partial(true)
-                .write_use_v2_api(false)
-                .write_no_sync(false)
                 .max_idle_connections((persistence_config.max_inflight_db_writes * 2) as usize)
+                .write_options(WriteOptions {
+                    precision: influxdb3_client::Precision::Nanosecond,
+                    default_tags: HashMap::new(),
+                    gzip_threshold: None, // `None` so it never compresses, no point when hosting on the same machine
+                    no_sync: false,
+                    accept_partial: true,
+                    use_v2_api: false,
+                    tag_order: vec![],
+                    batch_size: max(
+                        persistence_config.fast_flush_max_combined_batch_size,
+                        persistence_config.flush_max_combined_batch_size,
+                    ),
+                    max_inflight: persistence_config.max_inflight_db_writes as usize,
+                })
                 .build()
                 .map_err(|e| anyhow!("Invalid InfluxDB config: {e}"))?,
         )

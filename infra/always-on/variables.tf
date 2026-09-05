@@ -5,13 +5,7 @@ variable "project_id" {
 
 variable "region" {
   type        = string
-  description = "All resources stay in this region."
   default     = "europe-west3"
-
-  validation {
-    condition     = var.region == "europe-west3"
-    error_message = "Docs require europe-west3."
-  }
 }
 
 variable "zone" {

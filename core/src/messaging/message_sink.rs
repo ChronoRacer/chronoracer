@@ -87,7 +87,7 @@ impl BatchMessageSink {
 
     pub async fn ingest_with_cancellation(&mut self, cancel_token: CancellationToken) {
         info!(
-            "Batch Message sink opened for topics: {}, batch_size={}, flush_interval_ms={}",
+            "Batch message sink opened for topics: {}, batch_size={}, flush_interval_ms={}",
             self.topics.join(","),
             self.batch_size,
             self.batch_flush_interval_ms,
@@ -123,10 +123,11 @@ impl BatchMessageSink {
                             }
                         }
                         Some(Err(kafka_error)) => {
+                            // This branch is taken when the broker dies. Reconnects automatically
                             error!("Kafka error occurred while polling: {kafka_error}");
                         }
                         None => {
-                            warn!("Kafka stream ended unexpectedly.");
+                            error!("Kafka stream ended unexpectedly.");
                             if !flush_message_batch(&self.flush_tx, &mut buffer, self.batch_size).await {
                                 error!("Ingestion pipeline broken while flushing the final message batch");
                             }
@@ -144,7 +145,7 @@ impl BatchMessageSink {
             }
         }
         warn!(
-            "Message sink terminated for topics: {}",
+            "Batch message sink terminated for topics: {}",
             self.topics.join(",")
         );
     }
@@ -197,10 +198,10 @@ impl InstantMessageSink {
             .set("heartbeat.interval.ms", "15000")
             .set("max.poll.interval.ms", "300000")
             .create()
-            .context("Failed to create control message sink consumer")?;
+            .context("Failed to create instant message sink consumer")?;
         consumer
             .subscribe(&topics)
-            .context("Failed to subscribe control message sink")?;
+            .context("Failed to subscribe instant message sink")?;
         Ok(Self {
             consumer,
             message_tx,
@@ -210,7 +211,7 @@ impl InstantMessageSink {
 
     pub async fn ingest(&mut self) {
         info!(
-            "Control message sink opened for topics: {}",
+            "Instant message sink opened for topics: {}",
             self.topics.join(",")
         );
         let mut message_stream = self.consumer.stream();
@@ -227,12 +228,13 @@ impl InstantMessageSink {
                     }
                 }
                 Err(kafka_error) => {
-                    error!("Kafka error occurred while polling control events: {kafka_error}");
+                    // This branch is taken when the broker dies. Reconnects automatically
+                    error!("Kafka error occurred while polling: {kafka_error}");
                 }
             }
         }
         warn!(
-            "Control message sink terminated for topics: {}",
+            "Instant message sink terminated for topics: {}",
             self.topics.join(",")
         );
     }

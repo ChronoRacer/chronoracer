@@ -13,7 +13,7 @@ pub enum AvroSchema {
 impl AvroSchema {
     pub fn env_var(self) -> &'static str {
         match self {
-            AvroSchema::SensorData => "AVRO_MESSAGE_SCHEMA_PATH",
+            AvroSchema::SensorData => "AVRO_SENSOR_DATA_SCHEMA_PATH",
         }
     }
 

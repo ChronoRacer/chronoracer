@@ -16,6 +16,17 @@ Responsibility:
 Boot starts InfluxDB 3 Core before the Core process: [Core startup](../core/startup/README.md). Image + plugin
 payload: [Compute images](component-images.md).
 
+## Plugin Python environment
+
+Core VM has no internet access. The Core image build installs all required plugin python packages before
+the image is published. It uses the Python bundled with the installed InfluxDB package to create
+`/chronoracer/influxdb-plugin-venv` and installs the package into that venv with its `pip`.
+
+The InfluxDB systemd unit sets `VIRTUAL_ENV` to this venv and disables InfluxDB bundled package manager. The venv is
+kept outside `/chronoracer/influxdb-plugins` because boot fetch replaces that directory with the current plugin
+payload. This makes the preinstalled dependency available to every fetched plugin without any boot-time package
+installation.
+
 ## Tables
 
 Schema: `iox` (InfluxDB default)

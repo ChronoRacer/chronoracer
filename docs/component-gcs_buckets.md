@@ -65,6 +65,8 @@ Structure:
 
 ```
 /core/current/core
+/core/current/avro/
+      |--- sensor_data.avsc
 /core/current/influxdb-plugins
       |--- export_database.py
 ```
