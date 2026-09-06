@@ -45,7 +45,7 @@ Resources:
   `platform.json`](../infra/contract/platform.json))
 - Cloud DNS managed zone and stable Kafka FQDN (zone exists with no A record between races)
 - Secret Manager secret resource for the long-lived public TLS cert (value uploaded by operator/CI, not per race).
-  Procedure: [Kafka TLS runbook](operator-kafka-tls.md)
+  Procedure: [Kafka TLS runbook](operator-domain-and-tls.md)
 - Race GCS bucket, artifacts GCS bucket, layout: [GCS](component-gcs_buckets.md)
 - Firestore database
 - Cloud Run Relay (public HTTPS, no Google invoker for operators, `max_instance_count = 1`) with Direct VPC Egress to
@@ -94,7 +94,7 @@ names only via always-on apply, then next race.
 | Relay                    | Firestore; write Core YAML object; read `*/export/**` and issue time-limited download access; trigger Cloud Build; read and list Cloud Build (bind + replay); receive both Pub/Sub pushes | Terraform state; create VMs; Secret Manager payload                                                                                                                                            |
 | Controller (Cloud Build) | Race Terraform (Compute, DNS A in the existing zone, race public firewall); race Firestore fields on `apply` only, token-gated; read Core YAML object; `race/` state prefix               | Change VPC, Cloud Run, IAM identities, Secret Manager payload, `base/` state prefix; write phase on `close_ingest` / `destroy`; apply Terraform when `runToken` mismatches; force-unlock state |
 | Kafka VM                 | Read TLS secret                                                                                                                                                                           | GCS; Cloud Build; Firestore; Pub/Sub                                                                                                                                                           |
-| Core VM                  | Read `{raceId}/core-config.yaml`; write `{raceId}/export/**`; publish export-done; read artifacts bucket `core/current/`                                                                  | Firestore; Secret Manager; Terraform state; Cloud Build; write `core-config.yaml`; write artifacts                                                                                             |
+| Core VM                  | Read `{raceId}/core-config.yaml`; write `{raceId}/export/**`; publish export-done; read artifacts `core/current.json` and its release | Firestore; Secret Manager; Terraform state; Cloud Build; write `core-config.yaml`; write artifacts |
 
 Residual (GCP constraints, not project Editor):
 

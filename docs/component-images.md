@@ -21,18 +21,26 @@ Publish the binary, Avro schema, and plugins with
 [`infra/packer/publish-core-payload.sh`](../infra/packer/publish-core-payload.sh) to the artifacts prefix in
 [GCS](component-gcs_buckets.md). Fetch at boot: [Core startup](../core/startup/README.md).
 
-The GCS prefix `core/current/` is floating: the next race picks the latest upload without a new image.
+The payload is published under an immutable `core/releases/.../` prefix. The single GCS object `core/current.json` is the
+release pointer; the next race reads that pointer without a new image. Publishing the pointer is the final step, so a VM
+cannot combine a binary from one release with a schema or plugin from another.
 
 Do not download vendor packages from the public internet on the race Core VM (no Cloud NAT). Packer builders use the
 **default VPC** and an ephemeral public IP so apt and tarball fetches work. Do not build on the race VPC.
 
 ## How to publish
 
-Operator credentials (`gcloud auth application-default login`). Roles: create/delete Compute instances and disks, create
+Operator credentials (`gcloud auth application-default login`). Roles: create/delete Compute instances, disks, and
 images. No dedicated Packer service account.
 
-Builder: `e2-small`, 20 GB disk. Disk contents become the image; race VM machine
-types: [Terraform](component-terraform.md).
+Builder: `e2-small`, 10 GB disk. The disk contents become the minimum image size; race VMs request their own 20 GB boot
+disks. Target machine types: [Terraform](component-terraform.md). The builder zone determines the image storage region,
+so use the same zone region as the always-on and race stacks.
+
+Each build wrapper runs [`cleanup-image-family.sh`](../infra/packer/scripts/cleanup-image-family.sh) after Packer
+finishes. It keeps the newest Compute Engine image in the family and deletes older images. Compute Engine has no native
+image-family retention policy, so do not bypass the wrappers with a direct `packer build`. Do not build or clean up a
+family while a race apply is creating VMs from that family.
 
 ```bash
 # From a bash environment (Git Bash or WSL on Windows).
@@ -48,7 +56,7 @@ export PKR_VAR_project_id="$(gcloud config get-value project)"
 
 Version pins: [`infra/packer/versions.pkr.hcl`](../infra/packer/versions.pkr.hcl). Apply always-on once so bucket
 `chronoracer-artifacts` exists before the first payload publish. Apply always-on before the first Core race that fetches
-payload.
+payload. Publish a new payload before that race; a missing `core/current.json` fails Core boot closed.
 
 Always-on IAM for Core to read artifacts: [Terraform](component-terraform.md).
 
@@ -75,4 +83,4 @@ Packer installs Debian `python3-yaml` (for `merge_config.py`). `need()` after pa
 
 Boot order on the VM: [Kafka startup](../kafka/startup/README.md), [Core startup](../core/startup/README.md).
 
-Payload objects: [GCS artifacts](component-gcs_buckets.md).
+Payload layout and IAM: [GCS artifacts](component-gcs_buckets.md).

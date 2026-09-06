@@ -15,8 +15,8 @@ Use these machine types as the Terraform defaults:
 
 | VM              | Machine type    | vCPU | Memory | Boot disk     | Reason                                                                                                                              |
 |-----------------|-----------------|-----:|-------:|---------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| Kafka           | `e2-standard-2` |    2 |   8 GB | `pd-balanced` | Matches the configured Kafka test envelope; CPU observations did not require more.                                                  |
-| Core + InfluxDB | `n2-standard-4` |    4 |  16 GB | `pd-ssd`      | Provides two physical cores on the N2 SMT layout and leaves room for InfluxDB cache, the operating system, and slower GCP hardware. |
+| Kafka           | `e2-standard-2` |    2 |   8 GB | `pd-balanced`, 20 GB | Matches the configured Kafka test envelope; CPU observations did not require more.                                                  |
+| Core + InfluxDB | `n2-standard-4` |    4 |  16 GB | `pd-ssd`, 20 GB      | Provides two physical cores on the N2 SMT layout and leaves room for InfluxDB cache, the operating system, and slower GCP hardware. |
 
 Terraform variables in [`infra/race/variables.tf`](../infra/race/variables.tf) are the implementation of this decision.
 These types must not be changed while a race is running; the race lifecycle and instance pinning rules are owned
@@ -78,4 +78,4 @@ If a GCP run shows CPU contention or latency on Kafka despite staying within thi
 `n2-standard-2` with the same vCPU and memory counts but more predictable general-purpose performance. That is a
 measured follow-up option, not the default.
 
-## [!IMPORTANT] These values might change after load testing on real GCP infrastructure 
+## [!IMPORTANT] These values might change after load testing on real GCP infrastructure

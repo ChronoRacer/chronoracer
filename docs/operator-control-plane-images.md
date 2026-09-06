@@ -52,15 +52,9 @@ Script:
 Rebuild one image: `./infra/always-on/publish-control-plane-images.sh relay` or `controller` (local Docker only).
 `--remote` always builds both.
 
-Controller image freeze while VMs exist: [Terraform](component-terraform.md). Relay: Cloud Run uses `var.relay_image`;
-new tag needs an always-on apply (or the same tag overwritten, then a new Cloud Run revision via apply).
-
 ## After publish
 
 ```bash
 cd infra/always-on
 terraform apply -var-file=terraform.tfvars
 ```
-
-Then Packer, Core payload, TLS, DNS
-NS: [Compute images](component-images.md), [Kafka TLS](operator-kafka-tls.md), [Always-on README](../infra/always-on/README.md).

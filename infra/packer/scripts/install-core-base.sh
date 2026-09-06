@@ -23,11 +23,13 @@ apt-get update
 if [[ -n "${INFLUXDB3_PACKAGE_VERSION:-}" ]]; then
   apt-get install -y --no-install-recommends \
     "${INFLUXDB3_PACKAGE}=${INFLUXDB3_PACKAGE_VERSION}" \
-    python3-yaml
+    python3-yaml \
+    python3-venv
 else
   apt-get install -y --no-install-recommends \
     "${INFLUXDB3_PACKAGE}" \
-    python3-yaml
+    python3-yaml \
+    python3-venv
 fi
 
 systemctl disable --now influxdb3-core.service 2>/dev/null || true

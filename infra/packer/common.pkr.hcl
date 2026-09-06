@@ -8,7 +8,8 @@ packer {
 }
 
 locals {
-  names = jsondecode(file("${path.root}/../contract/names.json"))
+  names                  = jsondecode(file("${path.root}/../contract/names.json"))
+  image_storage_location = join("-", slice(split("-", var.zone), 0, 2))
 }
 
 variable "project_id" {
@@ -17,8 +18,9 @@ variable "project_id" {
 }
 
 variable "zone" {
-  type    = string
-  default = "europe-west3-a"
+  type        = string
+  default     = "europe-west3-a"
+  description = "Builder zone. The custom image is stored in this zone's region."
 }
 
 variable "builder_machine_type" {
@@ -35,9 +37,4 @@ variable "network" {
   type        = string
   default     = "default"
   description = "Must have internet (ephemeral public IP). Do not use the race VPC (no NAT)."
-}
-
-variable "image_storage_location" {
-  type    = string
-  default = "europe-west3"
 }

@@ -1,4 +1,36 @@
-# Operator checklist — Kafka public TLS
+# Operator — Domain and Kafka public TLS
+
+## Domain
+
+We have a domain register with Porkbun. Domain name is: `chronoracer.live`. Domain is paid for until `05.09.2027`.
+
+The NS servers are set to Google managed Cloud DNS zone instead of default Porkbun NS.
+
+DNS zone is **paid monthly**, but we need it to have TLS on VMs.
+
+Sample `dig` output:
+```terminaloutput
+; <<>> DiG 9.20.24-1ubuntu0.3-Ubuntu <<>> chronoracer.live
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 15860
+;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
+;; QUESTION SECTION:
+;chronoracer.live.              IN      A
+
+;; AUTHORITY SECTION:
+chronoracer.live.       300     IN      SOA     ns-cloud-e1.googledomains.com. cloud-dns-hostmaster.google.com. 1 21600 3600 259200 300
+
+;; Query time: 1395 msec
+;; SERVER: 10.255.255.254#53(10.255.255.254) (UDP)
+;; WHEN: Sun Sep 06 18:02:06 CEST 2026
+;; MSG SIZE  rcvd: 141
+```
+
+## Kafka TLS certificate
 
 Run these commands from a workstation authenticated to GCP as an operator with DNS record-set permissions on the
 `chronoracer` Cloud DNS zone and permission to add Secret Manager versions to `chronoracer-kafka-tls`.
@@ -16,7 +48,7 @@ EMAIL="<cert notifications will go here>"
 The public Kafka listener uses `SASL_SSL` on TCP `9094`. The certificate SAN must be exactly
 `DNS:ingest.chronoracer.live`. The certificate is infrastructure-wide, not race-specific.
 
-## 1. Confirm prerequisites
+### 1. Confirm prerequisites
 
 ```bash
 gcloud config set project "${PROJECT_ID}"
@@ -32,7 +64,7 @@ gcloud secrets describe "${SECRET}" \
 The zone DNS name must be `chronoracer.live.` and Porkbun must delegate the domain to the four name servers shown
 by the first command. The secret may have zero versions.
 
-## 2. Install and authenticate Certbot
+### 2. Install and authenticate Certbot
 
 ```bash
 sudo python3 -m venv /opt/certbot/
@@ -45,7 +77,7 @@ sudo gcloud auth application-default login
 
 Note: run the ADC commands on sudo – this is separate from normal user ADC.
 
-## 3. Request a staging certificate
+### 3. Request a staging certificate
 
 ```bash
 sudo certbot certonly \
@@ -79,7 +111,7 @@ The production files are:
 /etc/letsencrypt/live/ingest.chronoracer.live/privkey.pem
 ```
 
-## 4. Build and verify the Kafka bundle
+### 4. Build and verify the Kafka bundle
 
 ```bash
 sudo umask 077
@@ -109,7 +141,7 @@ unset PASS
 Stop if this fails. The bundle must contain the leaf, Let's Encrypt intermediate chain, and unencrypted private key.
 Do not upload PKCS12, JSON, a key-only file, or a leaf-only certificate.
 
-## 5. Add and verify the Secret Manager version
+### 5. Add and verify the Secret Manager version
 
 Run this only after bundle verification succeeds:
 
@@ -131,7 +163,7 @@ The latest version must be `ENABLED` and its SAN must be `DNS:ingest.chronoracer
 
 Kafka reads `latest` only when the broker starts.
 
-## Renewal
+### Renewal
 
 Let's Encrypt certificates expire after 90 days. Renew at about 60 days, rebuild and verify `kafka-tls.pem`, add a new
 Secret Manager version, and restart Kafka if a broker is running:

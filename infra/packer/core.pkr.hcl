@@ -11,7 +11,7 @@ source "googlecompute" "core" {
   ssh_username            = "packer"
   image_name              = "${local.names.core_family}-{{timestamp}}"
   image_family            = local.names.core_family
-  image_storage_locations = [var.image_storage_location]
+  image_storage_locations = [local.image_storage_location]
   image_description       = "Chronoracer Core base. InfluxDB 3 plus overlay. Binary and plugins from GCS at boot."
   tags = ["packer"]
 }
@@ -109,5 +109,10 @@ build {
       "test ! -e /chronoracer/core",
     ]
     execute_command = "chmod +x {{ .Path }}; sudo bash '{{ .Path }}'"
+  }
+
+  provisioner "shell" {
+    execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash '{{ .Path }}'"
+    script          = "scripts/finalize-image.sh"
   }
 }

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Create InfluxDB 3 admin token, start the server, ensure database + export trigger.
+# Start InfluxDB 3 and ensure the configured database + export trigger.
 set -euo pipefail
 umask 077
 
 : "${CHRONORACER_DIR:?CHRONORACER_DIR not set}"
 
 TOKEN_FILE="${CHRONORACER_DIR}/admin-token.json"
-DEFAULT_CONFIG="${CHRONORACER_DIR}/default-config.yaml"
+CONFIG="${CHRONORACER_DIR}/core-config.yaml"
 PLUGIN_DIR="${CHRONORACER_DIR}/influxdb-plugins"
 DATA_DIR="/var/lib/influxdb3"
 HOST="http://127.0.0.1:8181"
@@ -23,8 +23,12 @@ need influxdb3
 need jq
 need yq
 
-[[ -f "${DEFAULT_CONFIG}" ]] || {
-  echo "default config not found: ${DEFAULT_CONFIG}" >&2
+[[ -f "${CONFIG}" ]] || {
+  echo "rendered Core config not found: ${CONFIG}" >&2
+  exit 1
+}
+[[ -s "${TOKEN_FILE}" ]] || {
+  echo "admin token file missing: ${TOKEN_FILE}" >&2
   exit 1
 }
 [[ -d "${PLUGIN_DIR}" ]] || {
@@ -34,9 +38,6 @@ need yq
 
 install -d -m 700 "${DATA_DIR}"
 
-if [[ ! -s "${TOKEN_FILE}" ]]; then
-  influxdb3 create token --admin --offline --output-file "${TOKEN_FILE}"
-fi
 chmod 600 "${TOKEN_FILE}"
 
 TOKEN="$(jq -e -r '.token // empty' "${TOKEN_FILE}")" || {
@@ -48,9 +49,9 @@ TOKEN="$(jq -e -r '.token // empty' "${TOKEN_FILE}")" || {
   exit 1
 }
 
-DB_NAME="$(yq -e -r '.persistence.db_name' "${DEFAULT_CONFIG}")"
+DB_NAME="$(yq -e -r '.persistence.db_name' "${CONFIG}")"
 [[ -n "${DB_NAME}" && "${DB_NAME}" != "null" ]] || {
-  echo "persistence.db_name missing in ${DEFAULT_CONFIG}" >&2
+  echo "persistence.db_name missing in ${CONFIG}" >&2
   exit 1
 }
 

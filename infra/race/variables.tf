@@ -57,8 +57,30 @@ variable "kafka_boot_disk_type" {
   default     = "pd-balanced"
 }
 
+variable "kafka_boot_disk_size_gb" {
+  type        = number
+  description = "Kafka boot disk size. Must be at least 20GB. Changing mid-race is forbidden."
+  default     = 20
+
+  validation {
+    condition     = var.kafka_boot_disk_size_gb >= 20
+    error_message = "kafka_boot_disk_size_gb must be at least 20 GB"
+  }
+}
+
 variable "core_boot_disk_type" {
   type        = string
   description = "Core boot disk. Changing mid-race is forbidden."
   default     = "pd-ssd"
+}
+
+variable "core_boot_disk_size_gb" {
+  type        = number
+  description = "Core boot disk size. Must be at least the 20 GB. Changing mid-race is forbidden."
+  default     = 20
+
+  validation {
+    condition     = var.core_boot_disk_size_gb >= 20
+    error_message = "core_boot_disk_size_gb must be at least 20 GB"
+  }
 }

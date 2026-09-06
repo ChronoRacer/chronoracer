@@ -54,7 +54,7 @@ Structure (Terraform GCS backend layout):
 - Lifespan: always-on
 - Written to: when an operator publishes a Core payload (Packer publish script)
 - Writers: Operators (user credentials). Not Core. Not Relay. Not the controller.
-- Read from: Core VM boot (`core/current/` only in practice)
+- Read from: Core VM boot (`core/current.json` and the pointed immutable release only in practice)
 - Readers: Core SA (`roles/storage.objectViewer` on the whole bucket)
 - Storage class: `STANDARD`
 - Access: private. No secrets. Not race data.
@@ -64,11 +64,16 @@ Structure (Terraform GCS backend layout):
 Structure:
 
 ```
-/core/current/core
-/core/current/avro/
+/core/current.json
+/core/releases/{release}/core
+/core/releases/{release}/avro/
       |--- sensor_data.avsc
-/core/current/influxdb-plugins
+/core/releases/{release}/influxdb-plugins
       |--- export_database.py
 ```
+
+The publish script uploads a complete release first, then replaces `core/current.json` as its final operation. Core reads
+the pointer once during boot and fetches all three payload parts from that immutable release. Old releases are retained;
+the image family retention policy is separate and is owned by [Compute images](component-images.md).
 
 Do not put this payload on `chronoracer-race` (Core YAML IAM stays `endsWith("/core-config.yaml")`).

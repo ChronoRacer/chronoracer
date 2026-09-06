@@ -35,7 +35,7 @@ Apache Kafka at `/opt/kafka` on family `chronoracer-kafka`.
 ## Public hostname and cert
 
 Zone, FQDN, A record, secret **resource**: [Terraform](component-terraform.md). Issue and upload
-PEM: [Kafka TLS runbook](operator-kafka-tls.md).
+PEM: [Kafka TLS runbook](operator-domain-and-tls.md).
 
 When ready, Relay returns hostname, port, and the applied public IP. Track clients may connect to the IP with SNI/verify
 on the hostname so DNS lag is not the critical path. Do not use that address unless status says ready
