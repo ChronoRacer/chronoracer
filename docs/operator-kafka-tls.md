@@ -1,10 +1,8 @@
 # Operator rulebook — Kafka public TLS
 
-Start: empty project knowledge. End: Secret Manager version exists, PEM parseable the same way Kafka boot parses it.
-Race `apply` can then boot a public listener.
+## [!IMPORTANT] We own the domain `chronoracer.live`, provisioned on `porkbun.com`.
+## [!IMPORTANT] Kafka public ingest will be `ingest.chronoracer.live`.
 
-This is the only path that puts the private key in GCP. Do not put the key in Terraform, git, instance metadata, or the
-image.
 
 Canonical names: [`infra/contract/names.json`](../infra/contract/names.json).
 Contract: [Kafka](component-kafka.md), [Terraform](component-terraform.md). Boot conversion: [
@@ -12,21 +10,18 @@ Contract: [Kafka](component-kafka.md), [Terraform](component-terraform.md). Boot
 
 ## What this cert is for
 
-| Fact          | Value                                                                                       |
-|---------------|---------------------------------------------------------------------------------------------|
-| Listener      | Public ingest only (`SASL_SSL` on TCP **9094**)                                             |
-| Hostname      | Always-on Terraform `kafka_fqdn` **without** trailing dot (example: `kafka.example.com`)    |
-| Lifetime      | Long-lived secret, **one cert per hostname**, not per race                                  |
-| IP            | Ephemeral. Devices verify the **hostname**. Cert SAN must be that hostname, never a race IP |
-| Private Kafka | `9092` PLAINTEXT inside VPC. No public TLS                                                  |
+| Fact          | Value                                                                                          |
+|---------------|------------------------------------------------------------------------------------------------|
+| Listener      | Public ingest only (`SASL_SSL` on TCP **9094**)                                                |
+| Hostname      | Always-on Terraform `kafka_fqdn` **without** trailing dot (example: `ingest.chronoracer.live`) |
+| Lifetime      | Long-lived secret, **one cert per hostname**, not per race                                     |
+| IP            | Ephemeral. Devices verify the **hostname**. Cert SAN must be that hostname, never a race IP    |
+| Private Kafka | `9092` PLAINTEXT inside VPC. No public TLS                                                     |
 
 Race stack creates/deletes the Cloud DNS **A** record. Between races the name must not resolve. The **certificate**
 stays.
 
 ## Why Let's Encrypt + DNS-01
-
-Paid public CAs and Google Certificate Manager are the wrong tools here. Certificate Manager issues for HTTPS load
-balancers, not for TLS terminated on the Kafka VM.
 
 Let's Encrypt is free. Use **DNS-01**, not HTTP-01:
 
@@ -35,25 +30,18 @@ Let's Encrypt is free. Use **DNS-01**, not HTTP-01:
 - Always-on already owns Cloud DNS zone `chronoracer`. ACME writes `_acme-challenge.<kafka-hostname>` TXT, then deletes
   it.
 
-HTTP-01, TLS-ALPN-01, self-signed, and “internal CA + device trust store” are out of scope unless you change the public
-client contract.
-
 Let's Encrypt leaf lifetime is **90 days**. Rotate the Secret Manager version before expiry. Staging ACME first
 (`--staging` / `--test-cert`) so you do not burn production rate limits.
 
-## Prerequisites (nothing → zone you can prove)
+## Prerequisites
 
-Do these in order. Stop if a gate fails.
-
-1. **Registrar domain** any domain already owned. New cheap TLD is enough.
-2. **GCP project** + region (see [docs README](README.md)).
-3. **Always-on Terraform applied** with real `dns_zone_dns_name` and `kafka_fqdn` (both **trailing dots**). This
+1. **Always-on Terraform applied** with real `dns_zone_dns_name` and `kafka_fqdn` (both **trailing dots**). This
    creates:
     - Cloud DNS managed zone `chronoracer`
     - empty Secret Manager secret `chronoracer-kafka-tls` (no versions yet)
-4. **Delegate NS** at the registrar to the always-on output `dns_zone_name_servers`. Wait until `dig NS <zone>` matches
+2. **Delegate NS** at the registrar to the always-on output `dns_zone_name_servers`. Wait until `dig NS <zone>` matches
    those servers. DNS-01 fails until this is true.
-5. Confirm hostname: `terraform -chdir=infra/always-on output kafka_fqdn` → strip trailing dot. That string is the only
+3. Confirm hostname: `terraform -chdir=infra/always-on output kafka_fqdn` → strip trailing dot. That string is the only
    SAN.
 
 Race Terraform looking up the secret **resource** can succeed with **zero versions**. Kafka boot then fails closed.
@@ -97,7 +85,7 @@ on this secret only). Kafka SA already has `secretAccessor` from always-on.
 # Or a JSON key for a dedicated ACME SA — keep it off git and delete after.
 
 PROJECT_ID="your-gcp-project"
-HOSTNAME="kafka.example.com"   # no trailing dot; must equal always-on kafka_fqdn
+HOSTNAME="ingest.chronoracer.live"   # no trailing dot; must equal always-on kafka_fqdn
 
 certbot certonly \
   --dns-google \
@@ -105,21 +93,12 @@ certbot certonly \
   --dns-google-propagation-seconds 120 \
   -d "${HOSTNAME}" \
   --agree-tos \
-  --email "ops@example.com" \
+  --email "ops@chronoracer.live" \
   --non-interactive
   # add --test-cert for staging
 ```
 
 Live files (root-owned on Linux): `/etc/letsencrypt/live/${HOSTNAME}/fullchain.pem` and `privkey.pem`.
-
-### Alternative: acme.sh (also free)
-
-```bash
-acme.sh --issue --dns dns_gcp -d "${HOSTNAME}"
-# Staging: --staging
-```
-
-Export/install paths depend on acme.sh config. Still produce `fullchain` + `privkey`, then concatenate as below.
 
 ## Assemble and verify locally (same OpenSSL as boot)
 

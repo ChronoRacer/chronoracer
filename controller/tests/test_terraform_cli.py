@@ -11,11 +11,11 @@ def test_output_values_strip_dot():
         "kafka_instance": {"value": "ki"},
         "core_instance": {"value": "ci"},
         "kafka_public_ip": {"value": "1.1.1.1"},
-        "kafka_hostname": {"value": "kafka.example.com."},
+        "kafka_hostname": {"value": "ingest.chronoracer.live."},
     }
     values = _output_values(raw)
     assert values is not None
-    assert values.kafka_hostname == "kafka.example.com"
+    assert values.kafka_hostname == "ingest.chronoracer.live"
     assert values.kafka_instance == "ki"
 
 
@@ -41,7 +41,7 @@ TF_JSON = json.dumps(
         "kafka_instance": {"value": "ki"},
         "core_instance": {"value": "ci"},
         "kafka_public_ip": {"value": "1.1.1.1"},
-        "kafka_hostname": {"value": "kafka.example.com."},
+        "kafka_hostname": {"value": "ingest.chronoracer.live."},
     }
 )
 
@@ -67,7 +67,7 @@ def test_apply_runs_init_apply_output(monkeypatch, tmp_path: Path, capsys):
     )
     assert result.ok
     assert result.outputs is not None
-    assert result.outputs.kafka_hostname == "kafka.example.com"
+    assert result.outputs.kafka_hostname == "ingest.chronoracer.live"
     assert seen[0][1] == "init"
     assert seen[1][1] == "apply"
     assert seen[2][1:] == ["output", "-json"]

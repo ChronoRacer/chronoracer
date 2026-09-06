@@ -7,7 +7,7 @@ def test_load_config_rejects_unknown_action():
         "ACTION": "nope",
         "RUN_TOKEN": "t",
         "PROJECT_ID": "p",
-        "KAFKA_FQDN": "kafka.example.com.",
+        "KAFKA_FQDN": "ingest.chronoracer.live.",
         "ZONE": "europe-west3-a",
     }
     assert load_config(env) is None
@@ -19,7 +19,7 @@ def test_load_config_ok():
         "ACTION": "apply",
         "RUN_TOKEN": "t",
         "PROJECT_ID": "p",
-        "KAFKA_FQDN": "kafka.example.com.",
+        "KAFKA_FQDN": "ingest.chronoracer.live.",
         "ZONE": "europe-west3-a",
     }
     cfg = load_config(env)

@@ -35,8 +35,8 @@ Deployment on Google Cloud Platform.
 Whatever can be in the free tier is in the free tier (Cloud Run scale-to-zero; Firestore, Pub/Sub, Cloud Build have
 generous free tier limits).
 
-Not free: Cloud Run VPC access to Kafka, Cloud DNS, Artifact Registry, GCS buckets. Race VMs are paid and sized to be
-reliable.
+Not free: Cloud DNS, Artifact Registry, GCS buckets. Race VMs are paid and sized to be reliable. The Relay’s Direct VPC
+Egress network cost scales to zero with the Relay (revisit if cold start is too long - might need to changing to VPC connector);
 
 Region: all GCP resources in `europe-west3`. Do not split regions.
 

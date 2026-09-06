@@ -14,7 +14,7 @@ def _cfg(**overrides) -> Config:
         action="apply",
         run_token="tok",
         project_id="proj",
-        kafka_fqdn="kafka.example.com.",
+        kafka_fqdn="ingest.chronoracer.live.",
         zone="europe-west3-a",
         terraform_dir=Path("/tmp"),
         names_path=Path("/tmp/names.json"),
@@ -71,7 +71,7 @@ OUTPUTS = TerraformOutputs(
     kafka_instance="projects/p/zones/z/instances/kafka",
     core_instance="projects/p/zones/z/instances/core",
     kafka_public_ip="1.2.3.4",
-    kafka_hostname="kafka.example.com",
+    kafka_hostname="ingest.chronoracer.live",
 )
 
 
