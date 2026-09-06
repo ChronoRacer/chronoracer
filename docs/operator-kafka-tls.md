@@ -1,112 +1,99 @@
-# Operator rulebook — Kafka public TLS
+# Operator checklist — Kafka public TLS
 
-## [!IMPORTANT] We own the domain `chronoracer.live`, provisioned on `porkbun.com`.
+Run these commands from a workstation authenticated to GCP as an operator with DNS record-set permissions on the
+`chronoracer` Cloud DNS zone and permission to add Secret Manager versions to `chronoracer-kafka-tls`.
 
-## [!IMPORTANT] Kafka public ingest will be `ingest.chronoracer.live`.
-
-Canonical names: [`infra/contract/names.json`](../infra/contract/names.json).
-Contract: [Kafka](component-kafka.md), [Terraform](component-terraform.md). Boot conversion: [
-`kafka/startup/fetch-tls.sh`](../kafka/startup/fetch-tls.sh).
-
-## What this cert is for
-
-| Fact          | Value                                                                                          |
-|---------------|------------------------------------------------------------------------------------------------|
-| Listener      | Public ingest only (`SASL_SSL` on TCP **9094**)                                                |
-| Hostname      | Always-on Terraform `kafka_fqdn` **without** trailing dot (example: `ingest.chronoracer.live`) |
-| Lifetime      | Long-lived secret, **one cert per hostname**, not per race                                     |
-| IP            | Ephemeral. Devices verify the **hostname**. Cert SAN must be that hostname, never a race IP    |
-| Private Kafka | `9092` PLAINTEXT inside VPC. No public TLS                                                     |
-
-Race stack creates/deletes the Cloud DNS **A** record. Between races the name must not resolve. The **certificate**
-stays.
-
-## Why Let's Encrypt + DNS-01
-
-Let's Encrypt is free. Use **DNS-01**, not HTTP-01:
-
-- Kafka has no port 80 / no HTTP server.
-- Between races there is no public A record, so HTTP-01 cannot prove the name.
-- Always-on already owns Cloud DNS zone `chronoracer`. ACME writes `_acme-challenge.<kafka-hostname>` TXT, then deletes
-  it.
-
-Let's Encrypt leaf lifetime is **90 days**. Rotate the Secret Manager version before expiry. Staging ACME first
-(`--staging` / `--test-cert`) so you do not burn production rate limits.
-
-## Instructions
-
-1. Apply always-on Terraform with the DNS zones and TLS secret using our domain.
-2. In Porkbun domain admin panel, update the NS with the GCP ones (default is Porkbun NS). As of now they are:
-   `ns-cloud-e<1,2,3,4>.googledomains.com`
-3. Wait until `dig NS <zone>` matches the updated NS
-
-Race Terraform looking up the secret **resource** can succeed with **zero versions**. Kafka boot then fails closed.
-Upload a version **before** the first race `apply`.
-
-## Payload Kafka actually consumes
-
-Secret `chronoracer-kafka-tls`, version `latest`.
-
-Plain-text **PEM bundle** (UTF-8). Unencrypted private key. Concatenate:
-
-1. Leaf certificate (`BEGIN CERTIFICATE`)
-2. Issuer chain (Let's Encrypt intermediates; **not** the ISRG Root X1 that devices already trust)
-3. Private key (`BEGIN PRIVATE KEY` or `BEGIN RSA PRIVATE KEY`)
-
-Same file is passed to OpenSSL as both `-in` and `-inkey` (see `fetch-tls.sh`). Encrypted PKCS#8
-(`Proc-Type: 4,ENCRYPTED`) fails at boot: no passphrase in Secret Manager.
-
-Do **not** upload: PKCS12, JKS, `.crt` without key, key-only, JSON, base64-of-PEM-inside-JSON.
-
-RSA 2048 is the compatibility default for Java on the Kafka image. ECDSA works on current Java; prefer RSA unless you
-have a reason.
-
-Leaf `subjectAltName` DNS name = Kafka hostname (no trailing dot). `CN` alone is not enough for modern clients.
-
-## Issue (Let's Encrypt)
-
-Run from a workstation with `gcloud` authenticated as a human or a **dedicated ACME** service account. Do not use the
-Kafka VM SA. Do not grant the controller `secretAccessor`.
-
-Minimum DNS IAM on zone `chronoracer` (or project) for ACME: create/list/delete resource record sets and create/get DNS
-changes; get the managed zone. Secret IAM for the uploader: `secretmanager.secretVersionAdder` (or `secretmanager.admin`
-on this secret only). Kafka SA already has `secretAccessor` from always-on.
-
-### certbot + Google Cloud DNS plugin
+Existing infrastructure:
 
 ```bash
-# One-time:
-#   pip install certbot-dns-google
-# Credentials: user ADC is enough if your user can mutate the zone.
-# Or a JSON key for a dedicated ACME SA — keep it off git and delete after.
+PROJECT_ID="chronoracer"
+ZONE="chronoracer"
+HOSTNAME="ingest.chronoracer.live"
+SECRET="chronoracer-kafka-tls"
+EMAIL="<cert notifications will go here>"
+```
 
-PROJECT_ID="your-gcp-project"
-HOSTNAME="ingest.chronoracer.live"   # no trailing dot; must equal always-on kafka_fqdn
+The public Kafka listener uses `SASL_SSL` on TCP `9094`. The certificate SAN must be exactly
+`DNS:ingest.chronoracer.live`. The certificate is infrastructure-wide, not race-specific.
 
+## 1. Confirm prerequisites
+
+```bash
+gcloud config set project "${PROJECT_ID}"
+gcloud dns managed-zones describe "${ZONE}" \
+  --project="${PROJECT_ID}" \
+  --format="yaml(name,dnsName,nameServers)"
+
+gcloud secrets describe "${SECRET}" \
+  --project="${PROJECT_ID}" \
+  --format="yaml(name,replication)"
+```
+
+The zone DNS name must be `chronoracer.live.` and Porkbun must delegate the domain to the four name servers shown
+by the first command. The secret may have zero versions.
+
+## 2. Install and authenticate Certbot
+
+```bash
+sudo python3 -m venv /opt/certbot/
+sudo /opt/certbot/bin/pip install --upgrade pip
+sudo /opt/certbot/bin/pip install certbot certbot-dns-google
+sudo ln -s /opt/certbot/bin/certbot /usr/local/bin/certbot
+sudo certbot plugins # This should include dns-google
+sudo gcloud auth application-default login
+```
+
+Note: run the ADC commands on sudo – this is separate from normal user ADC.
+
+## 3. Request a staging certificate
+
+```bash
+sudo certbot certonly \
+  --staging \
+  --dns-google \
+  --dns-google-project "${PROJECT_ID}" \
+  --dns-google-propagation-seconds 120 \
+  --domain "${HOSTNAME}" \
+  --agree-tos \
+  --email "${EMAIL}" \
+  --non-interactive
+```
+
+After staging succeeds, request the production certificate:
+
+```bash
 certbot certonly \
   --dns-google \
   --dns-google-project "${PROJECT_ID}" \
   --dns-google-propagation-seconds 120 \
-  -d "${HOSTNAME}" \
+  --domain "${HOSTNAME}" \
   --agree-tos \
-  --email "ops@chronoracer.live" \
+  --email "${EMAIL}" \
   --non-interactive
-  # add --test-cert for staging
 ```
 
-Live files (root-owned on Linux): `/etc/letsencrypt/live/${HOSTNAME}/fullchain.pem` and `privkey.pem`.
+The production files are:
 
-## Assemble and verify locally (same OpenSSL as boot)
+```text
+/etc/letsencrypt/live/ingest.chronoracer.live/fullchain.pem
+/etc/letsencrypt/live/ingest.chronoracer.live/privkey.pem
+```
+
+## 4. Build and verify the Kafka bundle
 
 ```bash
-umask 077
-cat "/etc/letsencrypt/live/${HOSTNAME}/fullchain.pem" \
-    "/etc/letsencrypt/live/${HOSTNAME}/privkey.pem" \
+sudo umask 077
+cat \
+  "/etc/letsencrypt/live/ingest.chronoracer.live/fullchain.pem" \
+  "/etc/letsencrypt/live/ingest.chronoracer.live/privkey.pem" \
   > ./kafka-tls.pem
 
 openssl x509 -in ./kafka-tls.pem -noout -subject -dates -ext subjectAltName
-# SAN must list DNS:${HOSTNAME}
+```
 
+The SAN must contain `DNS:ingest.chronoracer.live`. Verify the same PKCS12 conversion Kafka performs at boot:
+
+```bash
 PASS="$(openssl rand -base64 32 | tr -d '\n')"
 openssl pkcs12 -export \
   -inkey ./kafka-tls.pem \
@@ -114,68 +101,43 @@ openssl pkcs12 -export \
   -name kafka \
   -out ./kafka-keystore.p12 \
   -passout "pass:${PASS}"
-# Must exit 0. This is the Kafka boot conversion.
+echo $? # This must be 0
 rm -f ./kafka-keystore.p12
 unset PASS
 ```
 
-If `pkcs12 -export` fails, do not upload.
+Stop if this fails. The bundle must contain the leaf, Let's Encrypt intermediate chain, and unencrypted private key.
+Do not upload PKCS12, JSON, a key-only file, or a leaf-only certificate.
 
-## Upload to Secret Manager
+## 5. Add and verify the Secret Manager version
 
-Always-on already created secret id `chronoracer-kafka-tls`, multi-region replication not needed. You only add a
-**version**.
+Run this only after bundle verification succeeds:
 
 ```bash
-gcloud secrets versions add chronoracer-kafka-tls \
+gcloud secrets versions add "${SECRET}" \
   --project="${PROJECT_ID}" \
   --data-file=./kafka-tls.pem
+
+gcloud secrets versions list "${SECRET}" \
+  --project="${PROJECT_ID}"
+
+gcloud secrets versions access latest \
+  --secret="${SECRET}" \
+  --project="${PROJECT_ID}" \
+  | openssl x509 -noout -subject -dates -ext subjectAltName
 ```
 
-Confirm:
+The latest version must be `ENABLED` and its SAN must be `DNS:ingest.chronoracer.live`.
+
+Kafka reads `latest` only when the broker starts.
+
+## Renewal
+
+Let's Encrypt certificates expire after 90 days. Renew at about 60 days, rebuild and verify `kafka-tls.pem`, add a new
+Secret Manager version, and restart Kafka if a broker is running:
 
 ```bash
-gcloud secrets versions list chronoracer-kafka-tls --project="${PROJECT_ID}"
-gcloud secrets versions access latest \
-  --secret=chronoracer-kafka-tls \
-  --project="${PROJECT_ID}" | openssl x509 -noout -subject -dates -ext subjectAltName
+certbot renew
 ```
 
-**Ready** means: `latest` version `ENABLED`, local `openssl pkcs12 -export` succeeded on that exact bytes, SAN matches
-`kafka_fqdn` without trailing dot.
-
-Kafka picks up a new version on **next broker start** (`ExecStartPre` fetch). Mid-race rotation: add version, then
-restart `kafka.service` (ingest blip). Prefer rotate **between races**.
-
-After a good new version is in use, disable the previous Secret Manager version. Do not destroy all versions.
-
-## Renewal calendar
-
-| When                 | Action                                                                        |
-|----------------------|-------------------------------------------------------------------------------|
-| ~60 days after issue | Re-run ACME (certbot renew / acme.sh cron). Concatenate + `versions add`.     |
-| After upload         | If a race VM is up, restart Kafka once so `latest` is fetched.                |
-| Cert expired         | Public listener will not come up. Devices fail TLS. Fix secret, reboot Kafka. |
-
-certbot `renew` still needs DNS-01 credentials. A workstation cron or Cloud Build **outside** the race controller is
-fine. Do not teach the race controller to mint certificates.
-
-## Do not
-
-- Issue a cert per race or for the ephemeral public IP.
-- Put the private key in Terraform state or `user-data`.
-- Use HTTP-01 against the Kafka VM.
-- Upload PKCS12 into Secret Manager (boot expects PEM).
-- Grant Relay or controller `secretAccessor` on this secret.
-- Skip registrar NS delegation and “hope” Let's Encrypt works.
-
-## Failure map
-
-| Symptom                             | Likely cause                                                                 |
-|-------------------------------------|------------------------------------------------------------------------------|
-| ACME `NXDOMAIN` / timeout on TXT    | Registrar NS not Cloud DNS, or wrong project/zone                            |
-| `unauthorized` on `_acme-challenge` | IAM, wrong zone, or hostname not in `dns_zone_dns_name`                      |
-| Kafka boot: empty secret            | No versions; race TF does not require a version                              |
-| Kafka boot: OpenSSL pkcs12 fail     | Encrypted key, missing key, or not a PEM bundle                              |
-| Devices: hostname mismatch          | SAN ≠ advertised `kafka-fqdn`                                                |
-| Devices: untrusted issuer           | Uploaded leaf-only without Let's Encrypt intermediate (`fullchain` required) |
+The DNS plugin must retain permission to update the `chronoracer` zone during renewal.

@@ -7,3 +7,5 @@ crash.log
 /core/redpanda/export.yaml
 /core/export/
 /core/influxdb-plugins/.venv/
+/infra/always-on/kafka-tls.pem
+/infra/always-on/ingest.chronoracer.live/
