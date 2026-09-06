@@ -1,5 +1,7 @@
 # Deep dive - Relay
 
+[!IMPORTANT] At the time of writing this, the public URL of Relay is `https://chronoracer-relay-585760075678.europe-west3.run.app`
+
 Code at: [Relay root](../relay)
 
 Where: Cloud Run, public HTTPS. Image from Artifact Registry (`ar_relay_image` in [

@@ -52,3 +52,5 @@ curl --request POST \
     "grant_type":"client_credentials"
   }'
 ```
+
+Alternatively, you can mint here: https://manage.auth0.com/dashboard/eu/chronoracer/apis/6a8af66a9af427fbc46ef664/test

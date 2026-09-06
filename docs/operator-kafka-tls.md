@@ -1,8 +1,8 @@
 # Operator rulebook — Kafka public TLS
 
 ## [!IMPORTANT] We own the domain `chronoracer.live`, provisioned on `porkbun.com`.
-## [!IMPORTANT] Kafka public ingest will be `ingest.chronoracer.live`.
 
+## [!IMPORTANT] Kafka public ingest will be `ingest.chronoracer.live`.
 
 Canonical names: [`infra/contract/names.json`](../infra/contract/names.json).
 Contract: [Kafka](component-kafka.md), [Terraform](component-terraform.md). Boot conversion: [
@@ -36,7 +36,8 @@ Let's Encrypt leaf lifetime is **90 days**. Rotate the Secret Manager version be
 ## Instructions
 
 1. Apply always-on Terraform with the DNS zones and TLS secret using our domain.
-2. In Porkbun domain admin panel, update the NS with the GCP ones (default is Porkbun NS)
+2. In Porkbun domain admin panel, update the NS with the GCP ones (default is Porkbun NS). As of now they are:
+   `ns-cloud-e<1,2,3,4>.googledomains.com`
 3. Wait until `dig NS <zone>` matches the updated NS
 
 Race Terraform looking up the secret **resource** can succeed with **zero versions**. Kafka boot then fails closed.
