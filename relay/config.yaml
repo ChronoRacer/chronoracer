@@ -12,13 +12,13 @@ gcp:
   export_bucket: chronoracer-race
   cloud_build_trigger_id: race-controller
   cloud_build_location: europe-west3
-  build_finished_audience: ""
-  build_finished_service_account: build-finished-push@chronoracer-dev.iam.gserviceaccount.com
-  export_done_audience: ""
-  export_done_service_account: export-done-push@chronoracer-dev.iam.gserviceaccount.com
-  build_finished_topic: build-finished
+  build_finished_audience: chronoracer-relay-build-finished
+  build_finished_service_account: build-finished-push@chronoracer.iam.gserviceaccount.com
+  export_done_audience: chronoracer-relay-export-done
+  export_done_service_account: export-done-push@chronoracer.iam.gserviceaccount.com
+  build_finished_topic: cloud-builds
   export_done_topic: export-done
-  kafka_private_bootstrap: kafka:9092
+  kafka_private_bootstrap: kafka.europe-west3-a.c.chronoracer.internal:9092
   kafka_control_topic: control
   kafka_heartbeat_topic: heartbeat
   kafka_public_port: 9094

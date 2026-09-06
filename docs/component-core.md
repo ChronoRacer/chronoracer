@@ -20,7 +20,12 @@ Core responsibility:
 
 ## Data pipeline batch contract
 
-The default contract is defined by [`core/default-config.yaml`](../core/default-config.yaml):
+The base contract is defined by [`core/default-config.yaml`](../core/default-config.yaml). Its `localhost:9092`
+broker, placeholder race values, and disabled GCP block support local development. On a race VM,
+[`render-config.sh`](../core/startup/render-config.sh) overlays the metadata-derived broker and race ID, the project
+and race bucket, `export-done`, and `gcp.enabled: true`; the platform overlay wins over both defaults and operator YAML.
+
+The default pipeline contract includes:
 
 - `processing.message_batch_size`: 1,000 Kafka messages per batch.
 - `processing.message_batch_flush_interval_ms`: 15 ms maximum in-memory wait before a partial batch is sent.

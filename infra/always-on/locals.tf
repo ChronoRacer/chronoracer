@@ -6,6 +6,7 @@ locals {
 
   kafka_private_port = local.platform.kafka_private_port
   kafka_public_port  = local.platform.kafka_public_port
+  cloud_build_topic  = local.platform.cloud_build_topic
 
   kafka_private_bootstrap = "${local.names.kafka_vm}.${var.zone}.c.${var.project_id}.internal:${local.kafka_private_port}"
   kafka_hostname          = trimsuffix(var.kafka_fqdn, ".")

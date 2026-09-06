@@ -6,7 +6,7 @@ Each concept has one owner. Other docs link it. Do not copy or rephrase the same
 |----------------------------------------------------------------------------------------|-------------------------------------------------------------------|
 | Region, free-tier, topology                                                            | this file                                                         |
 | Resource names                                                                         | [`infra/contract/names.json`](../infra/contract/names.json)       |
-| Ports, Kafka/export topics, Kafka OAuth JWKS/issuer/audience                           | [`infra/contract/platform.json`](../infra/contract/platform.json) |
+| Ports, Kafka/Cloud Build/export topics, Kafka OAuth JWKS/issuer/audience               | [`infra/contract/platform.json`](../infra/contract/platform.json) |
 | Terraform stacks, backends, IAM, always-on vs race resources, `ingest_open`, image pin | [Terraform](component-terraform.md)                               |
 | Controller process (env, bind, YAML HEAD, CLI, apply Firestore writes, exits)          | [Controller](component-controller.md)                             |
 | Relay HTTP and Pub/Sub API                                                             | [Relay](component-relay.md)                                       |

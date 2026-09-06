@@ -4,6 +4,7 @@
   "kafka_data_topic": "data",
   "kafka_control_topic": "control",
   "kafka_heartbeat_topic": "heartbeat",
+  "cloud_build_topic": "cloud-builds",
   "export_done_topic": "export-done",
   "kafka_oauth_jwks_url": "https://chronoracer.eu.auth0.com/.well-known/jwks.json",
   "kafka_oauth_issuer": "https://chronoracer.eu.auth0.com/",

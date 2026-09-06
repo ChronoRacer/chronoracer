@@ -16,6 +16,7 @@ TFVARS="${SCRIPT_DIR}/terraform.tfvars"
 REGION="europe-west3"
 REMOTE=0
 IMAGES="all"
+NO_PUSH=0
 
 need() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -33,6 +34,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --remote) REMOTE=1; shift ;;
     all|relay|controller) IMAGES="$1"; shift ;;
+    --nopush) NO_PUSH=1; shift ;;
     -h|--help) usage ;;
     *) usage ;;
   esac
@@ -92,16 +94,28 @@ ensure_registry() {
 
 push_docker() {
   need docker
-  gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+  if [[ "${NO_PUSH}" -eq 0 ]]; then
+    echo "Ensuring registry exists"
+    gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+    ensure_registry
+  fi
   if [[ "${IMAGES}" == "all" || "${IMAGES}" == "controller" ]]; then
     echo "Building ${CONTROLLER_URI}"
     docker build --platform linux/amd64 -f "${REPO_ROOT}/controller/Dockerfile" -t "${CONTROLLER_URI}" "${REPO_ROOT}"
-    docker push "${CONTROLLER_URI}"
+    if [[ "${NO_PUSH}" -eq 1 ]]; then
+      echo "Skipping push for $CONTROLLER_URI"
+    else
+      docker push "${CONTROLLER_URI}"
+    fi
   fi
   if [[ "${IMAGES}" == "all" || "${IMAGES}" == "relay" ]]; then
     echo "Building ${RELAY_URI}"
     docker build --platform linux/amd64 -f "${REPO_ROOT}/relay/Dockerfile" -t "${RELAY_URI}" "${REPO_ROOT}/relay"
-    docker push "${RELAY_URI}"
+    if [[ "${NO_PUSH}" -eq 1 ]]; then
+      echo "Skipping push for $RELAY_URI"
+    else
+      docker push "${RELAY_URI}"
+    fi
   fi
 }
 
@@ -110,6 +124,11 @@ push_remote() {
     echo "--remote publishes both images; omit relay|controller" >&2
     exit 1
   }
+  if [[ "${NO_PUSH}" -eq 1 ]]; then
+    echo "Cloud Build will always push"
+    exit 1
+  fi
+  ensure_registry
   echo "Submitting Cloud Build for ${RELAY_URI} and ${CONTROLLER_URI} in ${REGION}"
   gcloud builds submit "${REPO_ROOT}" \
     --project="${PROJECT_ID}" \
@@ -118,7 +137,6 @@ push_remote() {
     --substitutions="_TAG=${TAG},_REGION=${REGION},_REPO=${AR_REPO},_RELAY_IMAGE=${RELAY_NAME},_CONTROLLER_IMAGE=${CONTROLLER_NAME}"
 }
 
-ensure_registry
 if [[ "${REMOTE}" -eq 1 ]]; then
   push_remote
 else

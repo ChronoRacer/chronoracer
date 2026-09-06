@@ -39,6 +39,14 @@ endpoints. Historical races are race documents whose ID is not the current `cont
 
 Internal build-finished and export-done are separate paths on the same Relay service.
 
+## Configuration boundary
+
+The production Relay configuration is rendered by Terraform into the Secret Manager secret mounted by Cloud Run:
+[`relay-config.yaml.tftpl`](../infra/always-on/relay-config.yaml.tftpl). The checked-in
+[`relay/config.yaml`](../relay/config.yaml) mirrors the current always-on values for standalone runs. The shared topic
+names come from the platform contract; the generated configuration also receives the regional Kafka bootstrap address,
+push audiences, service accounts, and the Cloud Build trigger ID from the always-on stack.
+
 ## Operations
 
 ### Start (operator)

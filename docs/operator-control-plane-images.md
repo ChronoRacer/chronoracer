@@ -20,7 +20,7 @@ apply. Publish both anyway.
 
 1. GCP project, `gcloud auth application-default login`, `gcloud auth login`.
 2. Bootstrap state bucket: [`infra/bootstrap`](../infra/bootstrap). Always-on backend is `gs://chronoracer-state/base/`.
-3. [`infra/always-on/terraform.tfvars`](../infra/always-on/terraform.tfvars.example): `project_id`, `dns_zone_dns_name`,
+3. [`infra/always-on/terraform.tfvars`](../infra/always-on/terraform.tfvars): `project_id`, `dns_zone_dns_name`,
    `kafka_fqdn`, and image URIs whose **tag** matches `CONTROL_PLANE_IMAGE_TAG` (default `latest`).
 4. Local path: Docker. Remote path: Cloud Build in `europe-west3` (`gcloud builds submit --region=europe-west3`; enabled
    when the always-on `-target` enables APIs). Do not submit the control-plane bake as a global build.
@@ -33,12 +33,11 @@ From repository root:
 
 ```bash
 cd infra/always-on
-cp terraform.tfvars.example terraform.tfvars
 
 cd ../..
 export CONTROL_PLANE_IMAGE_TAG=latest
 ./infra/always-on/publish-control-plane-images.sh
-# or, no local Docker:
+# or through Cloud Build:
 ./infra/always-on/publish-control-plane-images.sh --remote
 ```
 

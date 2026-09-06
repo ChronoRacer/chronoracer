@@ -1,5 +1,5 @@
 resource "google_pubsub_topic" "cloud_builds" {
-  name    = "cloud-builds"
+  name    = local.cloud_build_topic
   project = var.project_id
 
   depends_on = [google_project_service.apis]
@@ -32,7 +32,7 @@ resource "google_secret_manager_secret_version" "relay_config" {
   secret_data = templatefile("${path.module}/relay-config.yaml.tftpl", {
     project_id                     = var.project_id
     export_bucket                  = google_storage_bucket.race.name
-    cloud_build_trigger_id         = local.names.trigger
+    cloud_build_trigger_id         = google_cloudbuild_trigger.race_controller.trigger_id
     cloud_build_location           = var.region
     build_finished_audience        = local.build_finished_audience
     build_finished_service_account = google_service_account.build_finished_push.email
@@ -42,6 +42,7 @@ resource "google_secret_manager_secret_version" "relay_config" {
     kafka_public_port              = local.kafka_public_port
     kafka_control_topic            = local.platform.kafka_control_topic
     kafka_heartbeat_topic          = local.platform.kafka_heartbeat_topic
+    cloud_build_topic              = local.cloud_build_topic
     export_done_topic              = local.platform.export_done_topic
   })
 }
