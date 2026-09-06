@@ -38,7 +38,7 @@ generous free tier limits).
 Not free: Cloud Run VPC access to Kafka, Cloud DNS, Artifact Registry, GCS buckets. Race VMs are paid and sized to be
 reliable.
 
-Region: all GCP resources in `europe-west3` (Frankfurt). Do not split regions.
+Region: all GCP resources in `europe-west3`. Do not split regions.
 
 ### Topology
 

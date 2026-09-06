@@ -34,7 +34,6 @@ From repository root:
 ```bash
 cd infra/always-on
 cp terraform.tfvars.example terraform.tfvars
-# fill project_id, dns_zone_dns_name, kafka_fqdn; keep :latest or set the same tag below
 
 cd ../..
 export CONTROL_PLANE_IMAGE_TAG=latest

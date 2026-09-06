@@ -7,8 +7,8 @@ runtime:
   notify_shutdown_on_failed_db_export: false
   notify_shutdown_on_failed_kafka_export: true
 race:
-  race_id: "test-race"
-  initial_driver_id: "test"
+  race_id: "placeholder"
+  initial_driver_id: "placeholder"
 kafka:
   brokers:
     - localhost:9092
@@ -74,5 +74,5 @@ gcp:
   export_bucket: "chronoracer-race"
   max_retries: 2
   max_gcs_concurrent_uploads: 3
-  project_id: "PROJECT_ID"
+  project_id: "chronoracer"
   pubsub_topic_id: "export-done"

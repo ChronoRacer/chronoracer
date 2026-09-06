@@ -8,8 +8,7 @@ from typing import Any
 from .auth import OktaAuthenticator, okta_user, pubsub_push
 from .config import load_config
 from .gcp.builds import DevBuildTrigger, CloudBuildTrigger
-from kafka import DevShutdownPublisher, KafkaShutdownPublisher
-from kafka import KafkaHeartbeatReader
+from .kafka import DevShutdownPublisher, KafkaShutdownPublisher, KafkaHeartbeatReader
 from .gcp.repository import FirestoreRaceRepository, InMemoryRaceRepository
 from .gcp.storage import DevObjectStore, GCSObjectStore
 from .models import BuildFinished

@@ -3,7 +3,6 @@
 # Cloud Run apply needs the Relay image to exist. Do this after bootstrap, before
 # a full always-on apply.
 #
-#   cp terraform.tfvars.example terraform.tfvars   # fill project_id + DNS
 #   ./infra/always-on/publish-control-plane-images.sh
 #   ./infra/always-on/publish-control-plane-images.sh --remote
 #   CONTROL_PLANE_IMAGE_TAG=v1 ./infra/always-on/publish-control-plane-images.sh relay
@@ -59,7 +58,7 @@ fi
 if [[ -z "${PROJECT_ID}" ]]; then
   PROJECT_ID="$(gcloud config get-value project 2>/dev/null)"
 fi
-[[ -z "${PROJECT_ID}" || "${PROJECT_ID}" == "(unset)" ]] || {
+[[ -z "${PROJECT_ID}" || "${PROJECT_ID}" == "(unset)" ]] && {
   echo "set PROJECT_ID, gcloud config project, or project_id in ${TFVARS}" >&2
   exit 1
 }
@@ -70,7 +69,7 @@ CONTROLLER_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${CONTROLLER_N
 
 ensure_registry() {
   [[ -f "${TFVARS}" ]] || {
-    echo "copy ${SCRIPT_DIR}/terraform.tfvars.example to terraform.tfvars (project_id, DNS, image URIs)" >&2
+    echo "No tfvars" >&2
     exit 1
   }
   echo "Ensuring Artifact Registry ${AR_REPO} in ${PROJECT_ID} (${REGION})"

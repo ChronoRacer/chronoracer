@@ -5,6 +5,5 @@ variable "project_id" {
 
 variable "region" {
   type        = string
-  description = "Must stay europe-west3."
   default     = "europe-west3"
 }

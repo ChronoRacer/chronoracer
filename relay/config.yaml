@@ -6,8 +6,8 @@ okta:
   issuer: https://chronoracer.eu.auth0.com/
   audience: https://api.chronoracer.com
 gcp:
-  enabled: false
-  project_id: chronoracer-dev
+  enabled: true
+  project_id: chronoracer
   firestore_database: "(default)"
   export_bucket: chronoracer-race
   cloud_build_trigger_id: race-controller
