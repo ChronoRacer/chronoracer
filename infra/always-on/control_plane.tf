@@ -56,14 +56,25 @@ resource "google_cloud_run_v2_service" "relay" {
   template {
     service_account = google_service_account.relay.email
 
+    timeout = "45s"
+
+    execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
+
     scaling {
       min_instance_count = 0
       max_instance_count = 1
     }
 
+    # TODO: this should be good enough
+    max_instance_request_concurrency = 10
+
     vpc_access {
-      connector = google_vpc_access_connector.vpc_relay.id
-      egress    = "PRIVATE_RANGES_ONLY"
+      egress = "PRIVATE_RANGES_ONLY"
+
+      network_interfaces {
+        network    = google_compute_network.chronoracer.id
+        subnetwork = google_compute_subnetwork.chronoracer.id
+      }
     }
 
     containers {
@@ -71,6 +82,15 @@ resource "google_cloud_run_v2_service" "relay" {
 
       ports {
         container_port = 8080
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "256Mi"
+        }
+        cpu_idle = true
+        startup_cpu_boost = true
       }
 
       env {
@@ -104,8 +124,6 @@ resource "google_cloud_run_v2_service" "relay" {
     google_secret_manager_secret_iam_member.relay_config,
     google_artifact_registry_repository_iam_member.run_agent_reader,
     google_artifact_registry_repository_iam_member.relay_reader,
-    google_project_iam_member.relay_vpcaccess,
-    google_project_iam_member.run_agent_vpcaccess,
   ]
 }
 

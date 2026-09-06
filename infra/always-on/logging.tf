@@ -32,11 +32,6 @@ locals {
       EOT
     }
 
-    vpc_access_connector = {
-      description = "Serverless VPC Access connector operational logs."
-      filter      = "resource.type=\"vpc_access_connector\""
-    }
-
     gcp_health_checks = {
       description = "Internal Google health-check and probe HTTP noise."
       filter      = <<-EOT

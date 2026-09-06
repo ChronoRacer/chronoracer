@@ -6,7 +6,6 @@ locals {
     "pubsub.googleapis.com",
     "run.googleapis.com",
     "secretmanager.googleapis.com",
-    "vpcaccess.googleapis.com",
   ])
 
   cloudbuild_agent = "serviceAccount:${google_project_service_identity.this["cloudbuild.googleapis.com"].email}"

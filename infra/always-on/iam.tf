@@ -308,18 +308,6 @@ resource "google_artifact_registry_repository_iam_member" "cloudbuild_agent_read
   member     = local.cloudbuild_agent
 }
 
-resource "google_project_iam_member" "relay_vpcaccess" {
-  project = var.project_id
-  role    = "roles/vpcaccess.user"
-  member  = "serviceAccount:${google_service_account.relay.email}"
-}
-
-resource "google_project_iam_member" "run_agent_vpcaccess" {
-  project = var.project_id
-  role    = "roles/vpcaccess.user"
-  member  = local.run_agent
-}
-
 resource "google_cloud_run_v2_service_iam_member" "push_invoker" {
   for_each = {
     build_finished = google_service_account.build_finished_push.email

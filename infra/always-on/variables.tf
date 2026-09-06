@@ -60,14 +60,3 @@ variable "subnet_cidr" {
     error_message = "subnet_cidr must be a valid CIDR."
   }
 }
-
-variable "vpc_connector_cidr" {
-  type        = string
-  description = "/28 for Serverless VPC Access. Must not overlap subnet_cidr."
-  default     = "10.20.1.0/28"
-
-  validation {
-    condition     = can(cidrnetmask(var.vpc_connector_cidr)) && endswith(var.vpc_connector_cidr, "/28")
-    error_message = "vpc_connector_cidr must be a /28 CIDR."
-  }
-}

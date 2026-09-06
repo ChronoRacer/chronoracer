@@ -47,11 +47,11 @@ resource "google_firestore_database" "default" {
 }
 
 resource "google_artifact_registry_repository" "chronoracer" {
-  project       = var.project_id
-  location      = var.region
-  repository_id = local.names.ar_repo
-  format        = "DOCKER"
-  description   = "Controller and Relay images. Not Kafka/Core VM families."
+  project                = var.project_id
+  location               = var.region
+  repository_id          = local.names.ar_repo
+  format                 = "DOCKER"
+  description            = "Controller and Relay images. Not Kafka/Core VM families."
   cleanup_policy_dry_run = false
 
   cleanup_policies {

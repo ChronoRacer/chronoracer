@@ -15,7 +15,6 @@
   "ar_relay_image": "relay",
   "ar_controller_image": "controller",
   "relay_service": "chronoracer-relay",
-  "vpc_connector": "chronoracer",
   "trigger": "race-controller",
   "public_fw": "chronoracer-kafka-public",
   "iap_fw": "chronoracer-iap-ssh",
