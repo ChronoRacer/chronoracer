@@ -2,12 +2,18 @@ resource "google_pubsub_topic" "cloud_builds" {
   name    = local.cloud_build_topic
   project = var.project_id
 
+  # 7 hours
+  message_retention_duration = "25200s"
+
   depends_on = [google_project_service.apis]
 }
 
 resource "google_pubsub_topic" "export_done" {
   name    = local.platform.export_done_topic
   project = var.project_id
+
+  # 7 hours
+  message_retention_duration = "25200s"
 
   depends_on = [google_project_service.apis]
 }
@@ -87,9 +93,9 @@ resource "google_cloud_run_v2_service" "relay" {
       resources {
         limits = {
           cpu    = "1"
-          memory = "256Mi"
+          memory = "512Mi"
         }
-        cpu_idle = true
+        cpu_idle          = true
         startup_cpu_boost = true
       }
 
@@ -158,6 +164,8 @@ resource "google_pubsub_subscription" "relay_push" {
   topic   = each.value.topic
 
   ack_deadline_seconds = 60
+  # 7 hours
+  message_retention_duration = "25200s"
 
   push_config {
     push_endpoint = "${google_cloud_run_v2_service.relay.uri}${each.value.path}"

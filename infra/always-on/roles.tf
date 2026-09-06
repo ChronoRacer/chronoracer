@@ -91,19 +91,3 @@ resource "google_project_iam_custom_role" "controller_dns" {
     "dns.resourceRecordSets.update",
   ]
 }
-
-resource "google_project_iam_custom_role" "relay_builds" {
-  project     = var.project_id
-  role_id     = "chronoracerRelayBuilds"
-  title       = "Chronoracer Relay Cloud Build"
-  description = "Trigger, get, and list builds. Not trigger admin."
-
-  permissions = [
-    "cloudbuild.builds.create",
-    "cloudbuild.builds.get",
-    "cloudbuild.builds.list",
-    "cloudbuild.triggers.get",
-    "cloudbuild.triggers.list",
-    "cloudbuild.triggers.run",
-  ]
-}

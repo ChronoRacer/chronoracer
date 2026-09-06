@@ -135,7 +135,7 @@ resource "google_storage_bucket_iam_member" "controller_race_state" {
   condition {
     title       = "race-state-prefix"
     expression  = "resource.name.startsWith(\"projects/_/buckets/${data.google_storage_bucket.state.name}/objects/race/\")"
-    description = "race/default.tfstate and locks. Never base/."
+    description = "race/default.tfstate and locks"
   }
 }
 
@@ -160,7 +160,7 @@ resource "google_project_iam_member" "relay_firestore" {
 
 resource "google_project_iam_member" "relay_builds" {
   project = var.project_id
-  role    = google_project_iam_custom_role.relay_builds.id
+  role    = "roles/cloudbuild.builds.editor"
   member  = "serviceAccount:${google_service_account.relay.email}"
 }
 
@@ -196,7 +196,7 @@ resource "google_storage_bucket_iam_member" "relay_export_read" {
 
   condition {
     title       = "export-prefix"
-    expression  = "resource.name.contains(\"/export/\")"
+    expression  = "resource.name.startsWith(\"projects/_/buckets/${google_storage_bucket.race.name}/objects/export/\")"
     description = "Read export objects only."
   }
 }
@@ -245,7 +245,7 @@ resource "google_storage_bucket_iam_member" "core_export_write" {
 
   condition {
     title       = "export-prefix"
-    expression  = "resource.name.contains(\"/export/\")"
+    expression  = "resource.name.startsWith(\"projects/_/buckets/${google_storage_bucket.race.name}/objects/export/\")"
     description = "Core writes export objects only."
   }
 }

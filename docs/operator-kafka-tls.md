@@ -33,16 +33,11 @@ Let's Encrypt is free. Use **DNS-01**, not HTTP-01:
 Let's Encrypt leaf lifetime is **90 days**. Rotate the Secret Manager version before expiry. Staging ACME first
 (`--staging` / `--test-cert`) so you do not burn production rate limits.
 
-## Prerequisites
+## Instructions
 
-1. **Always-on Terraform applied** with real `dns_zone_dns_name` and `kafka_fqdn` (both **trailing dots**). This
-   creates:
-    - Cloud DNS managed zone `chronoracer`
-    - empty Secret Manager secret `chronoracer-kafka-tls` (no versions yet)
-2. **Delegate NS** at the registrar to the always-on output `dns_zone_name_servers`. Wait until `dig NS <zone>` matches
-   those servers. DNS-01 fails until this is true.
-3. Confirm hostname: `terraform -chdir=infra/always-on output kafka_fqdn` → strip trailing dot. That string is the only
-   SAN.
+1. Apply always-on Terraform with the DNS zones and TLS secret using our domain.
+2. In Porkbun domain admin panel, update the NS with the GCP ones (default is Porkbun NS)
+3. Wait until `dig NS <zone>` matches the updated NS
 
 Race Terraform looking up the secret **resource** can succeed with **zero versions**. Kafka boot then fails closed.
 Upload a version **before** the first race `apply`.
