@@ -10,7 +10,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 NAMES_JSON="${REPO_ROOT}/infra/contract/names.json"
-PLUGIN_SRC="${REPO_ROOT}/core/influxdb-plugins"
 SCHEMA_SRC="${REPO_ROOT}/core/avro/sensor_data.avsc"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "${WORKDIR}"' EXIT
@@ -54,18 +53,10 @@ echo "Publishing Core payload to ${DEST}"
 gcloud storage cp "${BIN}" "${DEST}/core"
 gcloud storage cp "${SCHEMA_SRC}" "${DEST}/avro/sensor_data.avsc"
 
-shopt -s nullglob
-plugins=("${PLUGIN_SRC}"/*.py)
-[[ ${#plugins[@]} -gt 0 ]] || {
-  echo "no plugin .py files in ${PLUGIN_SRC}" >&2
-  exit 1
-}
-for py in "${plugins[@]}"; do
-  gcloud storage cp "${py}" "${DEST}/influxdb-plugins/$(basename "${py}")"
-done
+bash "${SCRIPT_DIR}/publish-core-influxdb-plugins.sh" "${DEST}"
 
 jq -n --arg prefix "${RELEASE}" '{prefix: $prefix}' >"${MANIFEST}"
 gcloud storage cp "${MANIFEST}" "gs://${BUCKET}/core/current.json"
 
-echo "Published ${DEST}/core, ${DEST}/avro/sensor_data.avsc, and ${#plugins[@]} plugin(s)"
+echo "Published ${DEST}/core, ${DEST}/avro/sensor_data.avsc, and InfluxDB plugins"
 echo "Published release pointer gs://${BUCKET}/core/current.json"

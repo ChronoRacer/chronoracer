@@ -43,12 +43,22 @@ variable "kafka_machine_type" {
   type        = string
   description = "Kafka VM. Changing mid-race is forbidden."
   default     = "n4-standard-2"
+
+  validation {
+    condition     = startswith(var.kafka_machine_type, "n4-")
+    error_message = "Kafka machine family must be aligned with the documentation"
+  }
 }
 
 variable "core_machine_type" {
   type        = string
   description = "Core VM. Changing mid-race is forbidden."
-  default     = "c4-highcpu-4"
+  default     = "c4d-highcpu-4"
+
+  validation {
+    condition     = startswith(var.core_machine_type, "c4d-")
+    error_message = "Core machine family must be aligned with the documentation"
+  }
 }
 
 variable "kafka_boot_disk_type" {

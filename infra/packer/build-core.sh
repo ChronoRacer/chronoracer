@@ -19,7 +19,7 @@ command -v jq >/dev/null 2>&1 || {
 }
 
 packer init "${SCRIPT_DIR}"
-packer build -only=googlecompute.core "${SCRIPT_DIR}"
+packer build -only=chronoracer-core.googlecompute.core "${SCRIPT_DIR}"
 
 FAMILY="$(jq -er '.core_family | select(. != null and . != "")' "${SCRIPT_DIR}/../contract/names.json")"
 bash "${SCRIPT_DIR}/scripts/cleanup-image-family.sh" "${FAMILY}"

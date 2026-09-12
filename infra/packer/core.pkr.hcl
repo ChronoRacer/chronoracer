@@ -1,13 +1,15 @@
 source "googlecompute" "core" {
   project_id              = var.project_id
   source_image_family     = var.debian_source_image_family
-  source_image_project_id = var.debian_source_image_project
+  source_image_project_id = [var.debian_source_image_project]
   zone                    = var.zone
   machine_type            = var.builder_machine_type
   disk_size               = var.builder_disk_size_gb
   disk_type               = "pd-balanced"
   network                 = var.network
   omit_external_ip        = false
+  preemptible             = true
+  on_host_maintenance     = "TERMINATE"
   ssh_username            = "packer"
   image_name              = "${local.names.core_family}-{{timestamp}}"
   image_family            = local.names.core_family
@@ -30,7 +32,6 @@ build {
     environment_vars = [
       "YQ_VERSION=${var.yq_version}",
       "RPK_VERSION=${var.rpk_version}",
-      "INFLUXDB3_PACKAGE=${var.influxdb3_package}",
       "INFLUXDB3_PACKAGE_VERSION=${var.influxdb3_package_version}",
     ]
     script = "scripts/install-core-base.sh"

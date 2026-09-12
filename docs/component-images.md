@@ -49,7 +49,12 @@ export PKR_VAR_project_id="$(gcloud config get-value project)"
 ./infra/packer/build-kafka.sh
 ./infra/packer/build-core.sh
 
-# Linux x86_64 Core binary (rdkafka cmake-build needs a Linux toolchain).
+# C4D-native Linux x86_64 Core build. This creates a disposable matching CPU
+# Spot builder, installs the Linux toolchain, uploads Core, and deletes the
+# builder on exit.
+./infra/packer/build-core-native.sh
+
+# Alternatively, publish a binary built by another Linux x86_64 builder.
 ./infra/packer/publish-core-payload.sh /path/to/chronoracer-core
 ```
 

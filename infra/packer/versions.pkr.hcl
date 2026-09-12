@@ -1,6 +1,4 @@
 # Vendor pins for Packer builders. Bump here, then rebuild the matching family.
-# InfluxDB 3: Debian package from InfluxData. Empty version = latest at build;
-# set influxdb3_package_version after `apt-cache madison influxdb3-core`.
 
 variable "debian_source_image_family" {
   type    = string
@@ -22,14 +20,9 @@ variable "kafka_version" {
   default = "4.3.1"
 }
 
-variable "influxdb3_package" {
-  type    = string
-  default = "influxdb3-core"
-}
-
 variable "influxdb3_package_version" {
   type        = string
-  default     = "3.11.2"
+  default     = "3.11.4-1"
   description = "Debian package version. Empty installs current InfluxData repo version."
 }
 

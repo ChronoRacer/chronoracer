@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Apache Kafka (KRaft) at /opt/kafka plus OpenJDK 17. Runs as root.
+# Apache Kafka (KRaft) at /opt/kafka plus OpenJDK 25. Runs as root.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 : "${KAFKA_VERSION:?KAFKA_VERSION not set}"
 : "${KAFKA_SCALA_BINARY:?KAFKA_SCALA_BINARY not set}"
 
-apt-get install -y --no-install-recommends openjdk-17-jre-headless
+apt-get install -y --no-install-recommends openjdk-25-jre
 
 ARCHIVE="kafka_${KAFKA_SCALA_BINARY}-${KAFKA_VERSION}.tgz"
 URL="https://archive.apache.org/dist/kafka/${KAFKA_VERSION}/${ARCHIVE}"
