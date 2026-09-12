@@ -43,7 +43,6 @@ image-family retention policy, so do not bypass the wrappers with a direct `pack
 family while a race apply is creating VMs from that family.
 
 ```bash
-# From a bash environment (Git Bash or WSL on Windows).
 gcloud auth application-default login
 export PKR_VAR_project_id="$(gcloud config get-value project)"
 

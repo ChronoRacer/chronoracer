@@ -45,12 +45,12 @@ CLIENT_SECRET=""
 curl --request POST \
   --url https://chronoracer.eu.auth0.com/oauth/token \
   --header 'content-type: application/json' \
-  --data '{
-    "client_id":"$CLIENT_ID",
-    "client_secret":"$CLIENT_SECRET",
-    "audience":"https://api.chronoracer.com",
-    "grant_type":"client_credentials"
-  }'
+  --data "{
+    \"client_id\":\"$CLIENT_ID\",
+    \"client_secret\":\"$CLIENT_SECRET\",
+    \"audience\":\"https://api.chronoracer.com\",
+    \"grant_type\":\"client_credentials\"
+  }"
 ```
 
 Alternatively, you can mint here: https://manage.auth0.com/dashboard/eu/chronoracer/apis/6a8af66a9af427fbc46ef664/test

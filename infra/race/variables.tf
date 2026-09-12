@@ -42,24 +42,24 @@ variable "ingest_open" {
 variable "kafka_machine_type" {
   type        = string
   description = "Kafka VM. Changing mid-race is forbidden."
-  default     = "e2-standard-2"
+  default     = "n4-standard-2"
 }
 
 variable "core_machine_type" {
   type        = string
   description = "Core VM. Changing mid-race is forbidden."
-  default     = "n2-standard-4"
+  default     = "c4-highcpu-4"
 }
 
 variable "kafka_boot_disk_type" {
   type        = string
   description = "Kafka boot disk. Changing mid-race is forbidden."
-  default     = "pd-balanced"
+  default     = "hyperdisk-balanced"
 }
 
 variable "kafka_boot_disk_size_gb" {
   type        = number
-  description = "Kafka boot disk size. Must be at least 20GB. Changing mid-race is forbidden."
+  description = "Kafka boot disk size. Must be at least 20GB. Changing mid-race is forbidden. Ensure available on VM family"
   default     = 20
 
   validation {
@@ -70,8 +70,8 @@ variable "kafka_boot_disk_size_gb" {
 
 variable "core_boot_disk_type" {
   type        = string
-  description = "Core boot disk. Changing mid-race is forbidden."
-  default     = "pd-ssd"
+  description = "Core boot disk. Changing mid-race is forbidden. Ensure available on VM family"
+  default     = "hyperdisk-balanced"
 }
 
 variable "core_boot_disk_size_gb" {

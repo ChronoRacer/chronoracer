@@ -94,7 +94,7 @@ sudo certbot certonly \
 After staging succeeds, request the production certificate:
 
 ```bash
-certbot certonly \
+sudo certbot certonly \
   --dns-google \
   --dns-google-project "${PROJECT_ID}" \
   --dns-google-propagation-seconds 120 \
@@ -114,8 +114,7 @@ The production files are:
 ### 4. Build and verify the Kafka bundle
 
 ```bash
-sudo umask 077
-cat \
+sudo cat \
   "/etc/letsencrypt/live/ingest.chronoracer.live/fullchain.pem" \
   "/etc/letsencrypt/live/ingest.chronoracer.live/privkey.pem" \
   > ./kafka-tls.pem

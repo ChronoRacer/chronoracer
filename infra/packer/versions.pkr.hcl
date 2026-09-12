@@ -4,7 +4,7 @@
 
 variable "debian_source_image_family" {
   type    = string
-  default = "debian-12"
+  default = "debian-13"
 }
 
 variable "debian_source_image_project" {
@@ -19,7 +19,7 @@ variable "kafka_scala_binary" {
 
 variable "kafka_version" {
   type    = string
-  default = "3.9.1"
+  default = "4.3.1"
 }
 
 variable "influxdb3_package" {
@@ -29,8 +29,8 @@ variable "influxdb3_package" {
 
 variable "influxdb3_package_version" {
   type        = string
-  default     = ""
-  description = "Debian package version (e.g. 3.11.2-1). Empty installs current InfluxData repo version."
+  default     = "3.11.2"
+  description = "Debian package version. Empty installs current InfluxData repo version."
 }
 
 variable "yq_version" {
