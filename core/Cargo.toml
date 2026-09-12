@@ -37,3 +37,4 @@ google-cloud-storage = { version = "1.17.0" }
 google-cloud-gax = { version = "1.13.0" }
 google-cloud-pubsub = { version = "1.3.0" }
 anyhow = { version = "1.0.104" }
+ouroboros = "0.18.5"

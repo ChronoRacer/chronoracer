@@ -1,6 +1,6 @@
 use crate::processing::avro::TryFromAvro;
-use anyhow::{anyhow, Result};
-use apache_avro::Schema;
+use anyhow::{Result, anyhow};
+use apache_avro::reader::datum::GenericDatumReader;
 use serde::Deserialize;
 use std::io::Cursor;
 
@@ -52,15 +52,12 @@ impl From<SensorDataMessage> for UnwoundSensorDataMessage {
 }
 
 impl TryFromAvro for SensorDataMessage {
-    fn try_from_avro(schema: &Schema, bytes: Option<&[u8]>) -> Result<Self> {
-        if let Some(avro_value) = bytes {
-            let mut cursor = Cursor::new(avro_value);
-            let value = apache_avro::from_avro_datum(schema, &mut cursor, None)?;
-            return Ok(apache_avro::from_value::<SensorDataMessage>(&value)?);
-        }
-        Err(anyhow!(
-            "The Avro payload was empty or missing expected data"
-        ))
+    fn try_from_avro(reader: &GenericDatumReader<'_>, bytes: Option<&[u8]>) -> Result<Self> {
+        let bytes =
+            bytes.ok_or_else(|| anyhow!("The Avro payload was empty or missing expected data"))?;
+        let mut cursor = Cursor::new(bytes);
+        let value = reader.read_value(&mut cursor)?;
+        Ok(apache_avro::from_value::<SensorDataMessage>(&value)?)
     }
 }
 
@@ -68,7 +65,9 @@ impl TryFromAvro for SensorDataMessage {
 mod tests {
     use super::*;
     use crate::processing::avro::{AvroSchema, SchemaRegistry};
+    use apache_avro::Schema;
     use apache_avro::types::Value;
+    use apache_avro::writer::datum::GenericDatumWriter;
 
     fn sensor_data_schema() -> Schema {
         AvroSchema::point_env_var_to_workspace();
@@ -100,7 +99,10 @@ mod tests {
                 ]),
             ),
         ]);
-        apache_avro::to_avro_datum(schema, value).expect("sensor data should encode")
+        let writer = GenericDatumWriter::builder(schema)
+            .build()
+            .expect("sensor data reader should build");
+        writer.write_value_to_vec(value).expect("Failed to serialize to raw datum")
     }
 
     #[test]
@@ -162,7 +164,10 @@ mod tests {
     #[test]
     fn sensor_data_message_deserializes_from_avro() {
         let schema = sensor_data_schema();
-        let message = SensorDataMessage::try_from_avro(&schema, Some(&encode_sensor_data(&schema)))
+        let reader = GenericDatumReader::builder(&schema)
+            .build()
+            .expect("sensor data reader should build");
+        let message = SensorDataMessage::try_from_avro(&reader, Some(&encode_sensor_data(&schema)))
             .expect("valid sensor data should deserialize");
 
         assert_eq!(message.sensor_id, "sensor-42");
@@ -177,8 +182,11 @@ mod tests {
     #[test]
     fn sensor_data_message_rejects_missing_payload() {
         let schema = sensor_data_schema();
+        let reader = GenericDatumReader::builder(&schema)
+            .build()
+            .expect("sensor data reader should build");
 
-        let error = SensorDataMessage::try_from_avro(&schema, None)
+        let error = SensorDataMessage::try_from_avro(&reader, None)
             .expect_err("missing payload should fail");
 
         assert_eq!(
@@ -190,8 +198,11 @@ mod tests {
     #[test]
     fn sensor_data_message_rejects_malformed_payload() {
         let schema = sensor_data_schema();
+        let reader = GenericDatumReader::builder(&schema)
+            .build()
+            .expect("sensor data reader should build");
 
-        let result = SensorDataMessage::try_from_avro(&schema, Some(&[0xff, 0xff, 0xff]));
+        let result = SensorDataMessage::try_from_avro(&reader, Some(&[0xff, 0xff, 0xff]));
 
         assert!(result.is_err());
     }

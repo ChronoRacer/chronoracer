@@ -8,7 +8,7 @@ use crate::monitor::Monitor;
 use crate::persistence::persistence_entrypoint::PersistanceLayerEntryPoint;
 use crate::processing::processing_entrypoint::ProcessingLayerEntrypoint;
 use crate::runtime_configuration::RetainReadTimeValue;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use compact_str::CompactString;
 use std::process::ExitCode;
 use std::sync::Arc;

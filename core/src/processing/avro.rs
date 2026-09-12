@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
-use apache_avro::Schema;
+use apache_avro::{Schema, reader::datum::GenericDatumReader};
 use std::env;
-use std::path::PathBuf;
 
 pub struct SchemaRegistry {}
 
@@ -14,19 +13,6 @@ impl AvroSchema {
     pub fn env_var(self) -> &'static str {
         match self {
             AvroSchema::SensorData => "AVRO_SENSOR_DATA_SCHEMA_PATH",
-        }
-    }
-
-    pub fn point_env_var_to_workspace() {
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let file_path = PathBuf::from(manifest_dir)
-            .join("avro")
-            .join("sensor_data.avsc");
-        unsafe {
-            env::set_var(
-                AvroSchema::SensorData.env_var(),
-                file_path.to_string_lossy().as_ref(),
-            );
         }
     }
 }
@@ -43,13 +29,14 @@ impl SchemaRegistry {
 }
 
 pub trait TryFromAvro: Sized {
-    fn try_from_avro(schema: &Schema, avro_value: Option<&[u8]>) -> Result<Self>;
+    fn try_from_avro(reader: &GenericDatumReader<'_>, avro_value: Option<&[u8]>) -> Result<Self>;
 }
 
 #[cfg(test)]
 mod tests {
     use crate::processing::avro::{AvroSchema, SchemaRegistry};
     use std::env;
+    use std::path::PathBuf;
 
     #[test]
     fn load_and_parse_from_env_fails_on_missing_env_var() {
@@ -71,5 +58,20 @@ mod tests {
         AvroSchema::point_env_var_to_workspace();
         let loaded = SchemaRegistry::load_and_parse_from_env(AvroSchema::SensorData);
         assert!(loaded.is_ok());
+    }
+
+    impl AvroSchema {
+        pub fn point_env_var_to_workspace() {
+            let manifest_dir = env!("CARGO_MANIFEST_DIR");
+            let file_path = PathBuf::from(manifest_dir)
+                .join("avro")
+                .join("sensor_data.avsc");
+            unsafe {
+                env::set_var(
+                    AvroSchema::SensorData.env_var(),
+                    file_path.to_string_lossy().as_ref(),
+                );
+            }
+        }
     }
 }

@@ -100,7 +100,7 @@ impl InfluxDbFlusher {
             let db = Arc::clone(&client);
             let pool_tx = pool_tx.clone();
             let race_id = Arc::clone(&race_id);
-            
+
             write_tasks.push_back(tokio::spawn(async move {
                 let _permit = permit;
 

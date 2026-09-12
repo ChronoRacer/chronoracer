@@ -620,6 +620,7 @@ dependencies = [
  "google-cloud-storage",
  "influxdb3-client",
  "mimalloc",
+ "ouroboros",
  "rayon",
  "rdkafka",
  "reqwest 0.13.4",
