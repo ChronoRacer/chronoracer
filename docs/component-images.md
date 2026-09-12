@@ -46,15 +46,13 @@ family while a race apply is creating VMs from that family.
 gcloud auth application-default login
 export PKR_VAR_project_id="$(gcloud config get-value project)"
 
-./infra/packer/build-kafka.sh
-./infra/packer/build-core.sh
+./infra/packer/build-kafka-vm-image.sh
+./infra/packer/build-core-vm-image.sh
 
-# C4D-native Linux x86_64 Core build. This creates a disposable matching CPU
-# Spot builder, installs the Linux toolchain, uploads Core, and deletes the
-# builder on exit.
-./infra/packer/build-core-native.sh
+# Build and download Core binary on a native CPU builder
+./infra/packer/build-core-binary.sh
 
-# Alternatively, publish a binary built by another Linux x86_64 builder.
+# Publish the Core VM release (Core binary, Avro schemas, InfluxDB plugins) 
 ./infra/packer/publish-core-payload.sh /path/to/chronoracer-core
 ```
 

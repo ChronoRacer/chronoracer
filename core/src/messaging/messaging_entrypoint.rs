@@ -5,7 +5,7 @@ use crate::messaging::kafka_exporter::KafkaExporter;
 use crate::messaging::management::ensure_all_topics_exists;
 use crate::messaging::message_sink::{BatchMessageSink, BatchSinkRx, InstantMessageSink, SinkRx};
 use crate::messaging::partial_message::{PartialMessage, PartialMessageWithError};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use rdkafka::producer::FutureProducer;
 use std::sync::Arc;
 
@@ -22,6 +22,17 @@ pub struct MessagingLayerEntrypoint<'a> {
 
 impl<'a> MessagingLayerEntrypoint<'a> {
     pub async fn init(config: &'static CoreConfig) -> Result<MessagingLayerEntrypoint<'a>> {
+        // Ensure rdkafka build features
+        let rdkafka_config = rdkafka::ClientConfig::new();
+        let features = rdkafka_config.get("builtin.features").unwrap_or_default();
+        if !features.contains("snappy") {
+            bail!("rdkafka was built without snappy support")
+        }
+        if !features.contains("l4z") {
+            bail!("rdkafka was built without l4z support")
+        }
+        
+
         let kafka_exporter = KafkaExporter::new(&config.race.race_id, &config.gcp, &config.kafka)
             .context("Failed to create Kafka exporter")?;
 

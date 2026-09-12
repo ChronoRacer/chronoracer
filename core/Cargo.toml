@@ -17,6 +17,7 @@ strip = true
 mimalloc = { version = "0.1.52", default-features = false }
 tokio = { version = "1.52.3", features = ["sync", "rt", "rt-multi-thread", "macros"] }
 tokio-util = { version = "0.7.19", features = ["rt"] }
+# TODO: if using any new compression codec, add it here and in build-core-binary.sh
 rdkafka = { version = "0.39.0", features = ["cmake-build", "tokio"] }
 serde = { version = "1.0.228", features = ["derive"] }
 apache-avro = "0.22.0"

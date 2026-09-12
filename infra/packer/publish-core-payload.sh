@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Upload a locally built Linux Core binary, Avro schema, and InfluxDB plugins
+# Upload a built Core binary, Avro schema, and InfluxDB plugins
 # as one immutable release, then atomically publish its manifest at
 # gs://{artifacts}/core/current.json.
-# Compile x86_64-unknown-linux-gnu (rdkafka cmake-build needs a Linux toolchain).
 #
 # Usage: publish-core-payload.sh /path/to/chronoracer-core
 set -euo pipefail
