@@ -87,7 +87,7 @@ build {
       "command -v influxdb3",
       "command -v yq",
       "command -v rpk",
-      "HOME=/root rpk connect list",
+      "command -v redpanda-connect",
       "command -v gcloud",
       "command -v python3",
       "command -v jq",

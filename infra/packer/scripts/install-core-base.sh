@@ -42,9 +42,11 @@ unzip -o "${WORKDIR}/rpk.zip" -d "${WORKDIR}"
 install -m 755 "${WORKDIR}/rpk" /usr/local/bin/rpk
 
 # The race VM has no NAT, so Connect must be installed here
-HOME=/root rpk connect install \
-  --connect-version "${REDPANDA_CONNECT_VERSION}" \
-  --force
+CONNECT_PACKAGE="${WORKDIR}/redpanda-connect.deb"
+curl -fsSL \
+  "https://github.com/redpanda-data/connect/releases/download/v${REDPANDA_CONNECT_VERSION}/redpanda-connect_${REDPANDA_CONNECT_VERSION}_amd64.deb" \
+  -o "${CONNECT_PACKAGE}"
+apt-get install -y --no-install-recommends "${CONNECT_PACKAGE}"
 
 command -v influxdb3 >/dev/null
 command -v yq >/dev/null

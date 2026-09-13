@@ -13,7 +13,8 @@ For target VMs used, see [ADR - VM types](adr-vm-types.md).
 **Kafka:** full bake. Overlay + Apache Kafka at `/opt/kafka`. Rebuild the family when Kafka, Java, overlay scripts, or
 contract JSON change. That is rare.
 
-**Core:** hybrid. Packer bakes Debian, InfluxDB 3 Core, `rpk` with its pinned Redpanda Connect installation, `yq`, Google Cloud CLI, overlay scripts,
+**Core:** hybrid. Packer bakes Debian, InfluxDB 3 Core, `rpk` and its pinned Redpanda Connect package (do not install
+manually with sudo or it will fail), `yq`, Google Cloud CLI, overlay scripts,
 `default-config.yaml`, Redpanda templates, contract JSON, and the build-time InfluxDB plugin environment. It does
 **not** bake the Core rust binary, Avro schema, or InfluxDB plugin source files.
 
@@ -21,9 +22,9 @@ Publish the binary, Avro schema, and plugins with
 [`infra/packer/publish-core-payload.sh`](../infra/packer/publish-core-payload.sh) to the artifacts prefix in
 [GCS](component-gcs_buckets.md). Fetch at boot: [Core startup](../core/startup/README.md).
 
-The payload is published under an immutable `core/releases/.../` prefix. The single GCS object `core/current.json` is the
-release pointer; the next race reads that pointer without a new image. Publishing the pointer is the final step, so a VM
-cannot combine a binary from one release with a schema or plugin from another.
+The payload is published under an immutable `core/releases/.../` prefix. The single GCS object `core/current.json` is
+the release pointer; the next race reads that pointer without a new image. Publishing the pointer is the final step, so
+a VM cannot combine a binary from one release with a schema or plugin from another.
 
 Do not download vendor packages from the public internet on the race Core VM (no Cloud NAT). Packer builders use the
 **default VPC** and an ephemeral public IP so apt and tarball fetches work. Do not build on the race VPC.
@@ -78,10 +79,11 @@ the GCE metadata server. They do not call the Compute API. Core and Kafka servic
 
 **Core** `/chronoracer/`: overlay from [`core/startup`](../core/startup) including `fetch-payload.sh`, systemd units,
 `gce-metadata.sh`, `default-config.yaml`, `redpanda/*.yaml`, contract JSON, empty `influxdb-plugins/`, and the
-build-time `/chronoracer/influxdb-plugin-venv` (see [InfluxDB plugin environment](component-influxdb.md#plugin-python-environment)).
-Packer installs Debian `python3-yaml` (for `merge_config.py`). `need()` after payload: `influxdb3`, `python3` + PyYAML,
-`jq`, `yq`, `gcloud`, `rpk`, the pinned Redpanda Connect installation, and `curl`. Core runs with `HOME=/root` so
-`rpk connect run` can use the image-time installation without downloading on the race VM. Binary arrives as
+build-time `/chronoracer/influxdb-plugin-venv`
+(see [InfluxDB plugin environment](component-influxdb.md#plugin-python-environment)). Packer installs Debian
+`python3-yaml` (for `merge_config.py`). `need()` after payload: `influxdb3`, `python3` + PyYAML,
+`jq`, `yq`, `gcloud`, `rpk`, the pinned Redpanda Connect package, and `curl`. The package is installed during the image
+build so `rpk connect run` does not download on the race VM. Binary arrives as
 `/chronoracer/core`; the schema arrives as
 `/chronoracer/avro/sensor_data.avsc`.
 
