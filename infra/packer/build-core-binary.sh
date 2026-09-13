@@ -60,7 +60,7 @@ gcloud compute instances create "${INSTANCE}" \
   --quiet
 
 echo "Installing build dependencies and Rust"
-# TODO: Install additional libraries for compression types
+# TODO: Install additional libraries for compression types (currently: snappy, lz4)
 gcloud compute ssh "${INSTANCE}" \
   --project="${PROJECT_ID}" \
   --zone="${ZONE}" \

@@ -144,7 +144,7 @@ One topic for control data.
 - Message key: `{eventName}`
 - Delivery semantics: `exactly-once`
 - Message order: `ensured as 1 partition`
-- Compression: `yes`, type: `l4z`  (**compression enforced by producer, not topic**)
+- Compression: `yes`, type: `lz4`  (**compression enforced by producer, not topic**)
 - Avro enabled: `no` - too violative schema depending on message key
 
 ##### Driver change Control message

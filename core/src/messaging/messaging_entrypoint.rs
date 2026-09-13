@@ -22,16 +22,7 @@ pub struct MessagingLayerEntrypoint<'a> {
 
 impl<'a> MessagingLayerEntrypoint<'a> {
     pub async fn init(config: &'static CoreConfig) -> Result<MessagingLayerEntrypoint<'a>> {
-        // Ensure rdkafka build features
-        let rdkafka_config = rdkafka::ClientConfig::new();
-        let features = rdkafka_config.get("builtin.features").unwrap_or_default();
-        if !features.contains("snappy") {
-            bail!("rdkafka was built without snappy support")
-        }
-        if !features.contains("l4z") {
-            bail!("rdkafka was built without l4z support")
-        }
-        
+        ensure_kafka_compilation_features()?;
 
         let kafka_exporter = KafkaExporter::new(&config.race.race_id, &config.gcp, &config.kafka)
             .context("Failed to create Kafka exporter")?;
@@ -83,4 +74,20 @@ impl<'a> MessagingLayerEntrypoint<'a> {
             kafka_exporter,
         })
     }
+}
+
+fn ensure_kafka_compilation_features() -> Result<()> {
+    let rdkafka_config = rdkafka::ClientConfig::new()
+        .create_native_config()
+        .context("Failed to create librdkafka config")?;
+    // builtin.features is a string like "gzip,snappy,sasl,regex,lz4,sasl_gssapi,sasl_plain,plugins"
+    let features = rdkafka_config
+        .get("builtin.features")
+        .context("Failed to read librdkafka builtin features")?;
+    for required_feature in ["snappy", "lz4"] {
+        if !features.split(',').any(|feature| feature.trim() == required_feature) {
+            bail!("rdkafka was built without {required_feature} support: {features}");
+        }
+    }
+    Ok(())
 }

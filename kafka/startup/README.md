@@ -9,7 +9,7 @@ Listeners and boot contract: [Kafka](../../docs/component-kafka.md). Bake invent
 
 1. `ExecStartPre` [`fetch-tls.sh`](fetch-tls.sh): read `tls-secret-id` from the GCE metadata server, Secret Manager PEM (full resource name), PKCS12 + password on tmpfs mode `600`.
 2. `ExecStartPre` [`render-server-properties.sh`](render-server-properties.sh): `server.properties` + `kafka.env` mode `600`. Public host from metadata `kafka-fqdn`; private advertised host from metadata project/zone. Keystore password read from file, not process argv.
-3. `ExecStartPre` [`format-kraft.sh`](format-kraft.sh): format `/var/lib/kafka/data` (`700`) once.
+3. `ExecStartPre` [`format-kraft.sh`](format-kraft.sh): format `/var/lib/kafka/data` (`700`) once using a static single-node controller quorum
 4. `ExecStart` [`start-kafka.sh`](start-kafka.sh): source `kafka.env` then exec broker. Needed because systemd `EnvironmentFile=` is loaded **before** `ExecStartPre` would create the file.
 5. `ExecStartPost` [`wait-public-listener.sh`](wait-public-listener.sh): fail closed if the public ingest port never binds.
 
