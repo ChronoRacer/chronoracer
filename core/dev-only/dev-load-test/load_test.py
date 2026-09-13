@@ -4,6 +4,7 @@ import random
 import threading
 import time
 import uuid
+import os
 from confluent_kafka import Producer
 from fastavro import parse_schema, schemaless_writer
 from pathlib import Path
@@ -12,6 +13,43 @@ schema_path = Path(__file__).resolve().parents[2] / 'avro' / 'sensor_data.avsc'
 PARSED_SCHEMA = parse_schema(json.loads(schema_path.read_text()))
 CONFIG = json.loads((Path(__file__).resolve().parent / 'config.json').read_text())
 SENSOR_IDS = CONFIG["sensor_ids"]
+
+
+def build_producer_config():
+    producer_config = {
+        'bootstrap.servers': CONFIG["broker"],
+        'linger.ms': 5,
+        'batch.num.messages': 500,
+        'queue.buffering.max.messages': 10000,
+        'compression.type': 'lz4'
+    }
+
+    oauth = CONFIG.get("oauth")
+    if oauth and oauth.get("enabled", False):
+        required_fields = ("client_id", "client_secret_env_var", "token_endpoint_url", "extension_audience")
+        missing_fields = [field for field in required_fields if not oauth.get(field)]
+        if missing_fields:
+            raise ValueError(
+                "OAuth is enabled but the following fields are missing: "
+                + ", ".join(missing_fields)
+            )
+        secret = os.environ.get(oauth["client_secret_env_var"])
+        if not secret:
+            raise ValueError(
+                f"OAuth is enabled but the secret environment variable '{oauth['client_secret_env_var']}' is not set."
+            )
+
+        producer_config.update({
+            "security.protocol": "SASL_SSL",
+            "sasl.mechanism": "OAUTHBEARER",
+            "sasl.oauthbearer.method": "oidc",
+            "sasl.oauthbearer.client.id": oauth["client_id"],
+            "sasl.oauthbearer.client.secret": secret,
+            "sasl.oauthbearer.token.endpoint.url": oauth["token_endpoint_url"],
+            "sasl.oauthbearer.extensions": f"audience={oauth["extension_audience"]}",
+        })
+
+    return producer_config
 
 
 def generate_sensor_batch(base_timestamp_ns):
@@ -154,13 +192,7 @@ def produce_shutdown_message(producer):
 def main():
     global SENSOR_IDS
 
-    producer_conf = {
-        'bootstrap.servers': CONFIG["broker"],
-        'linger.ms': 5,
-        'batch.num.messages': 300,
-        'queue.buffering.max.messages': 10000,
-        'compression.type': 'lz4'
-    }
+    producer_conf = build_producer_config()
 
     producer = Producer(producer_conf)
     chdrv_enabled = CONFIG.get("change_driver", {}).get("enabled", False)
@@ -171,6 +203,7 @@ def main():
     print(f"- Batch Count: {CONFIG['batch_count']}")
     print(f"- CHDRV enabled: {chdrv_enabled}")
     print(f"- SHUTDOWN enabled: {shutdown_enabled}")
+    print(f"- OAuth enabled: {CONFIG.get('oauth', {}).get('enabled', False)}")
 
     start_time = time.monotonic()
 

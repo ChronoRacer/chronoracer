@@ -29,9 +29,8 @@ def render(
     audience = platform["kafka_oauth_audience"]
 
     jaas = "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required;"
-    validator = (
-        "org.apache.kafka.common.security.oauthbearer.OAuthBearerValidatorCallbackHandler"
-    )
+    validator = "org.apache.kafka.common.security.oauthbearer.OAuthBearerValidatorCallbackHandler"
+
 
     lines = [
         "process.roles=broker,controller",

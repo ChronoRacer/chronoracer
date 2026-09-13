@@ -1,9 +1,16 @@
 {
   "broker": "localhost:9092",
+  "oauth": {
+    "enabled": true,
+    "client_id": "QwcTbS7a6Tn70WZo58UIl57mDxaJZp0V",
+    "client_secret_env_var": "OKTA_CLIENT_SECRET",
+    "token_endpoint_url": "https://chronoracer.eu.auth0.com/oauth/token",
+    "extension_audience": "https://api.chronoracer.com"
+  },
   "sensor_topics": ["data"],
   "sensor_ids": ["sensor-1", "sensor-2", "sensor-3", "sensor-4", "sensor-5", "sensor-6", "sensor-7"],
   "testing_time": 120.0,
-  "batch_count": 500000,
+  "batch_count": 0,
   "change_driver": {
     "enabled": true,
     "count": 2,
