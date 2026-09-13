@@ -238,7 +238,7 @@ impl GcpConfig {
     pub fn mock_config() -> Self {
         Self {
             enabled: false,
-            export_bucket: "exports".to_string(),
+            export_bucket: "chronoracer-race".to_string(),
             max_retries: 2,
             max_gcs_concurrent_uploads: 3,
             project_id: "1234".to_string(),

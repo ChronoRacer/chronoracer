@@ -2,23 +2,25 @@
 # Upload the InfluxDB plugin source files into an existing immutable Core
 # release. The caller publishes the release pointer after all components exist.
 #
-# Usage: publish-core-influxdb-plugins.sh gs://bucket/core/releases/release-id
+# Usage: publish-core-influxdb-plugins.sh release-id
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 PLUGIN_SRC="${REPO_ROOT}/core/influxdb-plugins"
 
-[[ $# -eq 1 ]] || {
-  echo "usage: $0 gs://bucket/core/releases/release-id" >&2
+[[ -n "$1" ]] || {
+  echo "usage: $0 release-id" >&2
   exit 1
 }
 
-DEST="${1%/}"
-[[ "${DEST}" == gs://*/core/releases/* ]] || {
-  echo "release destination must be gs://.../core/releases/...: ${DEST}" >&2
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+NAMES_JSON="${REPO_ROOT}/infra/contract/names.json"
+BUCKET="$(jq -er '.artifacts_bucket | select(. != null and . != "")' "${NAMES_JSON}")" || {
+  echo "artifacts_bucket missing in ${NAMES_JSON}" >&2
   exit 1
 }
+DEST="gs://$BUCKET/core/releases/$1"
 
 command -v gcloud >/dev/null 2>&1 || {
   echo "missing required command: gcloud" >&2
