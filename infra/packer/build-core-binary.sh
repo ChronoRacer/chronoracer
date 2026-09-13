@@ -6,23 +6,31 @@
 #   CORE_BUILD_ZONE     builder zone (default: europe-west3-a)
 #   CORE_BUILD_NETWORK  builder network (default: default)
 #
-# Usage: build-core-binary.sh
+# Usage: build-core-binary.sh release-id
+# TODO: this script is overall not really good. VM image not worth it, maybe VM can be upscaled to finish faster.
 set -euo pipefail
 
+[[ -n "$1" ]] || {
+  echo "Release ID parameter is required" >&2
+  exit 1
+}
+RELEASE_ID="$1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 INSTANCE="chronoracer-core-build"
 ZONE="${CORE_BUILD_ZONE:-europe-west3-a}"
 NETWORK="${CORE_BUILD_NETWORK:-default}"
 PROJECT_ID="${PKR_VAR_project_id:-$(gcloud config get-value project 2>/dev/null || true)}"
+core_bundle="core_bundle.tar.gz"
 
 cleanup() {
-  gcloud compute instances delete "${INSTANCE}" \
-    --project="${PROJECT_ID}" \
-    --zone="${ZONE}" \
-    --quiet >/dev/null 2>&1
+#  gcloud compute instances delete "${INSTANCE}" \
+#    --project="${PROJECT_ID}" \
+#    --zone="${ZONE}" \
+#    --quiet >/dev/null 2>&1
+  rm -f "$core_bundle"
 }
-#trap cleanup EXIT
+trap cleanup EXIT
 
 need() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -39,7 +47,6 @@ need jq
 }
 
 echo "Creating source code bundle"
-core_bundle="core_bundle.tar.gz"
 tar -czvf "$core_bundle" \
   -C "${REPO_ROOT}" \
   core/src core/Cargo.lock core/Cargo.toml core/.cargo
@@ -58,7 +65,7 @@ gcloud compute instances create "${INSTANCE}" \
   --image-project=debian-cloud \
   --boot-disk-size=10GB \
   --quiet
-
+sleep 20
 echo "Installing build dependencies and Rust"
 # TODO: Install additional libraries for compression types (currently: snappy, lz4)
 gcloud compute ssh "${INSTANCE}" \
@@ -70,7 +77,6 @@ sudo dd if=/dev/zero of=/swapfile bs=1M count=4096 status=progress
 sudo chmod 600 /swapfile
 sudo mkswap /swapfile
 sudo swapon /swapfile
-sudo apt-get update
 sudo apt-get update && sudo apt-get install -y --no-install-recommends \
   build-essential \
   cmake \
@@ -111,12 +117,12 @@ cargo build --locked --release --target x86_64-unknown-linux-gnu
 test -s target/x86_64-unknown-linux-gnu/release/chronoracer-core'
 
 echo "Downloading the native binary"
-download_dest="build/chronoracer-core"
+download_dest="build/core-${RELEASE_ID}"
 gcloud compute scp \
   --project="${PROJECT_ID}" \
   --zone="${ZONE}" \
   "${INSTANCE}:/tmp/chronoracer-core/core/target/x86_64-unknown-linux-gnu/release/chronoracer-core" \
-  "./build/chronoracer-core" \
+  "./$download_dest" \
   --quiet
 
 echo "Built Core release ${download_dest}"

@@ -45,7 +45,7 @@ kafka:
     export_topics:
       - "dlq"
     nested_path_in_bucket: "export/kafka"
-    local_path: "./export/kafka"
+    local_path: "/export/kafka"
     max_retries: 2
 processing:
   message_channel_buffer_size: 64
@@ -67,7 +67,7 @@ persistence:
   export:
     compression_level: 6
     compression_type: ZSTD
-    vm_export_dir: "./export/db"
+    vm_export_dir: "/export/db"
     max_retries: 3
 gcp:
   enabled: false

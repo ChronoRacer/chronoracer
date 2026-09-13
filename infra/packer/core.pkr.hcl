@@ -32,6 +32,7 @@ build {
     environment_vars = [
       "YQ_VERSION=${var.yq_version}",
       "RPK_VERSION=${var.rpk_version}",
+      "REDPANDA_CONNECT_VERSION=${var.redpanda_connect_version}",
       "INFLUXDB3_PACKAGE_VERSION=${var.influxdb3_package_version}",
     ]
     script = "scripts/install-core-base.sh"
@@ -86,6 +87,7 @@ build {
       "command -v influxdb3",
       "command -v yq",
       "command -v rpk",
+      "HOME=/root rpk connect list",
       "command -v gcloud",
       "command -v python3",
       "command -v jq",

@@ -35,3 +35,9 @@ variable "rpk_version" {
   type    = string
   default = "v26.2.2"
 }
+
+variable "redpanda_connect_version" {
+  type        = string
+  default     = "4.105.0"
+  description = "Redpanda Connect version installed by rpk in the Core image."
+}

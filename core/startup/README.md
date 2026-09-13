@@ -21,6 +21,16 @@ Bake inventory: [Compute images](../../docs/component-images.md). Race metadata 
       localhost:8181, create its configured database and export trigger `database_export`. Data dir `/var/lib/influxdb3`
       is `700`.
 
-3. `systemctl enable --now chronoracer-core`. Unit `UMask=0077`, `EnvironmentFile=/chronoracer/core.env` (`CORE_CONFIG_PATH=/chronoracer/core-config.yaml`, `AVRO_SENSOR_DATA_SCHEMA_PATH=/chronoracer/avro/sensor_data.avsc`).
+3. `systemctl enable --now chronoracer-core`. Unit `UMask=0077`, `HOME=/root`, and `EnvironmentFile=/chronoracer/core.env` (`CORE_CONFIG_PATH=/chronoracer/core-config.yaml`, `AVRO_SENSOR_DATA_SCHEMA_PATH=/chronoracer/avro/sensor_data.avsc`). Redpanda Connect is installed in the image; the VM does not download it.
 
 4. Core app reads config from one YAML at `CORE_CONFIG_PATH`. Units run as root; secret files are `600` so only root can read them.
+
+
+`ls` from parent directory inside the VM:
+```terminaloutput
+root@core:/chronoracer# ls  
+admin-token.json          core-config.yaml     fetch-payload.sh      influxdb3.service  redpanda  
+avro                      core.env             gce-metadata.sh       merge_config.py    render-config.sh  
+chronoracer-core.service  default-config.yaml  influxdb-plugin-venv  names.json         start-influx.sh  
+core                      entrypoint.sh        influxdb-plugins      platform.json  
+```

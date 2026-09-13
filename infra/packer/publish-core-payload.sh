@@ -3,7 +3,7 @@
 # as one immutable release, then atomically publish its manifest at
 # gs://{artifacts}/core/current.json.
 #
-# Usage: publish-core-payload.sh release-id /path/to/chronoracer-core
+# Usage: publish-core-payload.sh release-id
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,12 +17,7 @@ SCHEMA_SRC="${REPO_ROOT}/core/avro/sensor_data.avsc"
 }
 RELEASE_ID="$1"
 
-[[ -n "$2" ]] || {
-  echo "Core binary path not provided" >&2
-  exit 1
-}
-
-BIN="$2"
+BIN="./build/core-${RELEASE_ID}"
 [[ -s "${BIN}" ]] || {
   echo "binary missing or empty: ${BIN}" >&2
   exit 1
