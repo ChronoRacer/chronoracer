@@ -1,9 +1,15 @@
 import asyncio
+import time
 from confluent_kafka import Consumer, KafkaException, Producer, TopicPartition
 from datetime import datetime, timezone
 from loguru import logger
 from typing import Protocol
 from uuid import uuid4
+
+
+KAFKA_OPERATION_TIMEOUT_SECONDS = 5
+HEARTBEAT_READ_TIMEOUT_SECONDS = 20
+KAFKA_SOCKET_TIMEOUT_MS = KAFKA_OPERATION_TIMEOUT_SECONDS * 1000
 
 
 class ShutdownPublisher(Protocol):
@@ -20,17 +26,35 @@ class KafkaHeartbeatReader:
 
     async def read_last(self) -> datetime | None:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._read_last_sync)
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, self._read_last_sync),
+            timeout=HEARTBEAT_READ_TIMEOUT_SECONDS,
+        )
 
     def _read_last_sync(self) -> datetime | None:
         # DO NOT set auto commit or do any manual commits here. Group ID can be random
-        consumer = Consumer({'bootstrap.servers': self.bootstrap,
-                             'group.id': f'relay-health-{uuid4()}',
-                             'enable.auto.commit': False,
-                             'auto.offset.reset': 'error'}
-                            )
+        consumer = Consumer({
+            'bootstrap.servers': self.bootstrap,
+            'group.id': f'relay-health-{uuid4()}',
+            'enable.auto.commit': False,
+            'auto.offset.reset': 'error',
+            # Bound DNS/connect/request retries as well as the explicit API
+            # operation timeouts below. This keeps a dead host from holding a
+            # Cloud Run status request indefinitely.
+            'socket.timeout.ms': KAFKA_SOCKET_TIMEOUT_MS,
+            'socket.connection.setup.timeout.ms': KAFKA_SOCKET_TIMEOUT_MS,
+            'session.timeout.ms': 10000,
+        })
+        deadline = time.monotonic() + HEARTBEAT_READ_TIMEOUT_SECONDS
+
+        def operation_timeout() -> float:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('Kafka heartbeat read timed out')
+            return min(KAFKA_OPERATION_TIMEOUT_SECONDS, remaining)
+
         try:
-            metadata = consumer.list_topics(self.topic, timeout=5)
+            metadata = consumer.list_topics(self.topic, timeout=operation_timeout())
             topic_metadata = metadata.topics.get(self.topic)
             if topic_metadata is None or getattr(topic_metadata, 'error', None) is not None:
                 return None
@@ -39,11 +63,11 @@ class KafkaHeartbeatReader:
             records = []
             for partition in partitions:
                 probe = TopicPartition(self.topic, partition)
-                _, high = consumer.get_watermark_offsets(probe, timeout=5)
+                _, high = consumer.get_watermark_offsets(probe, timeout=operation_timeout())
                 if high <= 0:
                     continue
                 consumer.assign([TopicPartition(self.topic, partition, high - 1)])
-                message = consumer.poll(timeout=5)
+                message = consumer.poll(timeout=operation_timeout())
                 if message is not None and not message.error() and message.key() == b'CORE':
                     records.append(message)
             dated_records = [(message, message.timestamp()[1]) for message in records]
@@ -54,6 +78,8 @@ class KafkaHeartbeatReader:
             record, timestamp_ms = max(dated_records, key=lambda item: item[1])
             return datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
         finally:
+            # Always leave the consumer lifecycle here, including metadata,
+            # watermark, poll, and timeout failures.
             consumer.close()
 
 
@@ -82,6 +108,9 @@ class KafkaShutdownPublisher(ShutdownPublisher):
                 'retries': 3,
                 'retry.backoff.ms': 250,
                 'delivery.timeout.ms': self._delivery_timeout_seconds * 1000,
+                'socket.timeout.ms': KAFKA_SOCKET_TIMEOUT_MS,
+                'request.timeout.ms': KAFKA_SOCKET_TIMEOUT_MS,
+                'socket.connection.setup.timeout.ms': KAFKA_SOCKET_TIMEOUT_MS,
                 'compression.type': 'snappy'
             })
         return self.producer
