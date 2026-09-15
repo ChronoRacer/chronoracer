@@ -2,11 +2,10 @@
 /core/target/
 */venv/
 **/.terraform/
-*.tfstate
-*.tfstate.*
 crash.log
-*.tfvars
-!*.tfvars.example
 /core/release/
 /core/redpanda/export.yaml
 /core/export/
+/core/influxdb-plugins/.venv/
+/infra/always-on/kafka-tls.pem
+/infra/always-on/ingest.chronoracer.live/

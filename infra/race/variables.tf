@@ -42,23 +42,55 @@ variable "ingest_open" {
 variable "kafka_machine_type" {
   type        = string
   description = "Kafka VM. Changing mid-race is forbidden."
-  default     = "e2-standard-2"
+  default     = "n4-standard-2"
+
+  validation {
+    condition     = startswith(var.kafka_machine_type, "n4-")
+    error_message = "Kafka machine family must be aligned with the documentation"
+  }
 }
 
 variable "core_machine_type" {
   type        = string
   description = "Core VM. Changing mid-race is forbidden."
-  default     = "n2-standard-4"
+  default     = "c4d-highcpu-4"
+
+  validation {
+    condition     = startswith(var.core_machine_type, "c4d-")
+    error_message = "Core machine family must be aligned with the documentation"
+  }
 }
 
 variable "kafka_boot_disk_type" {
   type        = string
   description = "Kafka boot disk. Changing mid-race is forbidden."
-  default     = "pd-balanced"
+  default     = "hyperdisk-balanced"
+}
+
+variable "kafka_boot_disk_size_gb" {
+  type        = number
+  description = "Kafka boot disk size. Must be at least 20GB. Changing mid-race is forbidden. Ensure available on VM family"
+  default     = 20
+
+  validation {
+    condition     = var.kafka_boot_disk_size_gb >= 20
+    error_message = "kafka_boot_disk_size_gb must be at least 20 GB"
+  }
 }
 
 variable "core_boot_disk_type" {
   type        = string
-  description = "Core boot disk. Changing mid-race is forbidden."
-  default     = "pd-ssd"
+  description = "Core boot disk. Changing mid-race is forbidden. Ensure available on VM family"
+  default     = "hyperdisk-balanced"
+}
+
+variable "core_boot_disk_size_gb" {
+  type        = number
+  description = "Core boot disk size. Must be at least the 20 GB. Changing mid-race is forbidden."
+  default     = 20
+
+  validation {
+    condition     = var.core_boot_disk_size_gb >= 20
+    error_message = "core_boot_disk_size_gb must be at least 20 GB"
+  }
 }

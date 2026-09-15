@@ -24,7 +24,7 @@ sequenceDiagram
     Op ->> Relay: start race Okta
     Relay ->> Relay: reject if race ongoing
     Relay ->> Relay: upload YAML then atomic pointer plus race doc
-    Relay ->> FS: starting terraformRun apply in_flight runToken empty buildId
+    Relay ->> FS: starting terraformRun apply in_flight UUID runToken buildId empty
     Relay ->> CB: trigger controller
     Relay ->> FS: write buildId
     CB ->> Ctrl: run

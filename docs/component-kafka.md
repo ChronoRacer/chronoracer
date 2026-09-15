@@ -35,7 +35,7 @@ Apache Kafka at `/opt/kafka` on family `chronoracer-kafka`.
 ## Public hostname and cert
 
 Zone, FQDN, A record, secret **resource**: [Terraform](component-terraform.md). Issue and upload
-PEM: [Kafka TLS runbook](operator-kafka-tls.md).
+PEM: [Kafka TLS runbook](operator-domain-and-tls.md).
 
 When ready, Relay returns hostname, port, and the applied public IP. Track clients may connect to the IP with SNI/verify
 on the hostname so DNS lag is not the critical path. Do not use that address unless status says ready
@@ -144,7 +144,7 @@ One topic for control data.
 - Message key: `{eventName}`
 - Delivery semantics: `exactly-once`
 - Message order: `ensured as 1 partition`
-- Compression: `yes`, type: `l4z`  (**compression enforced by producer, not topic**)
+- Compression: `yes`, type: `lz4`  (**compression enforced by producer, not topic**)
 - Avro enabled: `no` - too violative schema depending on message key
 
 ##### Driver change Control message

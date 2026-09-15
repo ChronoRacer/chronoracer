@@ -36,8 +36,7 @@ impl HeartbeatHandler {
 
             let record = FutureRecord::to(self.heartbeat_topic)
                 .key("CORE")
-                .payload("OK") // TODO: heartbeat status
-                .key(self.race_id);
+                .payload(self.race_id); // TODO: heartbeat status
 
             match self
                 .producer

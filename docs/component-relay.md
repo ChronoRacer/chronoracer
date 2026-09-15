@@ -1,5 +1,7 @@
 # Deep dive - Relay
 
+[!IMPORTANT] At the time of writing this, the public URL of Relay is `https://chronoracer-relay-585760075678.europe-west3.run.app`
+
 Code at: [Relay root](../relay)
 
 Where: Cloud Run, public HTTPS. Image from Artifact Registry (`ar_relay_image` in [
@@ -38,6 +40,14 @@ Start creates `races/{raceId}` in Firestore. The API exposes the active race and
 endpoints. Historical races are race documents whose ID is not the current `control/active` pointer.
 
 Internal build-finished and export-done are separate paths on the same Relay service.
+
+## Configuration boundary
+
+The production Relay configuration is rendered by Terraform into the Secret Manager secret mounted by Cloud Run:
+[`relay-config.yaml.tftpl`](../infra/always-on/relay-config.yaml.tftpl). The checked-in
+[`relay/config.yaml`](../relay/config.yaml) mirrors the current always-on values for standalone runs. The shared topic
+names come from the platform contract; the generated configuration also receives the regional Kafka bootstrap address,
+push audiences, service accounts, and the Cloud Build trigger ID from the always-on stack.
 
 ## Operations
 
@@ -139,8 +149,9 @@ Then mark `terraformRun.status` succeeded or failed, and:
 - **apply failure:** if phase is already `applied` with outputs: do not revert; mark `terraformRun` succeeded
   (controller committed). If phase is still `starting`: `failed`, `lastError`.
 - **close_ingest success:** phase `exporting` and `terraformRun.status` `succeeded` persisted first (mutex clear,
-  export-done gate open), then Relay publishes shutdown on the private control topic. Status replay while already
-  `exporting` republishes shutdown (idempotent key).
+  export-done gate open), then Relay publishes shutdown on the private control topic and closes the shutdown
+  producer. Status replay while already `exporting` republishes shutdown (idempotent key), then closes that producer
+  again. Heartbeat consumers are scoped to individual status reads and close when each read ends.
 - **close_ingest failure:** `lastError`; phase stays `stopping`. Operator retries stop once mutex is clear. Not
   force-destroy.
 - **destroy success:** phase `destroyed`; update races; clear `control/active`.

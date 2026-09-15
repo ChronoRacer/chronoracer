@@ -16,7 +16,7 @@ def test_render_listeners_and_oauth():
     text = render(
         platform=PLATFORM,
         private_host="kafka.europe-west3-a.c.proj.internal",
-        public_host="kafka.example.com",
+        public_host="ingest.chronoracer.live",
         keystore_path="/dev/shm/kafka-keystore.p12",
         keystore_password="secret-pass",
         log_dirs="/var/lib/kafka/data",
@@ -26,7 +26,7 @@ def test_render_listeners_and_oauth():
         in text
     )
     assert (
-        "advertised.listeners=PRIVATE://kafka.europe-west3-a.c.proj.internal:9092,PUBLIC://kafka.example.com:9094"
+        "advertised.listeners=PRIVATE://kafka.europe-west3-a.c.proj.internal:9092,PUBLIC://ingest.chronoracer.live:9094"
         in text
     )
     assert "listener.security.protocol.map=PRIVATE:PLAINTEXT,PUBLIC:SASL_SSL,CONTROLLER:PLAINTEXT" in text

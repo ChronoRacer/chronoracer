@@ -13,6 +13,7 @@ resource "google_compute_instance" "kafka" {
   boot_disk {
     initialize_params {
       image = data.google_compute_image.kafka.id
+      size  = var.kafka_boot_disk_size_gb
       type  = var.kafka_boot_disk_type
     }
   }
@@ -68,6 +69,7 @@ resource "google_compute_instance" "core" {
   boot_disk {
     initialize_params {
       image = data.google_compute_image.core.id
+      size  = var.core_boot_disk_size_gb
       type  = var.core_boot_disk_type
     }
   }

@@ -47,11 +47,27 @@ resource "google_firestore_database" "default" {
 }
 
 resource "google_artifact_registry_repository" "chronoracer" {
-  project       = var.project_id
-  location      = var.region
-  repository_id = local.names.ar_repo
-  format        = "DOCKER"
-  description   = "Controller and Relay images. Not Kafka/Core VM families."
+  project                = var.project_id
+  location               = var.region
+  repository_id          = local.names.ar_repo
+  format                 = "DOCKER"
+  description            = "Controller and Relay images. Not Kafka/Core VM families."
+  cleanup_policy_dry_run = false
+
+  cleanup_policies {
+    id     = "keep-newest-image"
+    action = "KEEP"
+    most_recent_versions {
+      keep_count = 1
+    }
+  }
+  cleanup_policies {
+    id     = "delete-older-images"
+    action = "DELETE"
+    condition {
+      tag_state = "ANY"
+    }
+  }
 
   depends_on = [google_project_service.apis]
 }

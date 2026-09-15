@@ -7,6 +7,7 @@ Requires=influxdb3.service
 Type=simple
 UMask=0077
 WorkingDirectory=/chronoracer
+Environment=HOME=/root
 EnvironmentFile=/chronoracer/core.env
 ExecStart=/chronoracer/core
 Restart=on-failure

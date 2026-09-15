@@ -26,7 +26,7 @@ sequenceDiagram
     participant GCS
     participant PS as PubSub
     Op ->> Relay: stop race Okta
-    Relay ->> FS: stopping terraformRun close_ingest in_flight runToken empty buildId
+    Relay ->> FS: stopping terraformRun close_ingest in_flight UUID runToken buildId empty
     Relay ->> CB: trigger close_ingest
     Relay ->> FS: write buildId
     CB ->> CB: apply ingest_open false delete public 9094 firewall
@@ -39,7 +39,7 @@ sequenceDiagram
     Core ->> GCS: selected topics including DLQ
     Core ->> PS: export-done
     PS ->> Relay: push wake
-    Relay ->> FS: destroying terraformRun destroy in_flight runToken empty buildId
+    Relay ->> FS: destroying terraformRun destroy in_flight UUID runToken buildId empty
     Relay ->> CB: trigger destroy
     Relay ->> FS: write buildId
     CB ->> CB: terraform destroy race state

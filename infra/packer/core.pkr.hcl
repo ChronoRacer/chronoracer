@@ -1,17 +1,19 @@
 source "googlecompute" "core" {
   project_id              = var.project_id
   source_image_family     = var.debian_source_image_family
-  source_image_project_id = var.debian_source_image_project
+  source_image_project_id = [var.debian_source_image_project]
   zone                    = var.zone
   machine_type            = var.builder_machine_type
   disk_size               = var.builder_disk_size_gb
   disk_type               = "pd-balanced"
   network                 = var.network
   omit_external_ip        = false
+  preemptible             = true
+  on_host_maintenance     = "TERMINATE"
   ssh_username            = "packer"
   image_name              = "${local.names.core_family}-{{timestamp}}"
   image_family            = local.names.core_family
-  image_storage_locations = [var.image_storage_location]
+  image_storage_locations = [local.image_storage_location]
   image_description       = "Chronoracer Core base. InfluxDB 3 plus overlay. Binary and plugins from GCS at boot."
   tags = ["packer"]
 }
@@ -30,7 +32,7 @@ build {
     environment_vars = [
       "YQ_VERSION=${var.yq_version}",
       "RPK_VERSION=${var.rpk_version}",
-      "INFLUXDB3_PACKAGE=${var.influxdb3_package}",
+      "REDPANDA_CONNECT_VERSION=${var.redpanda_connect_version}",
       "INFLUXDB3_PACKAGE_VERSION=${var.influxdb3_package_version}",
     ]
     script = "scripts/install-core-base.sh"
@@ -85,6 +87,7 @@ build {
       "command -v influxdb3",
       "command -v yq",
       "command -v rpk",
+      "command -v redpanda-connect",
       "command -v gcloud",
       "command -v python3",
       "command -v jq",
@@ -109,5 +112,10 @@ build {
       "test ! -e /chronoracer/core",
     ]
     execute_command = "chmod +x {{ .Path }}; sudo bash '{{ .Path }}'"
+  }
+
+  provisioner "shell" {
+    execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash '{{ .Path }}'"
+    script          = "scripts/finalize-image.sh"
   }
 }

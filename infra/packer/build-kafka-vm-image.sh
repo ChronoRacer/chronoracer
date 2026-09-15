@@ -13,6 +13,13 @@ fi
   echo "set PKR_VAR_project_id or gcloud config project" >&2
   exit 1
 }
+command -v jq >/dev/null 2>&1 || {
+  echo "missing required command: jq" >&2
+  exit 1
+}
 
 packer init "${SCRIPT_DIR}"
-packer build -only=googlecompute.kafka "${SCRIPT_DIR}"
+packer build -only=chronoracer-kafka.googlecompute.kafka "${SCRIPT_DIR}"
+
+FAMILY="$(jq -er '.kafka_family | select(. != null and . != "")' "${SCRIPT_DIR}/../contract/names.json")"
+bash "${SCRIPT_DIR}/scripts/cleanup-image-family.sh" "${FAMILY}"

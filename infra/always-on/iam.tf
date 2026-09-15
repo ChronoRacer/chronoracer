@@ -135,7 +135,7 @@ resource "google_storage_bucket_iam_member" "controller_race_state" {
   condition {
     title       = "race-state-prefix"
     expression  = "resource.name.startsWith(\"projects/_/buckets/${data.google_storage_bucket.state.name}/objects/race/\")"
-    description = "race/default.tfstate and locks. Never base/."
+    description = "race/default.tfstate and locks"
   }
 }
 
@@ -160,7 +160,7 @@ resource "google_project_iam_member" "relay_firestore" {
 
 resource "google_project_iam_member" "relay_builds" {
   project = var.project_id
-  role    = google_project_iam_custom_role.relay_builds.id
+  role    = "roles/cloudbuild.builds.editor"
   member  = "serviceAccount:${google_service_account.relay.email}"
 }
 
@@ -194,11 +194,14 @@ resource "google_storage_bucket_iam_member" "relay_export_read" {
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.relay.email}"
 
-  condition {
-    title       = "export-prefix"
-    expression  = "resource.name.contains(\"/export/\")"
-    description = "Read export objects only."
-  }
+  # condition { # TODO IAM is ..., need to flip the directory structure to have raceId nested instead on top
+  #   title       = "export-subtree"
+  #   description = "Read export objects only."
+  #   expression  = <<-EOT
+  #     resource.name.startsWith("projects/_/buckets/${google_storage_bucket.race.name}/objects/") &&
+  #     resource.name.contains("/export/")
+  #   EOT
+  # }
 }
 
 resource "google_storage_bucket_iam_member" "relay_race_list" {
@@ -243,11 +246,14 @@ resource "google_storage_bucket_iam_member" "core_export_write" {
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.core.email}"
 
-  condition {
-    title       = "export-prefix"
-    expression  = "resource.name.contains(\"/export/\")"
-    description = "Core writes export objects only."
-  }
+  # condition { # TODO IAM is ..., need to flip the directory structure to have raceId nested instead on top
+  #   title       = "export-subtree"
+  #   description = "Core writes export objects only."
+  #   expression  = <<-EOT
+  #     resource.name.startsWith("projects/_/buckets/${google_storage_bucket.race.name}/objects/") &&
+  #     resource.name.contains("/export/")
+  #   EOT
+  # }
 }
 
 resource "google_storage_bucket_iam_member" "core_race_list" {
@@ -306,18 +312,6 @@ resource "google_artifact_registry_repository_iam_member" "cloudbuild_agent_read
   repository = google_artifact_registry_repository.chronoracer.name
   role       = "roles/artifactregistry.reader"
   member     = local.cloudbuild_agent
-}
-
-resource "google_project_iam_member" "relay_vpcaccess" {
-  project = var.project_id
-  role    = "roles/vpcaccess.user"
-  member  = "serviceAccount:${google_service_account.relay.email}"
-}
-
-resource "google_project_iam_member" "run_agent_vpcaccess" {
-  project = var.project_id
-  role    = "roles/vpcaccess.user"
-  member  = local.run_agent
 }
 
 resource "google_cloud_run_v2_service_iam_member" "push_invoker" {

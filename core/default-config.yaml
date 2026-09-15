@@ -7,8 +7,8 @@ runtime:
   notify_shutdown_on_failed_db_export: false
   notify_shutdown_on_failed_kafka_export: true
 race:
-  race_id: "test-race"
-  initial_driver_id: "test"
+  race_id: "placeholder"
+  initial_driver_id: "placeholder"
 kafka:
   brokers:
     - localhost:9092
@@ -45,7 +45,7 @@ kafka:
     export_topics:
       - "dlq"
     nested_path_in_bucket: "export/kafka"
-    local_path: "./export/kafka"
+    local_path: "/export/kafka"
     max_retries: 2
 processing:
   message_channel_buffer_size: 64
@@ -67,12 +67,12 @@ persistence:
   export:
     compression_level: 6
     compression_type: ZSTD
-    vm_export_dir: "./export/db"
+    vm_export_dir: "/export/db"
     max_retries: 3
 gcp:
   enabled: false
   export_bucket: "chronoracer-race"
   max_retries: 2
   max_gcs_concurrent_uploads: 3
-  project_id: "PROJECT_ID"
+  project_id: "chronoracer"
   pubsub_topic_id: "export-done"

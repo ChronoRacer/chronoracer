@@ -34,7 +34,20 @@ BUCKET="$(jq -er '.artifacts_bucket | select(. != null and . != "")' "${NAMES_JS
   exit 1
 }
 
-PREFIX="gs://${BUCKET}/core/current"
+CURRENT_MANIFEST="gs://${BUCKET}/core/current.json"
+
+echo "Fetching Core release pointer from ${CURRENT_MANIFEST}"
+gcloud storage cat "${CURRENT_MANIFEST}" >"${WORKDIR}/current.json" || {
+  echo "failed to read Core release pointer ${CURRENT_MANIFEST}" >&2
+  exit 1
+}
+
+RELEASE="$(jq -er '.prefix | select(type == "string" and startswith("core/releases/") and (contains("..") | not))' "${WORKDIR}/current.json")" || {
+  echo "invalid Core release pointer in ${CURRENT_MANIFEST}" >&2
+  exit 1
+}
+
+PREFIX="gs://${BUCKET}/${RELEASE}"
 SRC_BIN="${PREFIX}/core"
 SRC_SCHEMA="${PREFIX}/avro/sensor_data.avsc"
 SRC_PLUGINS="${PREFIX}/influxdb-plugins"

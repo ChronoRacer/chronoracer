@@ -36,3 +36,6 @@ fi
 [[ -f /chronoracer/gce-metadata.sh ]]
 [[ -f /chronoracer/names.json ]]
 [[ -f /chronoracer/platform.json ]]
+
+# Packer's file provisioners use these directories as staging areas
+rm -rf /tmp/overlay /tmp/contract /tmp/redpanda /tmp/default-config.yaml

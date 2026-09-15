@@ -16,10 +16,10 @@ mkdir -p "$WSL_SRC_TMP" "$WSL_CACHE_DIR" "$OUTPUT_DIR"
 rsync -a --delete \
     --exclude 'target' \
     --exclude '.git' \
-    ./ "$WSL_SRC_TMP/"
+    ../. "$WSL_SRC_TMP/"
 
 cd "$WSL_CACHE_DIR"
-RUSTFLAGS="-C target-cpu=native" CARGO_TARGET_DIR="$WSL_CACHE_DIR" cargo build --profile release --manifest-path "$WSL_SRC_TMP/Cargo.toml"
+RUSTFLAGS="-C target-cpu=native -C codegen-units=1" CARGO_TARGET_DIR="$WSL_CACHE_DIR" cargo build --profile release --manifest-path "$WSL_SRC_TMP/Cargo.toml"
 
 cp -f "$WSL_CACHE_DIR/release/$BINARY_NAME" "$OUTPUT_DIR/$BINARY_NAME"
 chmod +x "$OUTPUT_DIR/$BINARY_NAME"

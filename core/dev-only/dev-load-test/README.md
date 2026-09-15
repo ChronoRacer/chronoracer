@@ -20,6 +20,7 @@ Starting load test configuration:
 - Batch Count: 500000
 - CHDRV enabled: True
 - SHUTDOWN enabled: True
+- OAuth enabled: False
 [Control] Sleeping for initial delay of 1.0 seconds...
 [Control] Starting to send 2 messages to 'control'...
 [Control] Finished sending control messages.
@@ -29,5 +30,7 @@ Load test complete in 243.82 seconds.
 ```
 
 Change configuration in [config file](config.json)
+
+For a remote Kafka cluster using OAuth, set additional OAuth properties and enable the toggle.
 
 Run with `python3 load_test.py`

@@ -30,9 +30,13 @@ class FakeBuilds:
 class FakeShutdown:
     def __init__(self):
         self.calls = []
+        self.close_calls = 0
 
     async def publish_shutdown(self, race_id):
         self.calls.append(race_id)
+
+    async def close(self):
+        self.close_calls += 1
 
 
 class TrackingRepository(InMemoryRaceRepository):
@@ -262,6 +266,7 @@ async def test_close_ingest_success_enters_exporting_and_publishes_shutdown():
     assert current.terraform_run.status is TerraformStatus.SUCCEEDED
     assert not current.terraform_run.locked
     assert shutdown.calls == [race.race_id]
+    assert shutdown.close_calls == 1
 
 
 @pytest.mark.asyncio

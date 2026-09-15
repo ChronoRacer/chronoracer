@@ -13,7 +13,8 @@ For target VMs used, see [ADR - VM types](adr-vm-types.md).
 **Kafka:** full bake. Overlay + Apache Kafka at `/opt/kafka`. Rebuild the family when Kafka, Java, overlay scripts, or
 contract JSON change. That is rare.
 
-**Core:** hybrid. Packer bakes Debian, InfluxDB 3 Core, `rpk`, `yq`, Google Cloud CLI, overlay scripts,
+**Core:** hybrid. Packer bakes Debian, InfluxDB 3 Core, `rpk` and its pinned Redpanda Connect package (do not install
+manually with sudo or it will fail), `yq`, Google Cloud CLI, overlay scripts,
 `default-config.yaml`, Redpanda templates, contract JSON, and the build-time InfluxDB plugin environment. It does
 **not** bake the Core rust binary, Avro schema, or InfluxDB plugin source files.
 
@@ -21,34 +22,44 @@ Publish the binary, Avro schema, and plugins with
 [`infra/packer/publish-core-payload.sh`](../infra/packer/publish-core-payload.sh) to the artifacts prefix in
 [GCS](component-gcs_buckets.md). Fetch at boot: [Core startup](../core/startup/README.md).
 
-The GCS prefix `core/current/` is floating: the next race picks the latest upload without a new image.
+The payload is published under an immutable `core/releases/.../` prefix. The single GCS object `core/current.json` is
+the release pointer; the next race reads that pointer without a new image. Publishing the pointer is the final step, so
+a VM cannot combine a binary from one release with a schema or plugin from another.
 
 Do not download vendor packages from the public internet on the race Core VM (no Cloud NAT). Packer builders use the
 **default VPC** and an ephemeral public IP so apt and tarball fetches work. Do not build on the race VPC.
 
 ## How to publish
 
-Operator credentials (`gcloud auth application-default login`). Roles: create/delete Compute instances and disks, create
+Operator credentials (`gcloud auth application-default login`). Roles: create/delete Compute instances, disks, and
 images. No dedicated Packer service account.
 
-Builder: `e2-small`, 20 GB disk. Disk contents become the image; race VM machine
-types: [Terraform](component-terraform.md).
+Builder: `e2-small`, 10 GB disk. The disk contents become the minimum image size; race VMs request their own 20 GB boot
+disks. Target machine types: [Terraform](component-terraform.md). The builder zone determines the image storage region,
+so use the same zone region as the always-on and race stacks.
+
+Each build wrapper runs [`cleanup-image-family.sh`](../infra/packer/scripts/cleanup-image-family.sh) after Packer
+finishes. It keeps the newest Compute Engine image in the family and deletes older images. Compute Engine has no native
+image-family retention policy, so do not bypass the wrappers with a direct `packer build`. Do not build or clean up a
+family while a race apply is creating VMs from that family.
 
 ```bash
-# From a bash environment (Git Bash or WSL on Windows).
 gcloud auth application-default login
 export PKR_VAR_project_id="$(gcloud config get-value project)"
 
-./infra/packer/build-kafka.sh
-./infra/packer/build-core.sh
+./infra/packer/build-kafka-vm-image.sh
+./infra/packer/build-core-vm-image.sh
 
-# Linux x86_64 Core binary (rdkafka cmake-build needs a Linux toolchain).
+# Build and download Core binary on a native CPU builder
+./infra/packer/build-core-binary.sh
+
+# Publish the Core VM release (Core binary, Avro schemas, InfluxDB plugins) 
 ./infra/packer/publish-core-payload.sh /path/to/chronoracer-core
 ```
 
 Version pins: [`infra/packer/versions.pkr.hcl`](../infra/packer/versions.pkr.hcl). Apply always-on once so bucket
 `chronoracer-artifacts` exists before the first payload publish. Apply always-on before the first Core race that fetches
-payload.
+payload. Publish a new payload before that race; a missing `core/current.json` fails Core boot closed.
 
 Always-on IAM for Core to read artifacts: [Terraform](component-terraform.md).
 
@@ -68,11 +79,14 @@ the GCE metadata server. They do not call the Compute API. Core and Kafka servic
 
 **Core** `/chronoracer/`: overlay from [`core/startup`](../core/startup) including `fetch-payload.sh`, systemd units,
 `gce-metadata.sh`, `default-config.yaml`, `redpanda/*.yaml`, contract JSON, empty `influxdb-plugins/`, and the
-build-time `/chronoracer/influxdb-plugin-venv` (see [InfluxDB plugin environment](component-influxdb.md#plugin-python-environment)).
-Packer installs Debian `python3-yaml` (for `merge_config.py`). `need()` after payload: `influxdb3`, `python3` + PyYAML,
-`jq`, `yq`, `gcloud`, `rpk`, `curl`. Binary arrives as `/chronoracer/core`; the schema arrives as
+build-time `/chronoracer/influxdb-plugin-venv`
+(see [InfluxDB plugin environment](component-influxdb.md#plugin-python-environment)). Packer installs Debian
+`python3-yaml` (for `merge_config.py`). `need()` after payload: `influxdb3`, `python3` + PyYAML,
+`jq`, `yq`, `gcloud`, `rpk`, the pinned Redpanda Connect package, and `curl`. The package is installed during the image
+build so `rpk connect run` does not download on the race VM. Binary arrives as
+`/chronoracer/core`; the schema arrives as
 `/chronoracer/avro/sensor_data.avsc`.
 
 Boot order on the VM: [Kafka startup](../kafka/startup/README.md), [Core startup](../core/startup/README.md).
 
-Payload objects: [GCS artifacts](component-gcs_buckets.md).
+Payload layout and IAM: [GCS artifacts](component-gcs_buckets.md).

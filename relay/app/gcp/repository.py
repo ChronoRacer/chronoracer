@@ -1,4 +1,5 @@
 from google.cloud.firestore_v1 import DELETE_FIELD, AsyncClient
+from google.cloud.firestore_v1.async_transaction import async_transactional
 from loguru import logger
 from typing import Any, Protocol
 
@@ -81,7 +82,8 @@ class FirestoreRaceRepository(RaceRepository, ):
     async def create_race(self, race):
         logger.info("Creating race {} in Firestore", race.race_id)
         db = self._db()
-        async with db.transaction() as tx:
+        @async_transactional
+        async def create_in_transaction(tx):
             pointer = db.collection('control').document('active')
             pointer_data = (await pointer.get(transaction=tx)).to_dict() or {}
             if pointer_data.get('raceId') or pointer_data.get('race_id'):
@@ -91,6 +93,8 @@ class FirestoreRaceRepository(RaceRepository, ):
                 raise ValueError('raceId already exists')
             tx.create(race_ref, race.model_dump(by_alias=True))
             tx.set(pointer, ActivePointer(race_id=race.race_id).model_dump(by_alias=True))
+
+        await create_in_transaction(db.transaction())
 
     async def save_race(self, race, fields=None):
         logger.debug("Saving race {} in Firestore", race.race_id)
@@ -103,21 +107,27 @@ class FirestoreRaceRepository(RaceRepository, ):
         updates = {Race.model_fields[field].alias or field: payload[Race.model_fields[field].alias or field]
                    for field in fields}
         updates = {key: DELETE_FIELD if value is None else value for key, value in updates.items()}
-        async with self._db().transaction() as tx:
+        @async_transactional
+        async def save_in_transaction(tx):
             snapshot = await ref.get(transaction=tx)
             current = snapshot.to_dict() or {}
             self._protect_controller_state(current, payload, updates)
             if updates:
                 tx.update(ref, updates)
 
+        await save_in_transaction(self._db().transaction())
+
     async def set_active(self, pointer):
         await self._db().collection('control').document('active').set(pointer.model_dump(by_alias=True))
 
     async def complete_destroy(self, race):
         db = self._db()
-        async with db.transaction() as tx:
+        @async_transactional
+        async def complete_in_transaction(tx):
             tx.set(db.collection('races').document(race.race_id), race.model_dump(by_alias=True))
             tx.set(db.collection('control').document('active'), ActivePointer().model_dump(by_alias=True))
+
+        await complete_in_transaction(db.transaction())
 
     @staticmethod
     def _protect_controller_state(current: dict[str, Any], payload: dict[str, Any], updates: dict[str, Any]) -> None:

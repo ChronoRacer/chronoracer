@@ -4,15 +4,25 @@ use crate::messaging::partial_message::PartialMessageWithError;
 use crate::persistence::persistence_entrypoint::SensorDataBatch;
 use crate::processing::avro::TryFromAvro;
 use crate::processing::sensor_data_message::{SensorDataMessage, UnwoundSensorDataMessage};
+use apache_avro::reader::datum::GenericDatumReader;
+use ouroboros::self_referencing;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tracing::{error, info, warn};
+
+#[self_referencing]
+struct SensorDataReader {
+    schema: Arc<apache_avro::Schema>,
+    #[borrows(schema)]
+    #[covariant]
+    reader: GenericDatumReader<'this>,
+}
 
 pub struct ReadingCollector {
     flush_rx: BatchSinkRx,
     dlq_tx: Arc<InvalidMessageTx>,
     processed_data_tx: Arc<tokio::sync::mpsc::Sender<SensorDataBatch>>,
-    sensor_data_schema: Arc<apache_avro::Schema>,
+    sensor_data_reader: Arc<SensorDataReader>,
     rayon_pool: Arc<rayon::ThreadPool>,
     processing_slots: Arc<Semaphore>,
 }
@@ -26,11 +36,21 @@ impl ReadingCollector {
         sensor_data_schema: apache_avro::Schema,
         rayon_pool: Arc<rayon::ThreadPool>,
     ) -> Self {
+        let sensor_data_reader = SensorDataReaderBuilder {
+            schema: Arc::new(sensor_data_schema),
+            reader_builder: |schema| {
+                GenericDatumReader::builder(schema.as_ref())
+                    .build()
+                    .expect("sensor data reader should build")
+            },
+        }
+            .build();
+
         Self {
             flush_rx,
             dlq_tx,
             processed_data_tx: Arc::from(processed_data_tx),
-            sensor_data_schema: Arc::new(sensor_data_schema),
+            sensor_data_reader: Arc::new(sensor_data_reader),
             processing_slots: Arc::new(Semaphore::new(rayon_pool.current_num_threads())),
             rayon_pool,
         }
@@ -44,7 +64,7 @@ impl ReadingCollector {
                 error!("Reading collector processing slots closed");
                 break;
             };
-            let schema = Arc::clone(&self.sensor_data_schema);
+            let reader = Arc::clone(&self.sensor_data_reader);
             let success_tx = Arc::clone(&self.processed_data_tx);
             let failure_tx = Arc::clone(&self.dlq_tx);
             self.rayon_pool.spawn(move || {
@@ -53,10 +73,13 @@ impl ReadingCollector {
                 let processed: Vec<_> = partial_messages
                     .into_iter()
                     .filter_map(|partial_message| {
-                        match SensorDataMessage::try_from_avro(
-                            &schema,
-                            partial_message.payload.as_deref(),
-                        ) {
+                        let result = reader.with_reader(|reader| {
+                            SensorDataMessage::try_from_avro(
+                                reader,
+                                partial_message.payload.as_deref(),
+                            )
+                        });
+                        match result {
                             Ok(msg) => Some(UnwoundSensorDataMessage::from(msg)),
                             Err(err) => {
                                 let failed_msg =
@@ -89,6 +112,7 @@ mod tests {
     use crate::persistence::persistence_entrypoint::SensorDataBatch;
     use crate::processing::avro::{AvroSchema, SchemaRegistry};
     use apache_avro::types::Value;
+    use apache_avro::writer::datum::GenericDatumWriter;
     use std::time::Duration;
     use tokio::sync::mpsc;
     use tokio::time::timeout;
@@ -125,7 +149,10 @@ mod tests {
                 ])]),
             ),
         ]);
-        apache_avro::to_avro_datum(schema, record).expect("Failed to serialize to raw datum")
+        let writer = GenericDatumWriter::builder(schema)
+            .build()
+            .expect("sensor data reader should build");
+        writer.write_value_to_vec(record).expect("Failed to serialize to raw datum")
     }
 
     #[tokio::test]

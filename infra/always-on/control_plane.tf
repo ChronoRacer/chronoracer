@@ -1,6 +1,9 @@
 resource "google_pubsub_topic" "cloud_builds" {
-  name    = "cloud-builds"
+  name    = local.cloud_build_topic
   project = var.project_id
+
+  # 7 hours
+  message_retention_duration = "25200s"
 
   depends_on = [google_project_service.apis]
 }
@@ -8,6 +11,9 @@ resource "google_pubsub_topic" "cloud_builds" {
 resource "google_pubsub_topic" "export_done" {
   name    = local.platform.export_done_topic
   project = var.project_id
+
+  # 7 hours
+  message_retention_duration = "25200s"
 
   depends_on = [google_project_service.apis]
 }
@@ -32,7 +38,7 @@ resource "google_secret_manager_secret_version" "relay_config" {
   secret_data = templatefile("${path.module}/relay-config.yaml.tftpl", {
     project_id                     = var.project_id
     export_bucket                  = google_storage_bucket.race.name
-    cloud_build_trigger_id         = local.names.trigger
+    cloud_build_trigger_id         = google_cloudbuild_trigger.race_controller.trigger_id
     cloud_build_location           = var.region
     build_finished_audience        = local.build_finished_audience
     build_finished_service_account = google_service_account.build_finished_push.email
@@ -42,6 +48,7 @@ resource "google_secret_manager_secret_version" "relay_config" {
     kafka_public_port              = local.kafka_public_port
     kafka_control_topic            = local.platform.kafka_control_topic
     kafka_heartbeat_topic          = local.platform.kafka_heartbeat_topic
+    cloud_build_topic              = local.cloud_build_topic
     export_done_topic              = local.platform.export_done_topic
   })
 }
@@ -55,14 +62,25 @@ resource "google_cloud_run_v2_service" "relay" {
   template {
     service_account = google_service_account.relay.email
 
+    timeout = "45s"
+
+    execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
+
     scaling {
       min_instance_count = 0
       max_instance_count = 1
     }
 
+    # TODO: this should be good enough
+    max_instance_request_concurrency = 10
+
     vpc_access {
-      connector = google_vpc_access_connector.vpc_relay.id
-      egress    = "PRIVATE_RANGES_ONLY"
+      egress = "PRIVATE_RANGES_ONLY"
+
+      network_interfaces {
+        network    = google_compute_network.chronoracer.id
+        subnetwork = google_compute_subnetwork.chronoracer.id
+      }
     }
 
     containers {
@@ -70,6 +88,15 @@ resource "google_cloud_run_v2_service" "relay" {
 
       ports {
         container_port = 8080
+      }
+
+      resources {
+        limits = {
+          cpu    = "1"
+          memory = "512Mi"
+        }
+        cpu_idle          = true
+        startup_cpu_boost = true
       }
 
       env {
@@ -103,8 +130,6 @@ resource "google_cloud_run_v2_service" "relay" {
     google_secret_manager_secret_iam_member.relay_config,
     google_artifact_registry_repository_iam_member.run_agent_reader,
     google_artifact_registry_repository_iam_member.relay_reader,
-    google_project_iam_member.relay_vpcaccess,
-    google_project_iam_member.run_agent_vpcaccess,
   ]
 }
 
@@ -139,6 +164,8 @@ resource "google_pubsub_subscription" "relay_push" {
   topic   = each.value.topic
 
   ack_deadline_seconds = 60
+  # 7 hours
+  message_retention_duration = "25200s"
 
   push_config {
     push_endpoint = "${google_cloud_run_v2_service.relay.uri}${each.value.path}"

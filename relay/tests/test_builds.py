@@ -45,13 +45,16 @@ async def test_trigger_run_get_list_are_regional(monkeypatch):
 
     assert await trigger.trigger("r1", "apply", "tok") == "build-9"
     assert run.await_args.kwargs["request"].name == f"{PARENT}/triggers/race-controller"
+    assert run.await_args.kwargs["timeout"] == trigger.API_TIMEOUT_SECONDS
 
     got = await trigger.get("build-9")
     assert got == {"buildId": "build-9", "success": True, "error": None}
     assert get.await_args.kwargs["request"].name == f"{PARENT}/builds/build-9"
+    assert get.await_args.kwargs["timeout"] == trigger.API_TIMEOUT_SECONDS
 
     assert await trigger.find("r1", "tok") == {"buildId": "build-9"}
     list_req = list_builds.call_args.kwargs["request"]
     assert list_req.parent == PARENT
     assert 'substitutions._RACE_ID="r1"' in list_req.filter
     assert 'substitutions._RUN_TOKEN="tok"' in list_req.filter
+    assert list_builds.call_args.kwargs["timeout"] == trigger.API_TIMEOUT_SECONDS

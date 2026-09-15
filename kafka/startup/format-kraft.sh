@@ -23,5 +23,5 @@ if [[ -f "${LOG_DIRS}/meta.properties" ]]; then
 fi
 
 CLUSTER_ID="$("${KAFKA_STORAGE}" random-uuid)"
-"${KAFKA_STORAGE}" format --standalone -t "${CLUSTER_ID}" -c "${PROPERTIES}"
+"${KAFKA_STORAGE}" format -t "${CLUSTER_ID}" -c "${PROPERTIES}"
 echo "Formatted KRaft storage cluster_id=${CLUSTER_ID}"

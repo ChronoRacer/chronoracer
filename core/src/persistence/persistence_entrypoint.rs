@@ -101,8 +101,8 @@ impl PersistanceLayerEntryPoint {
                 .build()
                 .map_err(|e| anyhow!("Invalid InfluxDB config: {e}"))?,
         )
-        .await
-        .context("Failed to create InfluxDb client")?;
+            .await
+            .context("Failed to create InfluxDb client")?;
 
         client
             .ping()

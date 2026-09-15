@@ -13,10 +13,10 @@ Global prerequisites:
 
 Use these machine types as the Terraform defaults:
 
-| VM              | Machine type    | vCPU | Memory | Boot disk     | Reason                                                                                                                              |
-|-----------------|-----------------|-----:|-------:|---------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| Kafka           | `e2-standard-2` |    2 |   8 GB | `pd-balanced` | Matches the configured Kafka test envelope; CPU observations did not require more.                                                  |
-| Core + InfluxDB | `n2-standard-4` |    4 |  16 GB | `pd-ssd`      | Provides two physical cores on the N2 SMT layout and leaves room for InfluxDB cache, the operating system, and slower GCP hardware. |
+| VM              | Machine type    | vCPU | Memory | Boot disk                   |
+|-----------------|-----------------|-----:|-------:|-----------------------------|
+| Kafka           | `n4-standard-2` |    2 |   8 GB | `hyperdisk balanced`, 20 GB |
+| Core + InfluxDB | `c4d-highcpu-4` |    4 |   7 GB | `hyperdisk balanced`, 20 GB | 
 
 Terraform variables in [`infra/race/variables.tf`](../infra/race/variables.tf) are the implementation of this decision.
 These types must not be changed while a race is running; the race lifecycle and instance pinning rules are owned
@@ -53,29 +53,39 @@ The measurements were:
 
 The service lifetimes exceeded the 260-second sending period, so their total CPU times are not a load-window average.
 Kafka stayed below 100% of its 2-CPU container limit. The test ran on a faster local Intel Core i7-14700K with DDR5 RAM
-through WSL, and Kafka traffic used localhost, so these results establish a useful capacity baseline but do not prove GCP
-latency or throughput.
+through WSL, and Kafka traffic used localhost, so these results establish a useful capacity baseline but do not prove
+GCP latency or throughput.
 
 Core thread config:
+
 - `rayon_threads`: 4
 - `tokio_workers`: 2
 - `tokio_blocking`: 1
 
 ### Rationale
 
-The measurements do not justify 16 GB and four vCPUs for raw utilization alone. The selected `n2-standard-4` keeps the
-physical-core requirement, retains substantial memory headroom for InfluxDB and filesystem cache, and gives room for the
-local-to-GCP performance difference without making the database share one physical core with Core. The current x86_64
-payload also avoids an ARM image and build-pipeline change.
+We need more CPU than memory for the current setup. 1:4 ratio is not needed, 1:2 is enough.
+
+N2 is the older generation, E2 does not have physical cores we need. The best choice is either N4 or C4 (more
+expensive).
+
+For longer workloads, the cost difference would matter, but for around an estimated 30 hours per month, the difference
+is tiny and C4 has better CPU architecture with higher frequency. Core pinning to one thread is not required unless
+runtime proves otherwise. Since InfluxDB writes locally and we have buffers in Core, the RAM usage should not be too
+large, so we can save by going for `highcpu` variant instead of the standard one.
+
+This would be `5.64$/30h` in `europe-west3` with `20GB` boot disk for `c4d-highcpu-4`, which is quite a good deal. Sadly
+we cannot go for spot VM here - otherwise it would be three times cheaper.
+
+[In pricing calculator](https://cloud.google.com/products/calculator?dl=CjhDaVF3WVRSbU9XSTVNeTAyTTJRNUxUUXdOR1F0WWprellpMHdZbUV4TkRRM1kySmlNekFRQVE9PRAIGiRDQUQ5MTA4MC0zOUVDLTQ2NTYtQjg3OC05QTUxQjY0MzA2Rjg&_gl=1*hmvx65*_up*MQ..&gclid=CjwKCAjwqc_UBhBKEiwAWbl25q5jMtOk9eAmBdh9cuBnOYDnJZJLyO9afG3l6jbu6ZQ56lfLfq_q6BoCYFAQAvD_BwE&gclsrc=aw.ds)
 
 ## Kafka VM
 
-Kafka used less than one of the two CPUs available in the local test. `e2-standard-2` therefore supplies the tested
-2-vCPU and 8-GB envelope without carrying over the unused `e2-standard-4` capacity. Kafka has no requirement for the
-Core VM's physical-core layout in the measured workload.
+Kafka used less than one of the two CPUs available in the local test. `n4-standard-2` therefore should be enough.
+That would be around `3.30$/30h` in `europe-west3` with `20GB` balanced hyperdisk boot disk.
 
-If a GCP run shows CPU contention or latency on Kafka despite staying within this capacity, the next size is
-`n2-standard-2` with the same vCPU and memory counts but more predictable general-purpose performance. That is a
-measured follow-up option, not the default.
+If needed, we can go for a highmem variant, which would bump to `4.30$/30h`, so not that much difference.
 
-## [!IMPORTANT] These values might change after load testing on real GCP infrastructure 
+For some reason, the N4 version is cheaper than the E2 version in the pricing calculator for Frankfurt.
+
+## [!IMPORTANT] These values might change after load testing on real GCP infrastructure

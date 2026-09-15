@@ -6,7 +6,7 @@ Each concept has one owner. Other docs link it. Do not copy or rephrase the same
 |----------------------------------------------------------------------------------------|-------------------------------------------------------------------|
 | Region, free-tier, topology                                                            | this file                                                         |
 | Resource names                                                                         | [`infra/contract/names.json`](../infra/contract/names.json)       |
-| Ports, Kafka/export topics, Kafka OAuth JWKS/issuer/audience                           | [`infra/contract/platform.json`](../infra/contract/platform.json) |
+| Ports, Kafka/Cloud Build/export topics, Kafka OAuth JWKS/issuer/audience               | [`infra/contract/platform.json`](../infra/contract/platform.json) |
 | Terraform stacks, backends, IAM, always-on vs race resources, `ingest_open`, image pin | [Terraform](component-terraform.md)                               |
 | Controller process (env, bind, YAML HEAD, CLI, apply Firestore writes, exits)          | [Controller](component-controller.md)                             |
 | Relay HTTP and Pub/Sub API                                                             | [Relay](component-relay.md)                                       |
@@ -19,7 +19,7 @@ Each concept has one owner. Other docs link it. Do not copy or rephrase the same
 | Influx tables and plugins                                                              | [InfluxDB](component-influxdb.md)                                 |
 | Packer VM images and Core payload                                                      | [Compute images](component-images.md)                             |
 | Relay + controller Docker publish                                                      | [Control-plane images](operator-control-plane-images.md)          |
-| Kafka public TLS issue/upload                                                          | [Kafka TLS](operator-kafka-tls.md)                                |
+| Kafka public TLS issue/upload                                                          | [Kafka TLS](operator-domain-and-tls.md)                           |
 | Okta apps and operator tokens                                                          | [Okta](component-okta.md)                                         |
 | Start sequence and ready/unhealthy detection                                           | [Race provisioning](flow-race_provisioning.md)                    |
 | Stop, export, destroy sequence                                                         | [Race destruction](flow-race_destruction.md)                      |
@@ -35,10 +35,10 @@ Deployment on Google Cloud Platform.
 Whatever can be in the free tier is in the free tier (Cloud Run scale-to-zero; Firestore, Pub/Sub, Cloud Build have
 generous free tier limits).
 
-Not free: Cloud Run VPC access to Kafka, Cloud DNS, Artifact Registry, GCS buckets. Race VMs are paid and sized to be
-reliable.
+Not free: Cloud DNS, Artifact Registry, GCS buckets. Race VMs are paid and sized to be reliable. The Relay’s Direct VPC
+Egress network cost scales to zero with the Relay (revisit if cold start is too long - might need to changing to VPC connector);
 
-Region: all GCP resources in `europe-west3` (Frankfurt). Do not split regions.
+Region: all GCP resources in `europe-west3`. Do not split regions.
 
 ### Topology
 
@@ -116,4 +116,4 @@ Procedures humans run outside Terraform apply. Code and Terraform do not replace
 | Runbook              | Document                                                          |
 |----------------------|-------------------------------------------------------------------|
 | Control-plane images | [Operator — Relay + controller](operator-control-plane-images.md) |
-| Kafka TLS cert       | [Operator — Kafka public TLS](operator-kafka-tls.md)              |
+| Kafka TLS cert       | [Operator — Kafka public TLS](operator-domain-and-tls.md)         |

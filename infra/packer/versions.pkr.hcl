@@ -1,10 +1,8 @@
 # Vendor pins for Packer builders. Bump here, then rebuild the matching family.
-# InfluxDB 3: Debian package from InfluxData. Empty version = latest at build;
-# set influxdb3_package_version after `apt-cache madison influxdb3-core`.
 
 variable "debian_source_image_family" {
   type    = string
-  default = "debian-12"
+  default = "debian-13"
 }
 
 variable "debian_source_image_project" {
@@ -19,18 +17,13 @@ variable "kafka_scala_binary" {
 
 variable "kafka_version" {
   type    = string
-  default = "3.9.1"
-}
-
-variable "influxdb3_package" {
-  type    = string
-  default = "influxdb3-core"
+  default = "4.3.1"
 }
 
 variable "influxdb3_package_version" {
   type        = string
-  default     = ""
-  description = "Debian package version (e.g. 3.11.2-1). Empty installs current InfluxData repo version."
+  default     = "3.11.4-1"
+  description = "Debian package version. Empty installs current InfluxData repo version."
 }
 
 variable "yq_version" {
@@ -41,4 +34,10 @@ variable "yq_version" {
 variable "rpk_version" {
   type    = string
   default = "v26.2.2"
+}
+
+variable "redpanda_connect_version" {
+  type        = string
+  default     = "4.105.0"
+  description = "Redpanda Connect version installed by rpk in the Core image."
 }

@@ -27,6 +27,11 @@ class DevBuildTrigger:
 
 
 class CloudBuildTrigger:
+    # Cloud Run allows 45 seconds per request. Keep control-plane RPCs below
+    # that limit so a failed trigger cannot strand an in-flight mutex until
+    # the request is killed by the platform.
+    API_TIMEOUT_SECONDS = 30
+
     def __init__(self, project_id: str, trigger_id: str, location: str):
         self.project_id = project_id
         self.trigger_id = trigger_id
@@ -57,7 +62,7 @@ class CloudBuildTrigger:
                 source=source,
             )
 
-            op = await client.run_build_trigger(request=request)
+            op = await client.run_build_trigger(request=request, timeout=self.API_TIMEOUT_SECONDS)
             build_id = op.metadata.build.id
 
         logger.info("Cloud Build {} triggered for race {}", build_id, race_id)
@@ -65,7 +70,10 @@ class CloudBuildTrigger:
 
     async def get(self, build_id):
         async with cloudbuild_v1.CloudBuildAsyncClient() as client:
-            build = await client.get_build(request=cloudbuild_v1.GetBuildRequest(name=self._build_name(build_id)))
+            build = await client.get_build(
+                request=cloudbuild_v1.GetBuildRequest(name=self._build_name(build_id)),
+                timeout=self.API_TIMEOUT_SECONDS,
+            )
             if not self._is_terminal(build.status):
                 return None
             return {'buildId': build.id, 'success': build.status == cloudbuild_v1.Build.Status.SUCCESS,
@@ -76,7 +84,7 @@ class CloudBuildTrigger:
             builds = client.list_builds(request=cloudbuild_v1.ListBuildsRequest(
                 parent=self._parent(),
                 filter=f'substitutions._RACE_ID="{race_id}" AND substitutions._RUN_TOKEN="{run_token}"',
-            ))
+            ), timeout=self.API_TIMEOUT_SECONDS)
             async for build in builds:
                 return {'buildId': build.id}
         return None

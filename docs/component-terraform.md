@@ -40,16 +40,16 @@ Kafka A record, or the public Kafka firewall.
 
 Resources:
 
-- VPC, subnet, Private Google Access, baseline firewall (IAP SSH only, no public `22` to the internet; no public Core;
-  private Kafka from VPC + Cloud Run VPC access to tag `kafka` — ports: [
+- VPC, `/24` subnet with Private Google Access, baseline firewall (IAP SSH only, no public `22` to the internet; no
+  public Core; private Kafka from the VPC and Direct VPC Egress to tag `kafka` — ports: [
   `platform.json`](../infra/contract/platform.json))
 - Cloud DNS managed zone and stable Kafka FQDN (zone exists with no A record between races)
 - Secret Manager secret resource for the long-lived public TLS cert (value uploaded by operator/CI, not per race).
-  Procedure: [Kafka TLS runbook](operator-kafka-tls.md)
+  Procedure: [Kafka TLS runbook](operator-domain-and-tls.md)
 - Race GCS bucket, artifacts GCS bucket, layout: [GCS](component-gcs_buckets.md)
 - Firestore database
-- Cloud Run Relay (public HTTPS, no Google invoker for operators, `max_instance_count = 1`) and Serverless VPC access
-  (always-on cost; Relay must reach private Kafka without attaching a connector mid-race)
+- Cloud Run Relay (public HTTPS, no Google invoker for operators, `max_instance_count = 1`) with Direct VPC Egress to
+  the shared subnet
 - Pub/Sub: Cloud Build notifications topic + push to Relay build-finished (OIDC); export-done topic + push to Relay
   export-done (OIDC)
 - One Cloud Build trigger in `var.region` that runs the controller image. Trigger location, timeout,
@@ -62,9 +62,9 @@ Resources:
   (firewall, VPC flows, health checks, guest-agent chatter). **Keep** GCE `startupscript`,
   `google_metadata_script_runner`, and serial console so race VM boot script stdout stays in Cloud Logging.
 - Google-managed service agents via `google_project_service_identity` (google-beta): Cloud Build, Pub/Sub, Cloud Run,
-  Serverless VPC Access, Compute, Artifact Registry, Secret Manager. Created before IAM bindings so first apply on a new
-  project does not fail with a missing agent SA. Extra grants: Cloud Run service agent reads Relay config secret and AR;
-  Cloud Build agent reads AR; Relay runtime SA and Cloud Run agent `roles/vpcaccess.user`; Pub/Sub push SAs
+  Compute, Artifact Registry, Secret Manager. Created before IAM bindings so first apply on a new project does not fail
+  with a missing agent SA. Extra grants: Cloud Run service agent reads Relay config secret and AR; Cloud Build agent reads
+  AR; Pub/Sub push SAs
   `roles/run.invoker` (in addition to public invoker).
 - No Cloud NAT
 - No reserved Kafka static IP (would bill while idle)
@@ -94,7 +94,7 @@ names only via always-on apply, then next race.
 | Relay                    | Firestore; write Core YAML object; read `*/export/**` and issue time-limited download access; trigger Cloud Build; read and list Cloud Build (bind + replay); receive both Pub/Sub pushes | Terraform state; create VMs; Secret Manager payload                                                                                                                                            |
 | Controller (Cloud Build) | Race Terraform (Compute, DNS A in the existing zone, race public firewall); race Firestore fields on `apply` only, token-gated; read Core YAML object; `race/` state prefix               | Change VPC, Cloud Run, IAM identities, Secret Manager payload, `base/` state prefix; write phase on `close_ingest` / `destroy`; apply Terraform when `runToken` mismatches; force-unlock state |
 | Kafka VM                 | Read TLS secret                                                                                                                                                                           | GCS; Cloud Build; Firestore; Pub/Sub                                                                                                                                                           |
-| Core VM                  | Read `{raceId}/core-config.yaml`; write `{raceId}/export/**`; publish export-done; read artifacts bucket `core/current/`                                                                  | Firestore; Secret Manager; Terraform state; Cloud Build; write `core-config.yaml`; write artifacts                                                                                             |
+| Core VM                  | Read `{raceId}/core-config.yaml`; write `{raceId}/export/**`; publish export-done; read artifacts `core/current.json` and its release                                                     | Firestore; Secret Manager; Terraform state; Cloud Build; write `core-config.yaml`; write artifacts                                                                                             |
 
 Residual (GCP constraints, not project Editor):
 
@@ -112,9 +112,9 @@ Residual (GCP constraints, not project Editor):
 - State bucket: controller `objectAdmin` only under `race/`; `legacyBucketReader` on the bucket (Terraform init lists
   objects; GET of `base/` stays denied).
 - Always-on creates Google service agents with `google_project_service_identity` before binding them. Cloud Run service
-  agent: Secret Manager accessor on Relay config, Artifact Registry reader, `vpcaccess.user`. Cloud Build agent: `actAs`
-  controller SA, publish `cloud-builds`, Artifact Registry reader. Pub/Sub agent: `tokenCreator` on both push SAs. Relay
-  runtime SA: `vpcaccess.user`. Push SAs: `run.invoker` (public `allUsers` invoker stays for operators).
+  agent: Secret Manager accessor on Relay config and Artifact Registry reader. Cloud Build agent: `actAs` controller SA,
+  publish `cloud-builds`, Artifact Registry reader. Pub/Sub agent: `tokenCreator` on both push SAs. Push SAs: `run.invoker`
+  (public `allUsers` invoker stays for operators).
 
 ## Race stack
 
@@ -147,7 +147,7 @@ Resources (stable names from `names.json`):
   TLS private key. Not a separate `.sh` file in the controller image.
 
 Not in race state: VPC, DNS zone, SAs, IAM, cert bytes, YAML bytes, Relay, Pub/Sub, Cloud Build, image families, Cloud
-Run VPC access.
+Run Direct VPC Egress.
 
 Do not copy the TLS private key onto disk via Terraform. That would put the key in state. Kafka boot pulls Secret
 Manager.
@@ -263,5 +263,5 @@ always-on DNS zone; add/remove the public Kafka ingest firewall rule; attach alw
 Race Terraform may not: delete the zone, VPC, Relay, buckets, secrets, or identities; change project IAM; rebuild
 images; rename VMs per `raceId`; open the `base` state prefix; create Cloud NAT; reserve an idle static Kafka IP.
 
-Always-on rejects overlapping `subnet_cidr` / `vpc_connector_cidr` and a `zone` outside `region`. VPC connector CIDR
-must be `/28`.
+Always-on rejects a `zone` outside `region`. Direct VPC Egress uses `subnet_cidr`; Google requires at least a `/26`
+subnet and allocates ephemeral Cloud Run addresses from it. The current `/24` is shared with Kafka and Core.
