@@ -2,7 +2,8 @@ FROM python:3.11-slim
 
 ARG TF_VERSION=1.16.0
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl unzip ca-certificates \
@@ -20,6 +21,8 @@ COPY controller/controller ./controller
 COPY infra/contract/ /app/infra/contract/
 COPY infra/race/*.tf /app/infra/race/
 COPY infra/race/.terraform.lock.hcl /app/infra/race/
+
+RUN test -f /app/controller/__main__.py
 
 WORKDIR /app/infra/race
 RUN terraform init -input=false -backend=false

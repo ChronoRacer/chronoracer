@@ -13,12 +13,12 @@
   "batch_count": 500000,
   "change_driver": {
     "enabled": true,
-    "count": 2,
+    "count": 1,
     "initial_delay": 1.0,
     "topic": "control"
   },
   "shutdown": {
-    "enabled": true,
+    "enabled": false,
     "topic": "control"
   }
 }

@@ -20,3 +20,4 @@ infra/race/README.md
 infra/race/terraform.tfvars.example
 relay
 target
+**/.venv

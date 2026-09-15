@@ -149,8 +149,9 @@ Then mark `terraformRun.status` succeeded or failed, and:
 - **apply failure:** if phase is already `applied` with outputs: do not revert; mark `terraformRun` succeeded
   (controller committed). If phase is still `starting`: `failed`, `lastError`.
 - **close_ingest success:** phase `exporting` and `terraformRun.status` `succeeded` persisted first (mutex clear,
-  export-done gate open), then Relay publishes shutdown on the private control topic. Status replay while already
-  `exporting` republishes shutdown (idempotent key).
+  export-done gate open), then Relay publishes shutdown on the private control topic and closes the shutdown
+  producer. Status replay while already `exporting` republishes shutdown (idempotent key), then closes that producer
+  again. Heartbeat consumers are scoped to individual status reads and close when each read ends.
 - **close_ingest failure:** `lastError`; phase stays `stopping`. Operator retries stop once mutex is clear. Not
   force-destroy.
 - **destroy success:** phase `destroyed`; update races; clear `control/active`.

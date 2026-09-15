@@ -194,11 +194,14 @@ resource "google_storage_bucket_iam_member" "relay_export_read" {
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.relay.email}"
 
-  condition {
-    title       = "export-prefix"
-    expression  = "resource.name.startsWith(\"projects/_/buckets/${google_storage_bucket.race.name}/objects/export/\")"
-    description = "Read export objects only."
-  }
+  # condition { # TODO IAM is ..., need to flip the directory structure to have raceId nested instead on top
+  #   title       = "export-subtree"
+  #   description = "Read export objects only."
+  #   expression  = <<-EOT
+  #     resource.name.startsWith("projects/_/buckets/${google_storage_bucket.race.name}/objects/") &&
+  #     resource.name.contains("/export/")
+  #   EOT
+  # }
 }
 
 resource "google_storage_bucket_iam_member" "relay_race_list" {
@@ -243,11 +246,14 @@ resource "google_storage_bucket_iam_member" "core_export_write" {
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.core.email}"
 
-  condition {
-    title       = "export-prefix"
-    expression  = "resource.name.startsWith(\"projects/_/buckets/${google_storage_bucket.race.name}/objects/export/\")"
-    description = "Core writes export objects only."
-  }
+  # condition { # TODO IAM is ..., need to flip the directory structure to have raceId nested instead on top
+  #   title       = "export-subtree"
+  #   description = "Core writes export objects only."
+  #   expression  = <<-EOT
+  #     resource.name.startsWith("projects/_/buckets/${google_storage_bucket.race.name}/objects/") &&
+  #     resource.name.contains("/export/")
+  #   EOT
+  # }
 }
 
 resource "google_storage_bucket_iam_member" "core_race_list" {

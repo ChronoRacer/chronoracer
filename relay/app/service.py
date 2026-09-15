@@ -6,9 +6,9 @@ from typing import Any
 from uuid import uuid4
 
 from .gcp.builds import BuildTrigger
-from .kafka import ShutdownPublisher
 from .gcp.repository import RaceRepository
 from .gcp.storage import ObjectStore
+from .kafka import ShutdownPublisher
 from .models import BuildFinished, ExportDone, Phase, Race, TerraformAction, TerraformRun, \
     TerraformStatus
 
@@ -179,9 +179,7 @@ class RelayService:
         if not run.locked:
             if (event.action == TerraformAction.CLOSE_INGEST and event.success
                     and race.phase == Phase.EXPORTING):
-                if not self.shutdown:
-                    raise RuntimeError('shutdown publisher is not configured')
-                await self.shutdown.publish_shutdown(race.race_id)
+                await self._publish_shutdown(race.race_id)
             return
         run.status = TerraformStatus.SUCCEEDED if event.success else TerraformStatus.FAILED
         if event.action == TerraformAction.APPLY:
@@ -196,9 +194,7 @@ class RelayService:
         elif event.action == TerraformAction.CLOSE_INGEST and event.success:
             race.phase = Phase.EXPORTING
             await self.repository.save_race(race, {'phase', 'terraform_run', 'last_error'})
-            if not self.shutdown:
-                raise RuntimeError('shutdown publisher is not configured')
-            await self.shutdown.publish_shutdown(race.race_id)
+            await self._publish_shutdown(race.race_id)
             logger.info("Race {} transitioned to phase {}", race.race_id, race.phase.value)
             return
         elif event.action == TerraformAction.DESTROY and event.success:
@@ -304,3 +300,14 @@ class RelayService:
     async def _active_or_none(self):
         pointer = await self.repository.active()
         return await self.repository.race(pointer.race_id) if pointer.race_id else None
+
+    async def _publish_shutdown(self, race_id):
+        if not self.shutdown:
+            raise RuntimeError('shutdown publisher is not configured')
+        try:
+            await self.shutdown.publish_shutdown(race_id)
+        finally:
+            try:
+                await self.shutdown.close()
+            except Exception:
+                logger.warning("Failed to close Kafka shutdown publisher")

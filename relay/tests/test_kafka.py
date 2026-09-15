@@ -1,6 +1,5 @@
-from types import SimpleNamespace
-
 from app.kafka import KafkaHeartbeatReader, KafkaShutdownPublisher
+from types import SimpleNamespace
 
 
 def test_shutdown_publisher_does_not_connect_until_publish(monkeypatch):
@@ -15,6 +14,30 @@ def test_shutdown_publisher_does_not_connect_until_publish(monkeypatch):
 
     assert publisher.producer is None
     assert created == []
+
+
+def test_shutdown_publisher_closes_producer(monkeypatch):
+    closed = []
+
+    class FakeProducer:
+        def produce(self, **_kwargs):
+            pass
+
+        def flush(self, _timeout):
+            return 0
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr('app.kafka.Producer', lambda _config: FakeProducer())
+    publisher = KafkaShutdownPublisher('kafka.internal:9092', 'control')
+    publisher._publish_sync('race1')
+
+    import asyncio
+    asyncio.run(publisher.close())
+
+    assert closed == [True]
+    assert publisher.producer is None
 
 
 def test_heartbeat_reader_configures_a_consumer_group(monkeypatch):

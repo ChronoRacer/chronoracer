@@ -65,11 +65,12 @@ Structure:
 
 ```
 /core/current.json
-/core/releases/{release}/core
-/core/releases/{release}/avro/
-      |--- sensor_data.avsc
-/core/releases/{release}/influxdb-plugins
-      |--- export_database.py
+/core/releases/{release}
+      |--- core (binary)
+      |--- /avro/
+            |--- sensor_data.avsc
+      |--- /influxdb-plugins
+            |--- export_database.py
 ```
 
 The publish script uploads a complete release first, then replaces `core/current.json` as its final operation. Core reads

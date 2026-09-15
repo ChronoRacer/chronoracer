@@ -6,7 +6,6 @@ from loguru import logger
 from typing import Protocol
 from uuid import uuid4
 
-
 KAFKA_OPERATION_TIMEOUT_SECONDS = 5
 HEARTBEAT_READ_TIMEOUT_SECONDS = 20
 KAFKA_SOCKET_TIMEOUT_MS = KAFKA_OPERATION_TIMEOUT_SECONDS * 1000
@@ -14,6 +13,8 @@ KAFKA_SOCKET_TIMEOUT_MS = KAFKA_OPERATION_TIMEOUT_SECONDS * 1000
 
 class ShutdownPublisher(Protocol):
     async def publish_shutdown(self, race_id: str) -> None: ...
+
+    async def close(self) -> None: ...
 
 
 class HeartbeatReader(Protocol):
@@ -88,6 +89,8 @@ class DevShutdownPublisher:
 
     async def publish_shutdown(self, race_id: str): self.messages.append(race_id)
 
+    async def close(self): pass
+
 
 class KafkaShutdownPublisher(ShutdownPublisher):
 
@@ -120,6 +123,16 @@ class KafkaShutdownPublisher(ShutdownPublisher):
         async with self._publish_lock:
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, self._publish_sync, race_id)
+
+    async def close(self) -> None:
+        async with self._publish_lock:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._close_sync)
+
+    def _close_sync(self) -> None:
+        producer, self.producer = self.producer, None
+        if producer is not None:
+            producer.close()
 
     def _publish_sync(self, race_id: str) -> None:
         delivery_error = None

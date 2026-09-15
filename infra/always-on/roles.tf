@@ -15,6 +15,7 @@ resource "google_project_iam_custom_role" "controller_compute" {
     "compute.disks.useReadOnly",
     "compute.globalOperations.get",
     "compute.images.get",
+    "compute.images.getFromFamily",
     "compute.images.list",
     "compute.images.useReadOnly",
     "compute.instances.attachDisk",
@@ -69,6 +70,7 @@ resource "google_project_iam_custom_role" "controller_firewall" {
     "compute.firewalls.get",
     "compute.firewalls.list",
     "compute.firewalls.update",
+    "compute.networks.updatePolicy",
   ]
 }
 
