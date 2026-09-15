@@ -1,5 +1,5 @@
 {
-  "broker": "localhost:9092",
+  "broker": "ingest.chronoracer.live:9094",
   "oauth": {
     "enabled": true,
     "client_id": "QwcTbS7a6Tn70WZo58UIl57mDxaJZp0V",
@@ -10,7 +10,7 @@
   "sensor_topics": ["data"],
   "sensor_ids": ["sensor-1", "sensor-2", "sensor-3", "sensor-4", "sensor-5", "sensor-6", "sensor-7"],
   "testing_time": 120.0,
-  "batch_count": 0,
+  "batch_count": 500000,
   "change_driver": {
     "enabled": true,
     "count": 2,
