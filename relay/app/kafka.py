@@ -3,6 +3,7 @@ from confluent_kafka import Consumer, KafkaException, Producer, TopicPartition
 from datetime import datetime, timezone
 from loguru import logger
 from typing import Protocol
+from uuid import uuid4
 
 
 class ShutdownPublisher(Protocol):
@@ -24,11 +25,16 @@ class KafkaHeartbeatReader:
     def _read_last_sync(self) -> datetime | None:
         # DO NOT set auto commit or do any manual commits here. Group ID can be random
         consumer = Consumer({'bootstrap.servers': self.bootstrap,
+                             'group.id': f'relay-health-{uuid4()}',
                              'enable.auto.commit': False,
                              'auto.offset.reset': 'error'}
                             )
         try:
-            partitions = consumer.list_topics(self.topic, timeout=5).topics[self.topic].partitions
+            metadata = consumer.list_topics(self.topic, timeout=5)
+            topic_metadata = metadata.topics.get(self.topic)
+            if topic_metadata is None or getattr(topic_metadata, 'error', None) is not None:
+                return None
+            partitions = topic_metadata.partitions
             if not partitions: return None
             records = []
             for partition in partitions:
@@ -64,17 +70,21 @@ class KafkaShutdownPublisher(ShutdownPublisher):
         self.bootstrap = bootstrap
         self._publish_lock = asyncio.Lock()
         self._delivery_timeout_seconds = 7
+        self.producer = None
 
-        self.producer = Producer({
-            'bootstrap.servers': self.bootstrap,
-            'client.id': 'relay',
-            'acks': 'all',
-            'enable.idempotence': True,
-            'retries': 3,
-            'retry.backoff.ms': 250,
-            'delivery.timeout.ms': self._delivery_timeout_seconds * 1000,
-            'compression.type': 'snappy'
-        })
+    def _get_producer(self) -> Producer:
+        if self.producer is None:
+            self.producer = Producer({
+                'bootstrap.servers': self.bootstrap,
+                'client.id': 'relay',
+                'acks': 'all',
+                'enable.idempotence': True,
+                'retries': 3,
+                'retry.backoff.ms': 250,
+                'delivery.timeout.ms': self._delivery_timeout_seconds * 1000,
+                'compression.type': 'snappy'
+            })
+        return self.producer
 
     async def publish_shutdown(self, race_id: str) -> None:
         logger.info("Publishing shutdown event for race {}", race_id)
@@ -84,6 +94,7 @@ class KafkaShutdownPublisher(ShutdownPublisher):
 
     def _publish_sync(self, race_id: str) -> None:
         delivery_error = None
+        producer = self._get_producer()
 
         def _delivery_callback(error, _message):
             nonlocal delivery_error
@@ -91,13 +102,13 @@ class KafkaShutdownPublisher(ShutdownPublisher):
                 delivery_error = error
 
         try:
-            self.producer.produce(
+            producer.produce(
                 topic=self.topic,
                 key="SHUTDOWN",
                 value="",
                 on_delivery=_delivery_callback
             )
-            remaining = self.producer.flush(self._delivery_timeout_seconds)
+            remaining = producer.flush(self._delivery_timeout_seconds)
         except (BufferError, KafkaException) as exc:
             logger.error("Failed to publish shutdown for race '{}': {}", race_id, exc)
             raise
