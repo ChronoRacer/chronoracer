@@ -30,10 +30,11 @@ Let Influx generate the value so the format is guaranteed valid, then keep only 
 
 ```bash
 influxdb3 create token --admin --offline --output-file ./admin-token.json
-jq -r '.token' ./admin-token.json > ./influx-token.txt
+TOKEN_VALUE="$(jq -r '.token' ./admin-token.json)"
+printf '%s' "${TOKEN_VALUE}" > ./influx-token.txt
 ```
 
-Do not commit either file. Delete both after upload.
+Needlessly to say, do not commit either of the files. Ensure you are uploading a version **without new line** or Grafana will crash.
 
 ## Upload and verify
 
@@ -49,6 +50,12 @@ gcloud secrets versions list "${SECRET}" --project="${PROJECT_ID}"
 ```
 
 The latest version must be `ENABLED`. Disable older versions after the next race starts cleanly.
+
+Verify that the upload has no trailing line ending before relying on it for the Dashboard:
+
+```bash
+test "$(wc -c < ./influx-token.txt)" -eq "$(printf %s "${TOKEN_VALUE}" | wc -c)"
+```
 
 ```bash
 rm -f ./admin-token.json ./influx-token.txt

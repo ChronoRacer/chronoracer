@@ -69,7 +69,7 @@ Out of Okta:
 ```bash
 CLIENT_ID="QwcTbS7a6Tn70WZo58UIl57mDxaJZp0V"
 CLIENT_SECRET=""
-curl --request POST \
+OKTA_ACCESS_TOKEN="$(curl --request POST \
   --url https://chronoracer.eu.auth0.com/oauth/token \
   --header 'content-type: application/json' \
   --data "{
@@ -77,7 +77,7 @@ curl --request POST \
     \"client_secret\":\"$CLIENT_SECRET\",
     \"audience\":\"https://api.chronoracer.com\",
     \"grant_type\":\"client_credentials\"
-  }"
+  }" | jq -r '.access_token')"
 ```
 
 Dashboard mint (same API): https://manage.auth0.com/dashboard/eu/chronoracer/apis/6a8af66a9af427fbc46ef664/test

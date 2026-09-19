@@ -114,43 +114,51 @@ impl<'a> Monitor<'a> {
 
         let export_database_future = self.database_exporter.export_database();
         let (db_export, kafka_export) = tokio::join!(export_database_future, export_kafka);
-        let kafka_notification = if kafka_export.is_err() {
-            self.notify_shutdown_on_failed_kafka_export
-        } else {
-            true
-        };
-        match kafka_export {
-            Ok(()) => {
-                info!("Kafka export complete");
-            }
-            Err(e) => {
-                error!("Error exporting to Kafka: {e}");
-            }
-        }
 
-        let db_notification = if db_export.is_err() {
-            self.notify_shutdown_on_failed_db_export
-        } else {
-            false
-        };
-        match db_export {
+        let kafka_succeeded = kafka_export.map_or_else(
+            |e| {
+                error!("Error exporting to Kafka: {e}");
+                false
+            },
+            |()| {
+                info!("Kafka export complete");
+                true
+            },
+        );
+
+        let db_succeeded = match db_export {
             Ok(paths) => {
                 info!("Database export complete with {} files", paths.len());
-                if let Err(e) = Self::upload_to_gcs(self.gcs_storage_manager.as_ref(), paths).await
-                {
-                    error!("Failed to upload to GCS: {e}");
+                match Self::upload_to_gcs(self.gcs_storage_manager.as_ref(), paths).await {
+                    Ok(()) => true,
+                    Err(e) => {
+                        error!("Failed to upload to GCS: {e}");
+                        false
+                    }
                 }
             }
             Err(e) => {
-                error!("Error exporting database: {e} ; will not upload");
+                error!("Error exporting database: {e}; will not upload");
+                false
             }
-        }
+        };
+
+        let kafka_notification = export_notification_allowed(
+            kafka_succeeded,
+            self.notify_shutdown_on_failed_kafka_export,
+        );
+        let db_notification = export_notification_allowed(
+            db_succeeded,
+            self.notify_shutdown_on_failed_db_export,
+        );
 
         if kafka_notification && db_notification {
             info!("Sending shutdown notification...");
             if let Err(e) = Self::notify_shutdown_complete(self.gcp_pubsub_manager.as_ref()).await {
                 error!("Failed to send shutdown notification: {e}");
             }
+        } else {
+            error!("Shutdown notification not sent (Kafka: {kafka_notification}, DB: {db_notification})");
         }
 
         info!("Shutdown sequence complete");
@@ -160,6 +168,10 @@ impl<'a> Monitor<'a> {
         gcs_storage_manager: Option<&GcsStorageManager<'a>>,
         file_paths: Vec<PathBuf>,
     ) -> Result<()> {
+        if file_paths.is_empty() {
+            warn!("GCS upload skipped - no files to upload");
+            return Ok(());
+        }
         if let Some(gcs_storage_manager) = gcs_storage_manager {
             info!("Uploading database export to GCS");
             return gcs_storage_manager
@@ -182,6 +194,10 @@ impl<'a> Monitor<'a> {
     }
 }
 
+fn export_notification_allowed(export_succeeded: bool, notify_on_failure: bool) -> bool {
+    export_succeeded || notify_on_failure
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,9 +210,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn upload_to_gcs_succeeds_when_no_files() {
+        let result = Monitor::upload_to_gcs(None, vec!()).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
     async fn notify_shutdown_succeeds_when_pubsub_is_not_configured() {
         let result = Monitor::notify_shutdown_complete(None).await;
 
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn successful_exports_allow_export_done_notification() {
+        let kafka_notification = export_notification_allowed(true, false);
+        let db_notification = export_notification_allowed(true, false);
+
+        assert!(kafka_notification && db_notification);
     }
 }
