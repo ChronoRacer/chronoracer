@@ -58,6 +58,7 @@ resource "google_cloud_run_v2_service" "relay" {
   project  = var.project_id
   location = var.region
   ingress  = "INGRESS_TRAFFIC_ALL"
+  deletion_protection = false
 
   template {
     service_account = google_service_account.relay.email
@@ -79,7 +80,7 @@ resource "google_cloud_run_v2_service" "relay" {
 
       network_interfaces {
         network    = google_compute_network.chronoracer.id
-        subnetwork = google_compute_subnetwork.chronoracer.id
+        subnetwork = google_compute_subnetwork.relay_run.id
       }
     }
 

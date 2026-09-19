@@ -1,6 +1,9 @@
 {
   "kafka_private_port": 9092,
   "kafka_public_port": 9094,
+  "influx_http_port": 8181,
+  "influx_database": "chrono_db",
+  "dashboard_container_port": 3000,
   "kafka_data_topic": "data",
   "kafka_control_topic": "control",
   "kafka_heartbeat_topic": "heartbeat",
@@ -8,5 +11,6 @@
   "export_done_topic": "export-done",
   "kafka_oauth_jwks_url": "https://chronoracer.eu.auth0.com/.well-known/jwks.json",
   "kafka_oauth_issuer": "https://chronoracer.eu.auth0.com/",
-  "kafka_oauth_audience": "https://api.chronoracer.com"
+  "kafka_oauth_audience": "https://api.chronoracer.com",
+  "oauth_client_id": "QwcTbS7a6Tn70WZo58UIl57mDxaJZp0V"
 }

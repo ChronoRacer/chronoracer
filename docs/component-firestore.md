@@ -95,7 +95,9 @@ Reconcile — on operator status, and before mutex checks on start retry / stop 
    window: mark `terraformRun.status` `failed`, `lastError` (trigger never started). Then retry or force-destroy is
    allowed.
 
-Bind window: longer than Cloud Run request timeout. No always-on reconciler daemon.
+Bind window: `service.build_bind_window_seconds` (600 in
+[`relay-config.yaml.tftpl`](../infra/always-on/relay-config.yaml.tftpl)). Must be longer than the Cloud Run request
+timeout. No always-on reconciler daemon.
 
 Every Relay trigger: stamp `in_flight` + new `runToken` + `stampedAt` with empty `buildId` (new start: same transaction
 as pointer + race doc) → trigger with those substitutions → write `buildId`. Trigger failure: `status` `failed`,

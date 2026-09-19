@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Create Artifact Registry (always-on -target), then push Relay + controller.
-# Cloud Run apply needs the Relay image to exist. Do this after bootstrap, before
-# a full always-on apply.
+# Create Artifact Registry (always-on -target), then push Relay + controller + dashboard.
+# Cloud Run apply needs the Relay and dashboard images to exist. Do this after bootstrap,
+# before a full always-on apply.
 #
 #   ./infra/always-on/publish-control-plane-images.sh
 #   ./infra/always-on/publish-control-plane-images.sh --remote
@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 NAMES_JSON="${REPO_ROOT}/infra/contract/names.json"
 TFVARS="${SCRIPT_DIR}/terraform.tfvars"
-REGION="europe-west3"
+REGION="europe-west1"
 REMOTE=0
 IMAGES="all"
 NO_PUSH=0
@@ -26,14 +26,14 @@ need() {
 }
 
 usage() {
-  echo "usage: $0 [--remote] [all|relay|controller]" >&2
+  echo "usage: $0 [--remote] [all|relay|controller|dashboard]" >&2
   exit 1
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --remote) REMOTE=1; shift ;;
-    all|relay|controller) IMAGES="$1"; shift ;;
+    all|relay|controller|dashboard) IMAGES="$1"; shift ;;
     --nopush) NO_PUSH=1; shift ;;
     -h|--help) usage ;;
     *) usage ;;
@@ -52,10 +52,15 @@ need terraform
 AR_REPO="$(jq -er '.ar_repo' "${NAMES_JSON}")"
 RELAY_NAME="$(jq -er '.ar_relay_image' "${NAMES_JSON}")"
 CONTROLLER_NAME="$(jq -er '.ar_controller_image' "${NAMES_JSON}")"
+DASHBOARD_NAME="$(jq -er '.ar_dashboard_image' "${NAMES_JSON}")"
 
 PROJECT_ID="${PROJECT_ID:-}"
 if [[ -z "${PROJECT_ID}" && -f "${TFVARS}" ]]; then
   PROJECT_ID="$(sed -n 's/^[[:space:]]*project_id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "${TFVARS}" | head -1)"
+fi
+if [[ -f "${TFVARS}" ]]; then
+  TF_REGION="$(sed -n 's/^[[:space:]]*region[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "${TFVARS}" | head -1)"
+  [[ -n "${TF_REGION}" ]] && REGION="${TF_REGION}"
 fi
 if [[ -z "${PROJECT_ID}" ]]; then
   PROJECT_ID="$(gcloud config get-value project 2>/dev/null)"
@@ -68,6 +73,7 @@ fi
 TAG="${CONTROL_PLANE_IMAGE_TAG:-latest}"
 RELAY_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${RELAY_NAME}:${TAG}"
 CONTROLLER_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${CONTROLLER_NAME}:${TAG}"
+DASHBOARD_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${DASHBOARD_NAME}:${TAG}"
 
 ensure_registry() {
   [[ -f "${TFVARS}" ]] || {
@@ -117,11 +123,20 @@ push_docker() {
       docker push "${RELAY_URI}"
     fi
   fi
+  if [[ "${IMAGES}" == "all" || "${IMAGES}" == "dashboard" ]]; then
+    echo "Building ${DASHBOARD_URI}"
+    docker build --platform linux/amd64 -f "${REPO_ROOT}/dashboard/Dockerfile" -t "${DASHBOARD_URI}" "${REPO_ROOT}/dashboard"
+    if [[ "${NO_PUSH}" -eq 1 ]]; then
+      echo "Skipping push for $DASHBOARD_URI"
+    else
+      docker push "${DASHBOARD_URI}"
+    fi
+  fi
 }
 
 push_remote() {
   [[ "${IMAGES}" == "all" ]] || {
-    echo "--remote publishes both images; omit relay|controller" >&2
+    echo "--remote publishes every image; omit relay|controller|dashboard" >&2
     exit 1
   }
   if [[ "${NO_PUSH}" -eq 1 ]]; then
@@ -129,12 +144,12 @@ push_remote() {
     exit 1
   fi
   ensure_registry
-  echo "Submitting Cloud Build for ${RELAY_URI} and ${CONTROLLER_URI} in ${REGION}"
+  echo "Submitting Cloud Build for ${RELAY_URI}, ${CONTROLLER_URI} and ${DASHBOARD_URI} in ${REGION}"
   gcloud builds submit "${REPO_ROOT}" \
     --project="${PROJECT_ID}" \
     --region="${REGION}" \
     --config="${SCRIPT_DIR}/cloudbuild.control-plane.yaml" \
-    --substitutions="_TAG=${TAG},_REGION=${REGION},_REPO=${AR_REPO},_RELAY_IMAGE=${RELAY_NAME},_CONTROLLER_IMAGE=${CONTROLLER_NAME}"
+    --substitutions="_TAG=${TAG},_REGION=${REGION},_REPO=${AR_REPO},_RELAY_IMAGE=${RELAY_NAME},_CONTROLLER_IMAGE=${CONTROLLER_NAME},_DASHBOARD_IMAGE=${DASHBOARD_NAME}"
 }
 
 if [[ "${REMOTE}" -eq 1 ]]; then
@@ -147,4 +162,5 @@ echo
 echo "Images:"
 echo "  relay_image        = \"${RELAY_URI}\""
 echo "  controller_image   = \"${CONTROLLER_URI}\""
+echo "  dashboard_image    = \"${DASHBOARD_URI}\""
 echo "Put those exact strings in ${TFVARS}, then: terraform apply -var-file=terraform.tfvars"

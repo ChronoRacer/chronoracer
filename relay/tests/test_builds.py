@@ -4,7 +4,7 @@ from google.cloud.devtools import cloudbuild_v1
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-PARENT = "projects/proj/locations/europe-west3"
+PARENT = "projects/proj/locations/europe-west1"
 
 
 class _AsyncSeq:
@@ -32,7 +32,7 @@ def _client(monkeypatch, **methods):
 
 @pytest.mark.asyncio
 async def test_trigger_run_get_list_are_regional(monkeypatch):
-    trigger = CloudBuildTrigger("proj", "race-controller", "europe-west3")
+    trigger = CloudBuildTrigger("proj", "race-controller", "europe-west1")
     op = SimpleNamespace(metadata=SimpleNamespace(build=SimpleNamespace(id="build-9")))
     run = AsyncMock(return_value=op)
     get = AsyncMock(return_value=SimpleNamespace(

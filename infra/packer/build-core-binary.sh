@@ -3,7 +3,7 @@
 #
 # Optional environment variables:
 #   PKR_VAR_project_id  GCP project (otherwise the active gcloud project)
-#   CORE_BUILD_ZONE     builder zone (default: europe-west3-a)
+#   CORE_BUILD_ZONE     builder zone (default: europe-west1-b)
 #   CORE_BUILD_NETWORK  builder network (default: default)
 #
 # Usage: build-core-binary.sh release-id
@@ -18,7 +18,7 @@ RELEASE_ID="$1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 INSTANCE="chronoracer-core-build"
-ZONE="${CORE_BUILD_ZONE:-europe-west3-a}"
+ZONE="${CORE_BUILD_ZONE:-europe-west1-b}"
 NETWORK="${CORE_BUILD_NETWORK:-default}"
 PROJECT_ID="${PKR_VAR_project_id:-$(gcloud config get-value project 2>/dev/null || true)}"
 core_bundle="core_bundle.tar.gz"

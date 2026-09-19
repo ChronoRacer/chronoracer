@@ -4,7 +4,9 @@ Code at: [Core root](../core)
 
 Where: one paid VM. Core and InfluxDB 3 Core (self-managed, single node) share that VM.
 
-Shared VM pain points: Core and database share similar load spikes which means that VM usage can spike greatly.
+Shared VM pain points: Core and database share similar load spikes which means that VM usage can spike greatly and when
+it does, it's from both components at the same time. Dashboard queries land on that same VM and are unthrottled in
+MVP: [Dashboard](component-dashboard.md).
 
 Lifecycle: race-scoped. Created at the start. After export succeeds, VM and disk are destroyed.
 
@@ -25,25 +27,17 @@ broker, placeholder race values, and disabled GCP block support local developmen
 [`render-config.sh`](../core/startup/render-config.sh) overlays the metadata-derived broker and race ID, the project
 and race bucket, `export-done`, and `gcp.enabled: true`; the platform overlay wins over both defaults and operator YAML.
 
-The default pipeline contract includes:
-
-- `processing.message_batch_size`: 1,000 Kafka messages per batch.
-- `processing.message_batch_flush_interval_ms`: 15 ms maximum in-memory wait before a partial batch is sent.
-- `processing.message_channel_buffer_size`: 64 buffered items. The sensor sink queues up to 64 batches; the control sink
-  queues up to 64 individual records. Increasing it increases memory pressure.
-
-The sink flushes on whichever comes first: 1,000 messages, 15 ms, cancellation, or stream shutdown. The collector
-processes batches concurrently on the Rayon pool, with at most one in-flight batch per Rayon worker; processing within
-each batch is serial. This bounded design applies backpressure before work can accumulate in the Rayon queue and emits
-one batch of successfully processed sensor messages, preserving the input order within that batch. Invalid messages
-remain individual DLQ records because their original partition, offset, and parse error are stored in per-record
-headers. The splitter partitions each processed batch into at most one fast-flush and one normal batch. The persistence
+The sensor data message sink flushes on whichever comes first: a certain number of messages, time spent, or stream
+shutdown. The collector processes batches concurrently (processing within each batch is serial).
+Invalid messages remain individual DLQ records because their original partition, offset, and parse error are stored in
+per-record headers.
+The splitter partitions each processed batch into one fast-flush and one normal batch. The persistence
 batcher consumes those grouped messages and forms its database point batches using the fast/normal path and
 interval settings.
 
-The control path is intentionally separate: `InstantMessageSink` forwards each control record immediately on a
-single-message channel and uses `fetch.min.bytes=1`/`fetch.wait.max.ms=0`. Control events are not subject to the
-sensor-data batch size or timer because control events must be acted on as soon as they are available.
+The control path is intentionally separate: a different message sink forwards each control record immediately on a
+single-message channel and uses `fetch.min.bytes=1`/`fetch.wait.max.ms=0` Kafka settings. Control events are not subject
+to the sensor-data batch size or timer because control events must be acted on as soon as they are available.
 
 ## Startup
 
@@ -52,35 +46,35 @@ payload: [Compute images](component-images.md).
 
 ## Layers
 
-Core can be divided into 3 main layers.
+Core can be divided into 4 layers.
 
-#### Layer 1 - messaging layer
+#### Layer 1 - messaging
 
-Name: Messaging layer Purpose: consume and publish messages from Kafka Main components:
+Consume and publish Kafka messages.
 
 - Consumer for sensor data
 - Consumer for control events
 - DLQ producer
 - Heartbeat producer
 
-#### Layer 2 - processing layer
+#### Layer 2 - processing
 
-Name: Processing layer Purpose: Process the data from messages Main components:
+Deserialize, transform, and decide how to act.
 
 - receiving pipeline for incoming messages
 - process the message, deserialize and transform if needed
 - filter component for the control message that decides how to act on the message
 
-#### Layer 3 - persistence layer
+#### Layer 3 - persistence
 
-Name: Persistence layer Purpose: handle connection with the database, flush data Main components:
+Connect to the database and flush.
 
 - batcher collecting data into batches depending on time, batch size and sensor type
 - flusher writing data into the database
 
-#### Layer 4 - Shutdown layer
+#### Layer 4 - shutdown
 
-Name: Shutdown layer Purpose: Special layer used during shutdown sequence. Includes exporting data Main components:
+Export path used during shutdown.
 
 - Kafka exporter
 - database exporter
@@ -123,12 +117,9 @@ flowchart TB
 
 ### Core heartbeat
 
-```mermaid
-flowchart TB
-    subgraph kafka["Messaging layer"]
-        heartbeatProducer["Heartbeat producer"]
-    end
-```
+Messaging layer publishes on the private heartbeat topic, key `CORE`. Topic and key: [Kafka](component-kafka.md).
+Interval: `runtime.heartbeat_interval_s` in [`core/default-config.yaml`](../core/default-config.yaml). Ready/unhealthy
+use of that beat: [Race provisioning](flow-race_provisioning.md).
 
 ### Control event handling
 
@@ -188,7 +179,8 @@ Successful shutdown sequence means sending the export-done event to Google Pub/S
 and thus forcing either operator to invoke the force-destroy flow after optional manual intervention.
 
 If a tracked data-pipeline task terminates while Core is running, without the shutdown cancellation having started, Core
-logs the failure and exits with a failure status without starting the export flow. The service manager is responsible for
+logs the failure and exits with a failure status without starting the export flow. The service manager is responsible
+for
 restarting Core; no export-done event is sent for this failure path.
 
 Race stop sequence around this: [Race destruction](flow-race_destruction.md). Export

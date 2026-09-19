@@ -5,13 +5,13 @@ variable "project_id" {
 
 variable "region" {
   type    = string
-  default = "europe-west3"
+  default = "europe-west1"
 }
 
 variable "zone" {
   type        = string
   description = "Compute zone. Must match always-on (GCE internal DNS kafka.{zone}.c.{project}.internal)."
-  default     = "europe-west3-a"
+  default     = "europe-west1-b"
 }
 
 variable "race_id" {

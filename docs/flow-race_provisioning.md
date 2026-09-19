@@ -69,12 +69,18 @@ Heartbeat means: Core process is up, private Kafka is reachable, Influx is reach
 public listener. Kafka boot already refused to start without public TLS bind. If the heartbeat record can be read,
 private Kafka accepted a connection.
 
-- Phase `applied` and latest heartbeat fresh (interval plus a small margin) → ready.
+- Phase `applied` and latest heartbeat age ≤ `service.heartbeat_freshness_seconds` (50 in
+  [`relay-config.yaml.tftpl`](../infra/always-on/relay-config.yaml.tftpl); Core publishes every
+  `runtime.heartbeat_interval_s` = 30s) → ready.
 - Phase `applied`, no heartbeat record yet → not ready, not unhealthy.
 - Phase `applied`, heartbeat went stale, or Kafka read fails → unhealthy. Phase stays `applied`. `lastError` on read
   fail. Still return phase, `startedAt`. No auto-destroy.
 
 Provisioning (`starting`) cannot use Kafka. That phase is Firestore plus Cloud Build (push, or status bind/replay).
+
+The [Dashboard](component-dashboard.md) is not part of readiness. It never publishes or reads a heartbeat, and an
+unreachable dashboard says nothing about race health. It only becomes useful once Influx has data, which is after
+ready.
 
 Relay scale-to-zero: heartbeat is read on status only. Unsolicited wakes: Cloud Build finished, and export-done. Missed
 Cloud Build push is recovered on status. Export-done is not.

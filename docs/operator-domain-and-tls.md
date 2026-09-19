@@ -2,33 +2,38 @@
 
 ## Domain
 
-We have a domain register with Porkbun. Domain name is: `chronoracer.live`. Domain is paid for until `05.09.2027`.
+We have a domain registered with Porkbun. Domain name is: `chronoracer.live`. Domain is paid for until `05.09.2027`.
 
-The NS servers are set to Google managed Cloud DNS zone instead of default Porkbun NS.
+NS servers point at the Google Cloud DNS managed zone, not Porkbun defaults.
 
-DNS zone is **paid monthly**, but we need it to have TLS on VMs.
+DNS zone is **paid monthly**. Needed so the Kafka VM can present a public TLS name, and so Relay and the Dashboard can
+use Cloud Run domain mappings on the same zone ([Terraform](component-terraform.md)).
 
-Sample `dig` output:
-```terminaloutput
-; <<>> DiG 9.20.24-1ubuntu0.3-Ubuntu <<>> chronoracer.live
-;; global options: +cmd
-;; Got answer:
-;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 15860
-;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1
+## Cloud Run hostnames
 
-;; OPT PSEUDOSECTION:
-; EDNS: version: 0, flags:; udp: 1232
-;; QUESTION SECTION:
-;chronoracer.live.              IN      A
+Always-on Terraform maps:
 
-;; AUTHORITY SECTION:
-chronoracer.live.       300     IN      SOA     ns-cloud-e1.googledomains.com. cloud-dns-hostmaster.google.com. 1 21600 3600 259200 300
+| Host                         | Service   |
+|------------------------------|-----------|
+| `relay.chronoracer.live`     | Relay     |
+| `dashboard.chronoracer.live` | Dashboard |
 
-;; Query time: 1395 msec
-;; SERVER: 10.255.255.254#53(10.255.255.254) (UDP)
-;; WHEN: Sun Sep 06 18:02:06 CEST 2026
-;; MSG SIZE  rcvd: 141
+Plus `CNAME` records to `ghs.googlehosted.com.`.
+
+Google requires the domain to be **verified on this GCP project** before the mapping resource applies, but after NS are
+delegated from Porkbun to Cloud DNS. One Search Console flow (includes adding a TXT record in Cloud DNS zone).
+
+The CNAME propagation will take a rather long time (might even be hours). Check with this:
+
+```bash
+curl -I https://relay.chronoracer.live/health
 ```
+
+| Propagation stage | Output                                                                                    |
+|-------------------|-------------------------------------------------------------------------------------------|
+| 1                 | `curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading` |
+| 2                 | `HTTP/1.1 302 Found`                                                                      |
+| 3                 | `200 OK`                                                                                  |
 
 ## Kafka TLS certificate
 

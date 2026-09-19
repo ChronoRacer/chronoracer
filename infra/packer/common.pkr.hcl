@@ -19,7 +19,7 @@ variable "project_id" {
 
 variable "zone" {
   type        = string
-  default     = "europe-west3-a"
+  default     = "europe-west1-b"
   description = "Builder zone. The custom image is stored in this zone's region."
 }
 

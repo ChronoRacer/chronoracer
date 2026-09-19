@@ -27,6 +27,22 @@ def test_platform_persistence_token_wins():
     assert merged["persistence"]["db_name"] == "chrono_db"
 
 
+def test_platform_influx_endpoint_wins():
+    defaults = {
+        "persistence": {
+            "db_port": 9999,
+            "db_name": "dev_db",
+            "fast_flush_interval_ms": 2000,
+        }
+    }
+    operator = {"persistence": {"db_name": "operator_db"}}
+    platform = {"persistence": {"db_port": 8181, "db_name": "chrono_db"}}
+    merged = deep_merge(deep_merge(defaults, operator), platform)
+    assert merged["persistence"]["db_port"] == 8181
+    assert merged["persistence"]["db_name"] == "chrono_db"
+    assert merged["persistence"]["fast_flush_interval_ms"] == 2000
+
+
 def test_merge_files(tmp_path: Path):
     defaults = tmp_path / "d.yaml"
     operator = tmp_path / "o.yaml"

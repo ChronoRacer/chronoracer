@@ -3,7 +3,7 @@
 Packer templates live in [`infra/packer`](../infra/packer). Race Terraform does not build images. Family names: [
 `names.json`](../infra/contract/names.json). Pin for race lifetime: [Terraform](component-terraform.md).
 
-Relay Cloud Run and the controller Cloud Build image are **not** Packer. Push those first so always-on can
+Relay, Dashboard, and the controller Cloud Build image are **not** Packer. Push those first so always-on can
 apply: [Control-plane images](operator-control-plane-images.md).
 
 For target VMs used, see [ADR - VM types](adr-vm-types.md).
@@ -77,7 +77,8 @@ the GCE metadata server. They do not call the Compute API. Core and Kafka servic
 `gce-metadata.sh`, plus `names.json` and `platform.json`. No Core dirs (`influxdb-plugins`, `redpanda`). Broker bits at
 `/opt/kafka`. `need()`: `gcloud`, `openssl`, `jq`, `python3`, `curl`, plus `java`.
 
-**Core** `/chronoracer/`: overlay from [`core/startup`](../core/startup) including `fetch-payload.sh`, systemd units,
+**Core** `/chronoracer/`: overlay from [`core/startup`](../core/startup) including `fetch-influx-token.sh`,
+`fetch-payload.sh`, systemd units,
 `gce-metadata.sh`, `default-config.yaml`, `redpanda/*.yaml`, contract JSON, empty `influxdb-plugins/`, and the
 build-time `/chronoracer/influxdb-plugin-venv`
 (see [InfluxDB plugin environment](component-influxdb.md#plugin-python-environment)). Packer installs Debian

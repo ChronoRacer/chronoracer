@@ -1,10 +1,15 @@
 # Always-on stack
 
-Human/CI apply. What this stack creates, IAM, and residuals: [Terraform](../../docs/component-terraform.md).
+Operator apply. What this stack creates, IAM, and residuals: [Terraform](../../docs/component-terraform.md).
 
-Requires `gs://chronoracer-state` from [../bootstrap](../bootstrap). Relay and controller images before a full
-apply: [Control-plane images](../../docs/operator-control-plane-images.md). VM
-families: [Compute images](../../docs/component-images.md). TLS upload: [Kafka TLS](../../docs/operator-domain-and-tls.md).
+Requires `gs://chronoracer-state` from [../bootstrap](../bootstrap). Relay, controller, and dashboard images before a
+full apply: [Control-plane images](../../docs/operator-control-plane-images.md). VM
+families: [Compute images](../../docs/component-images.md). Secret payloads:
+[Kafka TLS](../../docs/operator-domain-and-tls.md), [Influx token](../../docs/operator-influx-token.md),
+[Dashboard OAuth](../../docs/operator-dashboard-oauth.md).
+
+Cloud Run mounts the Influx token and Dashboard OAuth secrets at `latest`. A revision does not start with zero
+versions. Create the secret resources, upload payloads, then full apply:
 
 ```bash
 # After bootstrap + terraform.tfvars (project_id, DNS, image URIs).
@@ -12,7 +17,11 @@ families: [Compute images](../../docs/component-images.md). TLS upload: [Kafka T
 terraform init
 terraform fmt
 terraform validate
-terraform plan -var-file=terraform.tfvars
+terraform apply -var-file=terraform.tfvars \
+  -target=google_secret_manager_secret.influx_token \
+  -target=google_secret_manager_secret.dashboard_oauth
+# Upload versions (runbooks above), then:
+terraform apply -var-file=terraform.tfvars
 ```
 
 `kafka_fqdn` and `dns_zone_dns_name` are required (trailing dots). No fake default domain.

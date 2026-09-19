@@ -23,7 +23,7 @@ Responsibility:
 
 ## Listeners
 
-KRaft combined broker+controller, single node. Ports and OAuth URLs: [`platform.json`](../infra/contract/platform.json). 
+KRaft combined broker+controller, single node. Ports and OAuth URLs: [`platform.json`](../infra/contract/platform.json).
 Apache Kafka at `/opt/kafka` on family `chronoracer-kafka`.
 
 | Name       | Bind             | Advertised                                 | Protocol                                                                                                                                                                                       |
@@ -41,34 +41,36 @@ When ready, Relay returns hostname, port, and the applied public IP. Track clien
 on the hostname so DNS lag is not the critical path. Do not use that address unless status says ready
 ([Race provisioning](flow-race_provisioning.md)).
 
-Topics are created by Core on the private listener, not at Kafka boot.
-
 ## Topics
 
-All message keys are expected to be uppercase. Compact keys prefered.
+Core creates topics on the private listener at runtime, not at Kafka boot.
 
-### Sensors
+| Topic       | Name owner                                                                                         | Partitions | Replication |
+|-------------|----------------------------------------------------------------------------------------------------|------------|-------------|
+| `data`      | [`platform.json`](../infra/contract/platform.json) `kafka_data_topic`                              | 4          | 1           |
+| `control`   | [`platform.json`](../infra/contract/platform.json) `kafka_control_topic`                           | 1          | 1           |
+| `heartbeat` | [`platform.json`](../infra/contract/platform.json) `kafka_heartbeat_topic`                         | 1          | 1           |
+| `dlq`       | [`core/default-config.yaml`](../core/default-config.yaml) (not in `platform.json`)                 | 3          | 1           |
 
-One topic for all sensors with multiple partitions.
+Partition counts live with Core config because Core is the topic creator. This also means that sending to Kafka is effectively blocked until Core has created the topics.
 
-- Topic name: `data`
-- Partition count: `4`
-- Message key: `{sensorId}` (reference `ID` column in `sensors.xlsx` document)
-- Delivery semantics: `exactly-once`
-- Compression: `yes`, type: `lz4` (**compression enforced by producer, not topic**)
-- Avro enabled: `yes`
+Shared rules:
 
-#### Avro Message schema:
+- Keys are uppercase. Compact keys preferred.
+- Compression is a producer setting, not a topic setting. Core and Relay produce `snappy`. Device producers may use
+  `lz4` (when using a different compression type than `snappy` or `lz4` ensure Core binary supports the codec).
+- Delivery is at-least-once. No Kafka transactions.
 
-To reduce bloat, sensor data can be batched as long as the following perquisite is met:
+### `data`
 
-Perquisite: immediate warnings are evaluated on the Car Computer. This means that slight delays in transmission only
-mean that dashboard data is updated a bit slower. Analysis also demands data from an extended period of time so batching
-at message is acceptable. Of course, the batch size can be reduced depending on the read frequency.
+- Key: `{sensorId}` (`ID` column in `sensors.xlsx`)
+- Avro: yes. Canonical schema: [`core/avro/sensor_data.avsc`](../core/avro/sensor_data.avsc)
 
-Core handles batching internally, for more details see [core batching](component-core.md#data-pipeline-batch-contract)
+Car computer evaluates immediate warnings, so a short send delay only slows the dashboard. Analysis wants a window, so
+the producer may batch readings in one message. Each `delta` is nanoseconds from `timestamp` and must be at most 2
+seconds (`2000000000`). Core also batches internally: [Core](component-core.md#data-pipeline-batch-contract).
 
-Message schema:
+`sensor_id` is in the body as well as the key so a dump without the Kafka key still identifies the sensor.
 
 ```avro
 {
@@ -87,7 +89,7 @@ Message schema:
       "type": {
         "type": "long",
         "logicalType": "timestamp-nanos"
-      }
+      },
       "doc": "Timestamp of the first read in the batch"
     },
     {
@@ -100,7 +102,7 @@ Message schema:
           "fields": [
             {
               "name": "delta",
-              "type":  "int",
+              "type": "int",
               "doc": "Nanosecond offset from the first_read_timestamp. Must be at most 2 seconds (2000000000 ns)."
             },
             {
@@ -118,75 +120,26 @@ Message schema:
 }
 ```
 
-*Including `sensor_id` in message*: It is not required. The `sensor_id` can be derived from the message key in the
-topic. However, if the message is dumped or processed in any other way, unlikely but still, without the message key, it
-is an orphaned data and it is impossible to determine where it came from if it is a senor like front left brake
-temperature. So including it is not without merit. If we have real problems with throughput during parsing (`TODO`
-verify flame graphs during benchmarks) then we can remove it.
+### `control`
 
-*Reading record arrays*: There are three methods of storing the data (most info taken from the
-docs https://avro.apache.org/docs/1.11.1/specification/):
+- Key: `{eventName}`
+- Avro: no. Payload shape depends on the key.
 
-1. Store as an array of records with fields `value` and `delta`. Seems the most logical and clean honestly.
-2. Store as two parallel arrays of same length. First array is values, second deltas. This is actually worse for short
-   arrays (like 2 values for example). Avro sets array markers which are of 4 bytes.
-3. Store as one array. Even indices are `value`, odd `delta`. Each reading is `i` and `i+1`. This option is bad. We are
-   losing bytes because of the type differences. Avro int is 4 bytes, custom type `i16type` is 2 bytes, but using it
-   does not matter really as Avro will encode it with ZigZag to smaller size if it is smaller. Double is 8 bytes. If we
-   store it in one array, we are losing at the very least half of the space and need to deal with the indices.
+| Key        | Body                                      | Effect                                                                                          |
+|------------|-------------------------------------------|-------------------------------------------------------------------------------------------------|
+| `CHDRV`    | UTF-8 driver ID, no Avro                  | Driver ID changes from acknowledgement. Small swap discrepancy is accepted.                     |
+| `SHUTDOWN` | empty                                     | Core drains Kafka and starts export. Relay publishes this after `close_ingest` succeeds.        |
 
-### Control data
+Unknown keys are ignored. Parse failures (missing key, missing `CHDRV` body, non-UTF-8) go to `dlq`.
 
-One topic for control data.
+### `dlq`
 
-- Topic name: `control`
-- Partition count: `1` (low traffic)
-- Message key: `{eventName}`
-- Delivery semantics: `exactly-once`
-- Message order: `ensured as 1 partition`
-- Compression: `yes`, type: `lz4`  (**compression enforced by producer, not topic**)
-- Avro enabled: `no` - too violative schema depending on message key
+- Key: original message key, or Core `dlq_unknown_key` (`unknown`) if the original key is missing
+- Body: original message body
+- Headers written by Core: `o_partition`, `o_offset`, `o_error`
 
-##### Driver change Control message
+### `heartbeat`
 
-Message sent when the driver changes during the race. Driver ID changed from the moment of message acknowledgement.
-Slight dicrepancy during swap is accepted.
-
-- Message key: `CHDRV`
-- Message schema: none, just new driver ID in the body. Core trusts as long as valid UFT-8 string.
-
-##### Shutdown Control message
-
-Message sent when the shutdown process starts. Upon receiving, Core should drain Kafka and start the export process.
-
-- Message key: `SHUTDOWN`
-- Message schema: none
-
-### DLQ
-
-One topic for invalid messages.
-
-- Topic name: `dlq`
-- Partition count: `3`
-- Message key: original message key
-- Delivery semantics: `does not matter`
-- Message order: `does not matter`
-- Headers: original message partition and offset
-- Compression: `yes`, type: `snappy`  (**compression enforced by producer, not topic**)
-- Avro enabled: `no` - original messages either compressed bytes already or not worth the compression.
-
-Message body is the body of the original message.
-
-### Heartbeat
-
-One topic for all heartbeat messages.
-
-- Topic name: `heartbeat`
-- Partition count: `1` (low traffic)
-- Message keys: `CORE` - for Core heartbeat
-- Delivery semantics: `does not matter`
-- Message order: ensured as 1 partition
-- Compression: `yes`, type: `snappy`  (**compression enforced by producer, not topic**)
-- Avro enabled: `no`
-
-Message body may contain additional status information.
+- Key: `CORE` for the Core heartbeat
+- Body: optional status
+- Relay reads the last retained record on status. Detection: [Race provisioning](flow-race_provisioning.md).

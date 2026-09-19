@@ -30,6 +30,14 @@ resource "google_service_account" "core" {
   depends_on = [google_project_service.apis]
 }
 
+resource "google_service_account" "dashboard" {
+  project      = var.project_id
+  account_id   = local.names.dashboard_sa
+  display_name = "Chronoracer Dashboard"
+
+  depends_on = [google_project_service.apis]
+}
+
 resource "google_service_account" "build_finished_push" {
   project      = var.project_id
   account_id   = local.names.build_push_sa

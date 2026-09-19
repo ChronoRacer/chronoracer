@@ -8,7 +8,7 @@ def test_load_config_rejects_unknown_action():
         "RUN_TOKEN": "t",
         "PROJECT_ID": "p",
         "KAFKA_FQDN": "ingest.chronoracer.live.",
-        "ZONE": "europe-west3-a",
+        "ZONE": "europe-west1-b",
     }
     assert load_config(env) is None
 
@@ -20,7 +20,7 @@ def test_load_config_ok():
         "RUN_TOKEN": "t",
         "PROJECT_ID": "p",
         "KAFKA_FQDN": "ingest.chronoracer.live.",
-        "ZONE": "europe-west3-a",
+        "ZONE": "europe-west1-b",
     }
     cfg = load_config(env)
     assert cfg is not None
