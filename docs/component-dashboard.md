@@ -12,7 +12,7 @@ Where: Cloud Run, public HTTPS on `dashboard.{dns zone}` (today `https://dashboa
 
 Lifecycle: always deployed, like Relay. Survives races. Scale-to-zero when idle, `max_instance_count = 1`.
 
-Access: public URL, Auth0 login required.
+Access: public URL, Auth0 by Okta OIDC login required.
 
 Responsibility:
 
@@ -39,7 +39,7 @@ storage and is lost on every cold start. Accepted. Consequences:
 
 ## Auth
 
-Auth0 authorization-code login on the existing `chronoracer-relay` application, operator users from an Auth0 database
+Auth0 by Okta authorization-code login on the existing `chronoracer-relay` application, operator users from an Auth0 database
 connection. Grants, callback URL, users, role mapping: [Okta](component-okta.md). Auth0-side setup and client secret
 upload: [Dashboard OAuth runbook](operator-dashboard-oauth.md).
 
@@ -98,18 +98,18 @@ Provisioned as code. One table per sensor, created lazily, so panels cannot hard
 is a query over `information_schema.tables`. Table and column
 meaning: [InfluxDB](component-influxdb.md).
 
-| Dashboard     | Answers                               | Panels                                                          |
-|---------------|---------------------------------------|-----------------------------------------------------------------|
-| Ingest health | "is data arriving right now?"         | write rate, age of newest point per sensor, active sensor count |
-| Sensor detail | "what is this sensor/driver reading?" | sensor and driver picker, value over time                       |
+| Dashboard     | Answers                       | Panels                                                          |
+|---------------|-------------------------------|-----------------------------------------------------------------|
+| Ingest health | "is data arriving right now?" | write rate, age of newest point per sensor, active sensor count |
 
 Ingest health replaces the current practice of trusting the Relay healthcheck or reading Core logs in Cloud Logging.
 
-Both dashboards carry a text panel stating that query errors mean no active race, so an expected empty window is not
-mistaken for a broken dashboard.
+The ingest dashboard carries a text panel stating that query errors mean no active race, so an expected empty window is
+not mistaken for a broken dashboard. A sensor value dashboard is out of scope for this iteration.
 
-Additional dashboard maybe added, however at least one should exist for some sensors and one for the ingest pipeline
-monitoring.
+The dashboard is implemented in [`dashboard/`](../dashboard): Grafana settings, InfluxDB datasource provisioning, and
+the provisioned dashboard JSON are built into the image. The sensor cards repeat from the `information_schema.tables`
+query because Core creates one table per sensor lazily.
 
 ## Between races
 
@@ -151,8 +151,3 @@ by [Terraform](component-terraform.md), and secret payloads by their runbooks
 `GF_SERVER_ROOT_URL` is `https://dashboard.{dns zone}`, not the generated `run.app` URL. A `check` block in the
 always-on stack asserts the domain mapping hostname matches that local. Auth0 callback registration:
 [Dashboard OAuth runbook](operator-dashboard-oauth.md).
-
-The image must still supply: Grafana settings (login form disabled, every user auto-assigned Viewer, generic OAuth
-enabled), the Influx datasource provisioning file, and at least the two dashboards.
-
-[!IMPORTANT] Grafana itself is not yet implemented in the code.

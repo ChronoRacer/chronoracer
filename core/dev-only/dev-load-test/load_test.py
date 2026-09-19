@@ -26,7 +26,7 @@ def build_producer_config():
 
     oauth = CONFIG.get("oauth")
     if oauth and oauth.get("enabled", False):
-        required_fields = ("client_id", "client_secret_env_var", "token_endpoint_url", "extension_audience")
+        required_fields = ("client_id", "client_secret_env_var", "token_endpoint_url", "extension_audience", "broker")
         missing_fields = [field for field in required_fields if not oauth.get(field)]
         if missing_fields:
             raise ValueError(
@@ -40,6 +40,7 @@ def build_producer_config():
             )
 
         producer_config.update({
+            "bootstrap.servers": oauth["broker"],
             "security.protocol": "SASL_SSL",
             "sasl.mechanism": "OAUTHBEARER",
             "sasl.oauthbearer.method": "oidc",

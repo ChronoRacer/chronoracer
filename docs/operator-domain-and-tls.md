@@ -18,18 +18,22 @@ Always-on Terraform maps:
 | `relay.chronoracer.live`     | Relay     |
 | `dashboard.chronoracer.live` | Dashboard |
 
-Plus `CNAME` records to `ghs.googlehosted.com.`. Kafka ingest stays `ingest.chronoracer.live` (race stack A record).
+Plus `CNAME` records to `ghs.googlehosted.com.`.
 
-Google requires the domain to be **verified on this GCP project** before the mapping resource applies. One-time:
+Google requires the domain to be **verified on this GCP project** before the mapping resource applies, but after NS are
+delegated from Porkbun to Cloud DNS. One Search Console flow (includes adding a TXT record in Cloud DNS zone).
+
+The CNAME propagation will take a rather long time (might even be hours). Check with this:
 
 ```bash
-gcloud domains verify chronoracer.live
+curl -I https://relay.chronoracer.live/health
 ```
 
-Complete the Search Console / Webmaster flow it prints (TXT on the zone you already own). Mapping apply fails with a
-domain-ownership error until that is done. Do not create the mappings in the Cloud Console; Terraform owns them.
-
-The mapped hostnames are operator-facing. Pub/Sub push to Relay still uses the generated `run.app` URL.
+| Propagation stage | Output                                                                                    |
+|-------------------|-------------------------------------------------------------------------------------------|
+| 1                 | `curl: (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading` |
+| 2                 | `HTTP/1.1 302 Found`                                                                      |
+| 3                 | `200 OK`                                                                                  |
 
 ## Kafka TLS certificate
 
