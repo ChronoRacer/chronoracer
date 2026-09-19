@@ -40,22 +40,38 @@ Kafka A record, or the public Kafka firewall.
 
 Resources:
 
-- VPC, `/24` subnet with Private Google Access, baseline firewall (IAP SSH only, no public `22` to the internet; no
-  public Core; private Kafka from the VPC and Direct VPC Egress to tag `kafka` — ports: [
+- VPC and three subnets, all with Private Google Access: the `/24` VM subnet, a Relay Cloud Run subnet, and a
+  Dashboard Cloud Run subnet (each Cloud Run subnet at least `/26`, the Google minimum for Direct VPC Egress)
+- Baseline firewall (IAP SSH only, no public `22` to the internet; no public Core; private Kafka from the VM subnet and
+  the Relay subnet to tag `kafka`; Influx HTTP from the Dashboard subnet only to tag `core` — ports: [
   `platform.json`](../infra/contract/platform.json))
-- Cloud DNS managed zone and stable Kafka FQDN (zone exists with no A record between races)
-- Secret Manager secret resource for the long-lived public TLS cert (value uploaded by operator/CI, not per race).
-  Procedure: [Kafka TLS runbook](operator-domain-and-tls.md)
+- Cloud DNS managed zone and stable Kafka FQDN (zone exists with no A record between races). Always-on also creates
+  Cloud Run domain mappings and `CNAME` records to `ghs.googlehosted.com.` for `relay.{dns zone}` and
+  `dashboard.{dns zone}` (today `relay.chronoracer.live` / `dashboard.chronoracer.live`). Why this region can do that:
+  [ADR - Region](adr-region.md). Domain verification is a one-time operator step:
+  [Domain and TLS](operator-domain-and-tls.md)
+- Secret Manager secret resources for the long-lived public TLS cert ([Kafka TLS runbook](operator-domain-and-tls.md)),
+  the shared Influx admin token ([Influx token runbook](operator-influx-token.md)), and the Dashboard Auth0 client
+  secret ([Dashboard OAuth runbook](operator-dashboard-oauth.md)). Values uploaded by operator/CI, not per race. Cloud
+  Run
+  revisions that reference those secrets need an enabled `latest` version at create; sequence:
+  [always-on README](../infra/always-on/README.md)
 - Race GCS bucket, artifacts GCS bucket, layout: [GCS](component-gcs_buckets.md)
 - Firestore database
-- Cloud Run Relay (public HTTPS, no Google invoker for operators, `max_instance_count = 1`) with Direct VPC Egress to
-  the shared subnet
+- Cloud Run Relay (public HTTPS on the mapped hostname, no Google invoker for operators, `max_instance_count = 1`) with
+  Direct VPC Egress to the Relay subnet. Pub/Sub push still targets the generated `run.app` URI, not the mapped
+  hostname.
+- Cloud Run Dashboard (public HTTPS on the mapped hostname, `max_instance_count = 1`, scale-to-zero) with
+  Direct VPC Egress to the Dashboard subnet. Terraform injects the datasource address, database, Influx token, Auth0
+  URLs, client id, client secret, and `GF_SERVER_ROOT_URL` (the mapped hostname, not `run.app`), so the image only
+  carries Grafana configuration. Env
+  contract: [Dashboard](component-dashboard.md). A `check` block asserts that hostname still matches the domain mapping.
 - Pub/Sub: Cloud Build notifications topic + push to Relay build-finished (OIDC); export-done topic + push to Relay
   export-done (OIDC)
 - One Cloud Build trigger in `var.region` that runs the controller image. Trigger location, timeout,
   substitutions: [Controller](component-controller.md). Native build notifications use topic `cloud-builds` (Pub/Sub
   topics are global; push to Relay). Export-done uses topic `export-done`.
-- Artifact Registry for the **controller and Relay** images (not Kafka/Core VM families). First
+- Artifact Registry for the **controller, Relay, and Dashboard** images (not Kafka/Core VM families). First
   tags: [Control-plane images](operator-control-plane-images.md)
 - Service accounts and IAM (below)
 - Project `_Default` log sink exclusions ([`logging.tf`](../infra/always-on/logging.tf)): drop unread infra noise
@@ -63,7 +79,8 @@ Resources:
   `google_metadata_script_runner`, and serial console so race VM boot script stdout stays in Cloud Logging.
 - Google-managed service agents via `google_project_service_identity` (google-beta): Cloud Build, Pub/Sub, Cloud Run,
   Compute, Artifact Registry, Secret Manager. Created before IAM bindings so first apply on a new project does not fail
-  with a missing agent SA. Extra grants: Cloud Run service agent reads Relay config secret and AR; Cloud Build agent reads
+  with a missing agent SA. Extra grants: Cloud Run service agent reads Relay config, Dashboard secrets, and AR; Cloud
+  Build agent reads
   AR; Pub/Sub push SAs
   `roles/run.invoker` (in addition to public invoker).
 - No Cloud NAT
@@ -94,12 +111,19 @@ names only via always-on apply, then next race.
 | Relay                    | Firestore; write Core YAML object; read `*/export/**` and issue time-limited download access; trigger Cloud Build; read and list Cloud Build (bind + replay); receive both Pub/Sub pushes | Terraform state; create VMs; Secret Manager payload                                                                                                                                            |
 | Controller (Cloud Build) | Race Terraform (Compute, DNS A in the existing zone, race public firewall); race Firestore fields on `apply` only, token-gated; read Core YAML object; `race/` state prefix               | Change VPC, Cloud Run, IAM identities, Secret Manager payload, `base/` state prefix; write phase on `close_ingest` / `destroy`; apply Terraform when `runToken` mismatches; force-unlock state |
 | Kafka VM                 | Read TLS secret                                                                                                                                                                           | GCS; Cloud Build; Firestore; Pub/Sub                                                                                                                                                           |
-| Core VM                  | Read `{raceId}/core-config.yaml`; write `{raceId}/export/**`; publish export-done; read artifacts `core/current.json` and its release                                                     | Firestore; Secret Manager; Terraform state; Cloud Build; write `core-config.yaml`; write artifacts                                                                                             |
+| Core VM                  | Read `{raceId}/core-config.yaml`; write `{raceId}/export/**`; publish export-done; read artifacts `core/current.json` and its release; read the Influx token secret payload               | Firestore; any other Secret Manager payload (TLS cert included); Terraform state; Cloud Build; write `core-config.yaml`; write artifacts                                                       |
+| Dashboard                | Read the Influx token and Auth0 client secret payloads; read Artifact Registry                                                                                                            | Firestore; GCS; Kafka; Cloud Build; Terraform state; Relay endpoints; any other Secret Manager payload                                                                                         |
 
 Residual (GCP constraints, not project Editor):
 
 - Relay has `iam.serviceAccountUser` on the controller SA so it can run the Cloud Build trigger. Relay must not get
   Compute or `race/` state IAM. Impersonation is still a residual: Relay can mint controller tokens.
+- `secretAccessor` is bound per **secret resource**, never at project scope: Core VM on the Influx token, Dashboard on
+  the Influx token and the Auth0 client secret, Kafka VM alone on the TLS cert. The Cloud Run service agent gets the
+  same two Dashboard secrets, mirroring how the Relay config secret is granted. Why one shared Influx token
+  exists: [ADR - Dashboard](adr-dashboard.md).
+- Dashboard keeps public `allUsers` invoker, like Relay: operators are not Google identities and Grafana enforces Auth0
+  login itself ([Okta](component-okta.md)).
 - Relay has `roles/iam.serviceAccountTokenCreator` on **itself** so Cloud Run can call IAM `signBlob` for export signed
   URLs. No JSON key on the service. `iamcredentials.googleapis.com` is already in the always-on API list.
 - Controller firewall IAM is project-scoped (create conditions are unreliable). Race module must only manage the public
@@ -113,7 +137,8 @@ Residual (GCP constraints, not project Editor):
   objects; GET of `base/` stays denied).
 - Always-on creates Google service agents with `google_project_service_identity` before binding them. Cloud Run service
   agent: Secret Manager accessor on Relay config and Artifact Registry reader. Cloud Build agent: `actAs` controller SA,
-  publish `cloud-builds`, Artifact Registry reader. Pub/Sub agent: `tokenCreator` on both push SAs. Push SAs: `run.invoker`
+  publish `cloud-builds`, Artifact Registry reader. Pub/Sub agent: `tokenCreator` on both push SAs. Push SAs:
+  `run.invoker`
   (public `allUsers` invoker stays for operators).
 
 ## Race stack
@@ -225,7 +250,8 @@ flowchart LR
     subgraph alwaysOn ["Always-on state (Operator)"]
         VPC[VPC DNS zone SAs IAM]
         Relay[Relay PubSub CloudBuild]
-        SM[Secret Manager cert]
+        Dash[Dashboard Cloud Run]
+        SM[Secret Manager]
         Bucket[Race bucket]
     end
     subgraph raceState ["Race state (controller)"]
@@ -263,5 +289,10 @@ always-on DNS zone; add/remove the public Kafka ingest firewall rule; attach alw
 Race Terraform may not: delete the zone, VPC, Relay, buckets, secrets, or identities; change project IAM; rebuild
 images; rename VMs per `raceId`; open the `base` state prefix; create Cloud NAT; reserve an idle static Kafka IP.
 
-Always-on rejects a `zone` outside `region`. Direct VPC Egress uses `subnet_cidr`; Google requires at least a `/26`
-subnet and allocates ephemeral Cloud Run addresses from it. The current `/24` is shared with Kafka and Core.
+Always-on rejects a `zone` outside `region`. Direct VPC Egress allocates ephemeral Cloud Run addresses from two `/26`
+subnets, keeping Relay and the Dashboard out of the `/24` VM subnet and out of each other. That split is what lets the
+Influx firewall name a source range that excludes both the Kafka VM and Relay.
+
+The Dashboard adds nothing to the race stack: no race resource, no `ingest_open` interaction. Only the Influx bind and
+the boot-time token source change on the Core VM, and both live in boot scripts, not
+Terraform ([Core startup](../core/startup/README.md)).

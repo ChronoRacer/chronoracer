@@ -217,6 +217,13 @@ resource "google_secret_manager_secret_iam_member" "kafka_tls" {
   member    = "serviceAccount:${google_service_account.kafka.email}"
 }
 
+resource "google_secret_manager_secret_iam_member" "core_influx_token" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.influx_token.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.core.email}"
+}
+
 resource "google_storage_bucket_iam_member" "core_yaml_read" {
   bucket = google_storage_bucket.race.name
   role   = "roles/storage.objectViewer"
@@ -282,6 +289,38 @@ resource "google_secret_manager_secret_iam_member" "relay_config" {
   secret_id = google_secret_manager_secret.relay_config.secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.relay.email}"
+}
+
+resource "google_artifact_registry_repository_iam_member" "dashboard_reader" {
+  project    = var.project_id
+  location   = var.region
+  repository = google_artifact_registry_repository.chronoracer.name
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:${google_service_account.dashboard.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "dashboard_secrets" {
+  for_each = {
+    influx_token    = google_secret_manager_secret.influx_token.secret_id
+    dashboard_oauth = google_secret_manager_secret.dashboard_oauth.secret_id
+  }
+
+  project   = var.project_id
+  secret_id = each.value
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.dashboard.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "run_agent_dashboard_secrets" {
+  for_each = {
+    influx_token    = google_secret_manager_secret.influx_token.secret_id
+    dashboard_oauth = google_secret_manager_secret.dashboard_oauth.secret_id
+  }
+
+  project   = var.project_id
+  secret_id = each.value
+  role      = "roles/secretmanager.secretAccessor"
+  member    = local.run_agent
 }
 
 resource "google_project_iam_member" "iap_ssh" {

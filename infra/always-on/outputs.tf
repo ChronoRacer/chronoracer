@@ -6,6 +6,16 @@ output "subnet_name" {
   value = google_compute_subnetwork.chronoracer.name
 }
 
+output "relay_run_subnet_name" {
+  value       = google_compute_subnetwork.relay_run.name
+  description = "Relay Direct VPC Egress subnet. Not allowed to reach Influx."
+}
+
+output "dashboard_run_subnet_name" {
+  value       = google_compute_subnetwork.dashboard_run.name
+  description = "Dashboard Direct VPC Egress subnet. Only source range allowed to reach Influx."
+}
+
 output "dns_zone_name" {
   value = google_dns_managed_zone.chronoracer.name
 }
@@ -50,6 +60,16 @@ output "tls_secret_id" {
   value = google_secret_manager_secret.kafka_tls.secret_id
 }
 
+output "influx_token_secret_id" {
+  value       = google_secret_manager_secret.influx_token.secret_id
+  description = "Upload the token payload here: docs/operator-influx-token.md"
+}
+
+output "dashboard_oauth_secret_id" {
+  value       = google_secret_manager_secret.dashboard_oauth.secret_id
+  description = "Upload the Auth0 client secret here: docs/operator-dashboard-oauth.md"
+}
+
 output "race_bucket" {
   value = google_storage_bucket.race.name
 }
@@ -59,7 +79,32 @@ output "artifacts_bucket" {
 }
 
 output "relay_uri" {
-  value = google_cloud_run_v2_service.relay.uri
+  value       = local.relay_uri
+  description = "Operator-facing Relay URL (Cloud Run domain mapping)."
+}
+
+output "relay_generated_uri" {
+  value       = google_cloud_run_v2_service.relay.uri
+  description = "Generated run.app URL. Pub/Sub push uses this, not the mapped hostname."
+}
+
+output "dashboard_uri" {
+  value       = local.dashboard_uri
+  description = "Operator-facing Dashboard URL (Cloud Run domain mapping)."
+}
+
+output "dashboard_sa_email" {
+  value = google_service_account.dashboard.email
+}
+
+output "dashboard_oauth_callback_url" {
+  value       = "${local.dashboard_uri}/login/generic_oauth"
+  description = "Register in the Auth0 application: docs/operator-dashboard-oauth.md"
+}
+
+output "influx_private_url" {
+  value       = local.influx_private_url
+  description = "Dashboard datasource target. Resolves only while a race is running."
 }
 
 output "cloud_build_trigger_id" {

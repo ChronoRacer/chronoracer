@@ -4,7 +4,7 @@ Status: accepted
 
 Global prerequisites:
 
-- available in `europe-west3`
+- available in `europe-west1`
 - no commitment obligations or discounts
 - the race stack uses one Kafka VM and one Core VM; their responsibilities are described in [Kafka](component-kafka.md)
   and [Core](component-core.md)
@@ -36,8 +36,8 @@ by [Terraform](component-terraform.md).
 ### Evidence
 
 The local load test sent 500,000 sensor-data batches in about 260 seconds
-(see [load test](/core/dev-only/dev-load-test/README.md). Core and InfluxDB were placed in a slice configured by [
-`install-core-vm-service.sh`](../core/dev-only/install-core-vm-service.sh) with a 400% CPU quota, a 16 GB maximum, and a
+(see [load test](../core/dev-only/dev-load-test/README.md)). Core and InfluxDB were placed in a slice configured by
+[`install-core-vm-service.sh`](../core/dev-only/install-core-vm-service.sh) with a 400% CPU quota, a 16 GB maximum, and a
 15 GB high watermark. The local Kafka container was limited to 2 CPUs and 8 GB.
 
 The measurements were:
@@ -74,7 +74,8 @@ is tiny and C4 has better CPU architecture with higher frequency. Core pinning t
 runtime proves otherwise. Since InfluxDB writes locally and we have buffers in Core, the RAM usage should not be too
 large, so we can save by going for `highcpu` variant instead of the standard one.
 
-This would be `5.64$/30h` in `europe-west3` with `20GB` boot disk for `c4d-highcpu-4`, which is quite a good deal. Sadly
+This would be `5.64$/30h` in `europe-west3` (quote taken before the region move; current region:
+[ADR - Region](adr-region.md)) with `20GB` boot disk for `c4d-highcpu-4`, which is quite a good deal. Sadly
 we cannot go for spot VM here - otherwise it would be three times cheaper.
 
 [In pricing calculator](https://cloud.google.com/products/calculator?dl=CjhDaVF3WVRSbU9XSTVNeTAyTTJRNUxUUXdOR1F0WWprellpMHdZbUV4TkRRM1kySmlNekFRQVE9PRAIGiRDQUQ5MTA4MC0zOUVDLTQ2NTYtQjg3OC05QTUxQjY0MzA2Rjg&_gl=1*hmvx65*_up*MQ..&gclid=CjwKCAjwqc_UBhBKEiwAWbl25q5jMtOk9eAmBdh9cuBnOYDnJZJLyO9afG3l6jbu6ZQ56lfLfq_q6BoCYFAQAvD_BwE&gclsrc=aw.ds)
@@ -82,10 +83,11 @@ we cannot go for spot VM here - otherwise it would be three times cheaper.
 ## Kafka VM
 
 Kafka used less than one of the two CPUs available in the local test. `n4-standard-2` therefore should be enough.
-That would be around `3.30$/30h` in `europe-west3` with `20GB` balanced hyperdisk boot disk.
+That would be around `3.30$/30h` in `europe-west3` (same historical quote) with `20GB` balanced hyperdisk boot disk.
 
 If needed, we can go for a highmem variant, which would bump to `4.30$/30h`, so not that much difference.
 
-For some reason, the N4 version is cheaper than the E2 version in the pricing calculator for Frankfurt.
+For some reason, the N4 version is cheaper than the E2 version in the pricing calculator for Frankfurt (historical;
+current region is `europe-west1`).
 
 ## [!IMPORTANT] These values might change after load testing on real GCP infrastructure

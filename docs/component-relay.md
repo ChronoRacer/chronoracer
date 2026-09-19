@@ -1,6 +1,7 @@
 # Deep dive - Relay
 
-[!IMPORTANT] At the time of writing this, the public URL of Relay is `https://chronoracer-relay-585760075678.europe-west3.run.app`
+Public URL: `https://relay.{dns zone}` (today `https://relay.chronoracer.live`). Mapping:
+[Terraform](component-terraform.md). Generated `run.app` URL is still what Pub/Sub push uses.
 
 Code at: [Relay root](../relay)
 
@@ -13,7 +14,6 @@ Access: public. No Google invoker IAM for operators. Relay checks Okta on operat
 OIDC, not Okta. Operators are not Google identities.
 
 IAM and Cloud Run instance caps: [Terraform](component-terraform.md). Cloud Build trigger location and regional
-
 APIs: [Controller](component-controller.md). Mutex, schema, reconcile: [Firestore](component-firestore.md).
 Ready/unhealthy detection: [Race provisioning](flow-race_provisioning.md).
 
@@ -48,6 +48,10 @@ The production Relay configuration is rendered by Terraform into the Secret Mana
 [`relay/config.yaml`](../relay/config.yaml) mirrors the current always-on values for standalone runs. The shared topic
 names come from the platform contract; the generated configuration also receives the regional Kafka bootstrap address,
 push audiences, service accounts, and the Cloud Build trigger ID from the always-on stack.
+
+This file also owns two timers other docs use: `service.heartbeat_freshness_seconds` (ready/unhealthy:
+[Race provisioning](flow-race_provisioning.md)) and `service.build_bind_window_seconds` (mutex bind window:
+[Firestore](component-firestore.md)).
 
 ## Operations
 

@@ -74,7 +74,8 @@ Destroy on the graceful path waits for export-done. Force-destroy is the excepti
 `destroyed` / `raceId` mismatch): reject. No second destroy.
 
 Do not keep VM disks after a successful export. Prefix alone is not download access; Relay issues time-limited access on
-historical status.
+historical status. The database dies with the VM, so the [Dashboard](component-dashboard.md) shows nothing after
+destroy; the export is the only record of a finished race.
 
 ## Force-destroy flow
 

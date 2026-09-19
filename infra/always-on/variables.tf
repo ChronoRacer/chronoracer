@@ -5,13 +5,13 @@ variable "project_id" {
 
 variable "region" {
   type    = string
-  default = "europe-west3"
+  default = "europe-west1"
 }
 
 variable "zone" {
   type        = string
   description = "Compute zone for race VMs (GCE internal DNS uses this). Must be in var.region."
-  default     = "europe-west3-a"
+  default     = "europe-west1-b"
 }
 
 variable "dns_zone_dns_name" {
@@ -44,6 +44,11 @@ variable "controller_image" {
   description = "Controller image Cloud Build runs. Publish with Relay before the first race (same runbook)."
 }
 
+variable "dashboard_image" {
+  type        = string
+  description = "Dashboard (Grafana) Cloud Run image. Publish before full apply: docs/operator-control-plane-images.md"
+}
+
 variable "iap_ssh_members" {
   type        = list(string)
   description = "IAM members granted IAP tunnel to VMs (user: or group:). Empty = no IAP SSH users."
@@ -58,5 +63,37 @@ variable "subnet_cidr" {
   validation {
     condition     = can(cidrnetmask(var.subnet_cidr))
     error_message = "subnet_cidr must be a valid CIDR."
+  }
+}
+
+variable "relay_run_subnet_cidr" {
+  type        = string
+  description = "Relay Direct VPC Egress subnet. Separate from the Dashboard subnet so Relay cannot reach Influx."
+  default     = "10.20.1.0/26"
+
+  validation {
+    condition     = can(cidrnetmask(var.relay_run_subnet_cidr))
+    error_message = "relay_run_subnet_cidr must be a valid CIDR."
+  }
+
+  validation {
+    condition     = tonumber(split("/", var.relay_run_subnet_cidr)[1]) <= 26
+    error_message = "relay_run_subnet_cidr must be /26 or larger; Google requires at least /26 for Direct VPC Egress."
+  }
+}
+
+variable "dashboard_run_subnet_cidr" {
+  type        = string
+  description = "Dashboard Direct VPC Egress subnet. Only source range allowed to reach Influx HTTP."
+  default     = "10.20.1.64/26"
+
+  validation {
+    condition     = can(cidrnetmask(var.dashboard_run_subnet_cidr))
+    error_message = "dashboard_run_subnet_cidr must be a valid CIDR."
+  }
+
+  validation {
+    condition     = tonumber(split("/", var.dashboard_run_subnet_cidr)[1]) <= 26
+    error_message = "dashboard_run_subnet_cidr must be /26 or larger; Google requires at least /26 for Direct VPC Egress."
   }
 }

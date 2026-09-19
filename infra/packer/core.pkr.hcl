@@ -45,6 +45,7 @@ build {
   provisioner "file" {
     sources = [
       "../../core/startup/entrypoint.sh",
+      "../../core/startup/fetch-influx-token.sh",
       "../../core/startup/fetch-payload.sh",
       "../../core/startup/start-influx.sh",
       "../../core/startup/render-config.sh",
@@ -94,6 +95,7 @@ build {
       "command -v curl",
       "python3 -c 'import yaml'",
       "test -x /chronoracer/entrypoint.sh",
+      "test -x /chronoracer/fetch-influx-token.sh",
       "test -x /chronoracer/fetch-payload.sh",
       "test -x /chronoracer/start-influx.sh",
       "test -x /chronoracer/render-config.sh",

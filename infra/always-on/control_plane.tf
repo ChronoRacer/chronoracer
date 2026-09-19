@@ -79,7 +79,7 @@ resource "google_cloud_run_v2_service" "relay" {
 
       network_interfaces {
         network    = google_compute_network.chronoracer.id
-        subnetwork = google_compute_subnetwork.chronoracer.id
+        subnetwork = google_compute_subnetwork.relay_run.id
       }
     }
 

@@ -2,33 +2,34 @@
 
 ## Domain
 
-We have a domain register with Porkbun. Domain name is: `chronoracer.live`. Domain is paid for until `05.09.2027`.
+We have a domain registered with Porkbun. Domain name is: `chronoracer.live`. Domain is paid for until `05.09.2027`.
 
-The NS servers are set to Google managed Cloud DNS zone instead of default Porkbun NS.
+NS servers point at the Google Cloud DNS managed zone, not Porkbun defaults.
 
-DNS zone is **paid monthly**, but we need it to have TLS on VMs.
+DNS zone is **paid monthly**. Needed so the Kafka VM can present a public TLS name, and so Relay and the Dashboard can
+use Cloud Run domain mappings on the same zone ([Terraform](component-terraform.md)).
 
-Sample `dig` output:
-```terminaloutput
-; <<>> DiG 9.20.24-1ubuntu0.3-Ubuntu <<>> chronoracer.live
-;; global options: +cmd
-;; Got answer:
-;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 15860
-;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1, ADDITIONAL: 1
+## Cloud Run hostnames
 
-;; OPT PSEUDOSECTION:
-; EDNS: version: 0, flags:; udp: 1232
-;; QUESTION SECTION:
-;chronoracer.live.              IN      A
+Always-on Terraform maps:
 
-;; AUTHORITY SECTION:
-chronoracer.live.       300     IN      SOA     ns-cloud-e1.googledomains.com. cloud-dns-hostmaster.google.com. 1 21600 3600 259200 300
+| Host                         | Service   |
+|------------------------------|-----------|
+| `relay.chronoracer.live`     | Relay     |
+| `dashboard.chronoracer.live` | Dashboard |
 
-;; Query time: 1395 msec
-;; SERVER: 10.255.255.254#53(10.255.255.254) (UDP)
-;; WHEN: Sun Sep 06 18:02:06 CEST 2026
-;; MSG SIZE  rcvd: 141
+Plus `CNAME` records to `ghs.googlehosted.com.`. Kafka ingest stays `ingest.chronoracer.live` (race stack A record).
+
+Google requires the domain to be **verified on this GCP project** before the mapping resource applies. One-time:
+
+```bash
+gcloud domains verify chronoracer.live
 ```
+
+Complete the Search Console / Webmaster flow it prints (TXT on the zone you already own). Mapping apply fails with a
+domain-ownership error until that is done. Do not create the mappings in the Cloud Console; Terraform owns them.
+
+The mapped hostnames are operator-facing. Pub/Sub push to Relay still uses the generated `run.app` URL.
 
 ## Kafka TLS certificate
 

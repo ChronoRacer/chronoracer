@@ -19,5 +19,6 @@ infra/always-on
 infra/race/README.md
 infra/race/terraform.tfvars.example
 relay
+dashboard
 target
 **/.venv

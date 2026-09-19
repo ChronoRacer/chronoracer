@@ -5,6 +5,7 @@ Each concept has one owner. Other docs link it. Do not copy or rephrase the same
 | Concept                                                                                | Owner                                                             |
 |----------------------------------------------------------------------------------------|-------------------------------------------------------------------|
 | Region, free-tier, topology                                                            | this file                                                         |
+| GCP region decision                                                                    | [ADR - Region](adr-region.md)                                     |
 | Resource names                                                                         | [`infra/contract/names.json`](../infra/contract/names.json)       |
 | Ports, Kafka/Cloud Build/export topics, Kafka OAuth JWKS/issuer/audience               | [`infra/contract/platform.json`](../infra/contract/platform.json) |
 | Terraform stacks, backends, IAM, always-on vs race resources, `ingest_open`, image pin | [Terraform](component-terraform.md)                               |
@@ -17,9 +18,13 @@ Each concept has one owner. Other docs link it. Do not copy or rephrase the same
 | Core layers and in-process flows                                                       | [Core](component-core.md)                                         |
 | Core boot scripts                                                                      | [Core startup](../core/startup/README.md)                         |
 | Influx tables and plugins                                                              | [InfluxDB](component-influxdb.md)                                 |
+| Live dashboard shape, panels, datasource                                               | [Dashboard](component-dashboard.md)                               |
+| Dashboard decision and rejected options                                                | [ADR - Dashboard](adr-dashboard.md)                               |
 | Packer VM images and Core payload                                                      | [Compute images](component-images.md)                             |
-| Relay + controller Docker publish                                                      | [Control-plane images](operator-control-plane-images.md)          |
-| Kafka public TLS issue/upload                                                          | [Kafka TLS](operator-domain-and-tls.md)                           |
+| Control-plane Docker publish                                                           | [Control-plane images](operator-control-plane-images.md)          |
+| Kafka public TLS issue/upload, Cloud Run domain verify                                 | [Kafka TLS](operator-domain-and-tls.md)                           |
+| Influx token create/rotate                                                             | [Influx token](operator-influx-token.md)                          |
+| Dashboard Auth0 login setup                                                            | [Dashboard OAuth](operator-dashboard-oauth.md)                    |
 | Okta apps and operator tokens                                                          | [Okta](component-okta.md)                                         |
 | Start sequence and ready/unhealthy detection                                           | [Race provisioning](flow-race_provisioning.md)                    |
 | Stop, export, destroy sequence                                                         | [Race destruction](flow-race_destruction.md)                      |
@@ -35,10 +40,12 @@ Deployment on Google Cloud Platform.
 Whatever can be in the free tier is in the free tier (Cloud Run scale-to-zero; Firestore, Pub/Sub, Cloud Build have
 generous free tier limits).
 
-Not free: Cloud DNS, Artifact Registry, GCS buckets. Race VMs are paid and sized to be reliable. The Relay’s Direct VPC
-Egress network cost scales to zero with the Relay (revisit if cold start is too long - might need to changing to VPC connector);
+Not free: Cloud DNS, Artifact Registry, GCS buckets. Race VMs are paid and sized to be reliable. Direct VPC Egress
+network cost for Relay and the Dashboard scales to zero with them (revisit if cold start is too long - might need to
+change to VPC connector);
 
-Region: all GCP resources in `europe-west3`. Do not split regions.
+Region: all GCP resources in `europe-west1` (Compute zone `europe-west1-b`). Do not split regions. Why:
+[ADR - Region](adr-region.md).
 
 ### Topology
 
@@ -48,6 +55,7 @@ flowchart LR
         Okta[Okta]
         Operators[Operators]
         Relay[Relay Cloud Run]
+        Dash[Dashboard Cloud Run]
         FS[Firestore]
         GcsRace[GCS race bucket]
         GcsState[GCS state bucket]
@@ -62,6 +70,8 @@ flowchart LR
     end
     Devices[Track devices]
     Operators -->|HTTPS Okta, API| Relay
+    Operators -->|HTTPS Okta, browser| Dash
+    Dash -->|private, SQL queries| CoreDB
     Operators -->|manual| TF
     Operators -->|manual Core payload| GcsArt
     Relay <-->|private, status| FS
@@ -93,6 +103,7 @@ See graph above for connections.
 |-------------|---------------------------------------|
 | Core        | [Core](component-core.md)             |
 | InfluxDB    | [InfluxDB](component-influxdb.md)     |
+| Dashboard   | [Dashboard](component-dashboard.md)   |
 | Relay       | [Relay](component-relay.md)           |
 | Kafka       | [Kafka](component-kafka.md)           |
 | Firestore   | [Firestore](component-firestore.md)   |
@@ -109,11 +120,21 @@ See graph above for connections.
 | Race provisioning | [Flow - Race provisioning](flow-race_provisioning.md) |
 | Race destruction  | [Flow - Race destruction](flow-race_destruction.md)   |
 
+## Decisions
+
+| Decision  | Document                            |
+|-----------|-------------------------------------|
+| VM types  | [ADR - VM types](adr-vm-types.md)   |
+| Dashboard | [ADR - Dashboard](adr-dashboard.md) |
+| Region    | [ADR - Region](adr-region.md)       |
+
 ## Operator runbooks
 
 Procedures humans run outside Terraform apply. Code and Terraform do not replace these.
 
-| Runbook              | Document                                                          |
-|----------------------|-------------------------------------------------------------------|
-| Control-plane images | [Operator — Relay + controller](operator-control-plane-images.md) |
-| Kafka TLS cert       | [Operator — Kafka public TLS](operator-domain-and-tls.md)         |
+| Runbook                 | Document                                                                      |
+|-------------------------|-------------------------------------------------------------------------------|
+| Control-plane images    | [Operator — Relay + controller + dashboard](operator-control-plane-images.md) |
+| Domain + Kafka TLS cert | [Operator — Domain, Cloud Run verify, Kafka TLS](operator-domain-and-tls.md)  |
+| Influx admin token      | [Operator — Influx admin token](operator-influx-token.md)                     |
+| Dashboard Auth0 login   | [Operator — Dashboard Auth0 login](operator-dashboard-oauth.md)               |

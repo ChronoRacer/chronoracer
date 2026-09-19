@@ -10,8 +10,10 @@ documentation](../../docs/component-influxdb.md#plugin-python-environment).
 
 ## `export_database.py`
 
-Caller: Core When: Core shutdown sequence Purpose: export tables from InfluxDB, compress into Parquet files, ensuring
-all WAL is flushed Why: avoid additional traffic between Core and database
+- Caller: Core
+- When: Core shutdown sequence
+- Purpose: export tables from InfluxDB, compress into Parquet, flush WAL first
+- Why: avoid extra traffic between Core and the database during the dump
 
 ## TODO Warning:
 
