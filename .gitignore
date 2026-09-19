@@ -9,3 +9,4 @@ crash.log
 /core/influxdb-plugins/.venv/
 /infra/always-on/kafka-tls.pem
 /infra/always-on/ingest.chronoracer.live/
+/infra/packer/build/*.back

@@ -1,0 +1,25 @@
+# Start
+
+curl -X POST https://relay.chronoracer.live/race/start \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $OKTA_ACCESS_TOKEN" \
+  -d "@race_start_request.json"
+
+# Status
+
+curl -X GET https://relay.chronoracer.live/race/status -H "Authorization: Bearer $OKTA_ACCESS_TOKEN"
+
+# Graceful stop
+
+curl -X POST https://relay.chronoracer.live/race/stop \
+  -H "Authorization: Bearer $OKTA_ACCESS_TOKEN"
+
+# History
+
+raceId=$(jq -r '.raceId' race_start_request.json)
+curl -X GET "https://relay.chronoracer.live/race/history/$raceId" -H "Authorization: Bearer $OKTA_ACCESS_TOKEN"
+
+# History with export
+
+raceId=$(jq -r '.raceId' race_start_request.json)
+curl -X GET "https://relay.chronoracer.live/race/history/${raceId}?export_race=true" -H "Authorization: Bearer $OKTA_ACCESS_TOKEN"

@@ -11,7 +11,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 NAMES_JSON="${REPO_ROOT}/infra/contract/names.json"
 SCHEMA_SRC="${REPO_ROOT}/core/avro/sensor_data.avsc"
 
-[[ -n "$1" ]] || {
+[[ -n "${1:-}" ]] || {
   echo "Release ID not provided" >&2
   exit 1
 }

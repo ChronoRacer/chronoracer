@@ -17,6 +17,7 @@ REGION="europe-west1"
 REMOTE=0
 IMAGES="all"
 NO_PUSH=0
+CHECK_TF=0
 
 need() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -26,7 +27,7 @@ need() {
 }
 
 usage() {
-  echo "usage: $0 [--remote] [all|relay|controller|dashboard]" >&2
+  echo "usage: $0 [--remote] [all|relay|controller|dashboard] [--nopush] [--check-tf]" >&2
   exit 1
 }
 
@@ -35,6 +36,7 @@ while [[ $# -gt 0 ]]; do
     --remote) REMOTE=1; shift ;;
     all|relay|controller|dashboard) IMAGES="$1"; shift ;;
     --nopush) NO_PUSH=1; shift ;;
+    --check-tf) CHECK_TF=1; shift ;;
     -h|--help) usage ;;
     *) usage ;;
   esac
@@ -76,6 +78,10 @@ CONTROLLER_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${CONTROLLER_N
 DASHBOARD_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${DASHBOARD_NAME}:${TAG}"
 
 ensure_registry() {
+  if [[ "${CHECK_TF}" -eq 0 ]]; then
+    return 0
+  fi
+
   [[ -f "${TFVARS}" ]] || {
     echo "No tfvars" >&2
     exit 1

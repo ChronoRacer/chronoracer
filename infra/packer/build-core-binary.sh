@@ -10,7 +10,7 @@
 # TODO: this script is overall not really good. VM image not worth it, maybe VM can be upscaled to finish faster.
 set -euo pipefail
 
-[[ -n "$1" ]] || {
+[[ -n "${1:-}" ]] || {
   echo "Release ID parameter is required" >&2
   exit 1
 }
@@ -22,14 +22,28 @@ ZONE="${CORE_BUILD_ZONE:-europe-west1-b}"
 NETWORK="${CORE_BUILD_NETWORK:-default}"
 PROJECT_ID="${PKR_VAR_project_id:-$(gcloud config get-value project 2>/dev/null || true)}"
 core_bundle="core_bundle.tar.gz"
+download_dest="build/core-${RELEASE_ID}"
+
+[[ -f "$download_dest" ]] && {
+  echo "Release $RELEASE_ID already seems to be built at $download_dest" >&2
+  exit 1
+}
+
 
 cleanup() {
-#  gcloud compute instances delete "${INSTANCE}" \
-#    --project="${PROJECT_ID}" \
-#    --zone="${ZONE}" \
-#    --quiet >/dev/null 2>&1
-  rm -f "$core_bundle"
+    local exit_code=$?
+    rm -f "$core_bundle"
+    if [ "$exit_code" -eq 0 ]; then
+         echo "Removing VM instance..."
+         gcloud compute instances delete "${INSTANCE}" \
+           --project="${PROJECT_ID}" \
+           --zone="${ZONE}" \
+           --quiet >/dev/null 2>&1
+    else
+      echo "Build failed with error code ${exit_code}. VM and its disk might not deleted!!!"
+    fi
 }
+
 trap cleanup EXIT
 
 need() {
@@ -117,7 +131,6 @@ cargo build --locked --release --target x86_64-unknown-linux-gnu
 test -s target/x86_64-unknown-linux-gnu/release/chronoracer-core'
 
 echo "Downloading the native binary"
-download_dest="build/core-${RELEASE_ID}"
 gcloud compute scp \
   --project="${PROJECT_ID}" \
   --zone="${ZONE}" \

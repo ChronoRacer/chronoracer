@@ -1,0 +1,13 @@
+{
+  "raceId": "deptest2",
+   "config": {
+     "runtime": {
+       "heartbeat_interval_s": 35
+     },
+     "kafka": {
+       "export": {
+         "export_topics": ["dlq", "data"]
+       }
+     }
+   }
+}
