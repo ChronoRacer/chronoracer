@@ -46,10 +46,16 @@ resource "google_compute_subnetwork" "dashboard_run" {
 check "subnet_cidrs_disjoint" {
   assert {
     condition = (
-      !cidrcontains(var.subnet_cidr, cidrhost(var.relay_run_subnet_cidr, 0)) &&
-      !cidrcontains(var.subnet_cidr, cidrhost(var.dashboard_run_subnet_cidr, 0)) &&
-      !cidrcontains(var.relay_run_subnet_cidr, cidrhost(var.dashboard_run_subnet_cidr, 0)) &&
-      !cidrcontains(var.dashboard_run_subnet_cidr, cidrhost(var.relay_run_subnet_cidr, 0))
+    # 1. relay_run start/end not inside subnet_cidr
+    cidrsubnet(format("%s/%s", cidrhost(var.relay_run_subnet_cidr, 0), split("/", var.subnet_cidr)[1]), 0, 0) != var.subnet_cidr &&
+    cidrsubnet(format("%s/%s", cidrhost(var.relay_run_subnet_cidr, -1), split("/", var.subnet_cidr)[1]), 0, 0) != var.subnet_cidr &&
+
+    # 2. dashboard_run start/end not inside subnet_cidr
+    cidrsubnet(format("%s/%s", cidrhost(var.dashboard_run_subnet_cidr, 0), split("/", var.subnet_cidr)[1]), 0, 0) != var.subnet_cidr &&
+    cidrsubnet(format("%s/%s", cidrhost(var.dashboard_run_subnet_cidr, -1), split("/", var.subnet_cidr)[1]), 0, 0) != var.subnet_cidr &&
+
+    # 3. relay_run and dashboard_run do not overlap with each other
+    cidrsubnet(format("%s/%s", cidrhost(var.dashboard_run_subnet_cidr, 0), split("/", var.relay_run_subnet_cidr)[1]), 0, 0) != var.relay_run_subnet_cidr
     )
     error_message = "subnet_cidr, relay_run_subnet_cidr, and dashboard_run_subnet_cidr must not overlap. Direct VPC Egress needs a /26 each; defaults are 10.20.0.0/24, 10.20.1.0/26, 10.20.1.64/26."
   }

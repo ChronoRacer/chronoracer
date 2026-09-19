@@ -1,4 +1,4 @@
-# This is onyl available in selected regions (europe-west3 does support it)
+# This is only available in selected regions (europe-west3 does not support it)
 
 resource "google_cloud_run_domain_mapping" "relay" {
   location = var.region

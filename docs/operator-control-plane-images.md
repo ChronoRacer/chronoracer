@@ -8,9 +8,8 @@ Not Packer. Kafka/Core VM families: [Compute images](component-images.md).
 Canonical names: [`infra/contract/names.json`](../infra/contract/names.json) (`ar_repo`, `ar_relay_image`,
 `ar_controller_image`, `ar_dashboard_image`). Region: [docs README](README.md).
 
-The dashboard image is upstream Grafana OSS plus provisioning files (datasource, dashboards, Grafana settings), built
-from `dashboard/Dockerfile` at the repository root. The checked-in Dockerfile is a stub (`FROM grafana/grafana-oss`);
-add those files in `dashboard/` without changing publish scripts. It carries no secret: the Influx token and Auth0
+The dashboard image is upstream Grafana OSS plus provisioning files (datasource, dashboard, Grafana settings), built
+from `dashboard/Dockerfile` at the repository root. It carries no secret: the Influx token and Auth0
 client secret arrive as Cloud Run environment variables from Secret Manager. Full env
 contract: [Dashboard](component-dashboard.md).
 

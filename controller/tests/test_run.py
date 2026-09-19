@@ -15,7 +15,7 @@ def _cfg(**overrides) -> Config:
         run_token="tok",
         project_id="proj",
         kafka_fqdn="ingest.chronoracer.live.",
-        zone="europe-west3-a",
+        zone="europe-west1-b",
         terraform_dir=Path("/tmp"),
         names_path=Path("/tmp/names.json"),
         firestore_database="(default)",

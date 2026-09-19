@@ -74,8 +74,7 @@ is tiny and C4 has better CPU architecture with higher frequency. Core pinning t
 runtime proves otherwise. Since InfluxDB writes locally and we have buffers in Core, the RAM usage should not be too
 large, so we can save by going for `highcpu` variant instead of the standard one.
 
-This would be `5.64$/30h` in `europe-west3` (quote taken before the region move; current region:
-[ADR - Region](adr-region.md)) with `20GB` boot disk for `c4d-highcpu-4`, which is quite a good deal. Sadly
+This would be a bit less than `5.50$/30h` with `20GB` boot disk for `c4d-highcpu-4`, which is quite a good deal. Sadly
 we cannot go for spot VM here - otherwise it would be three times cheaper.
 
 [In pricing calculator](https://cloud.google.com/products/calculator?dl=CjhDaVF3WVRSbU9XSTVNeTAyTTJRNUxUUXdOR1F0WWprellpMHdZbUV4TkRRM1kySmlNekFRQVE9PRAIGiRDQUQ5MTA4MC0zOUVDLTQ2NTYtQjg3OC05QTUxQjY0MzA2Rjg&_gl=1*hmvx65*_up*MQ..&gclid=CjwKCAjwqc_UBhBKEiwAWbl25q5jMtOk9eAmBdh9cuBnOYDnJZJLyO9afG3l6jbu6ZQ56lfLfq_q6BoCYFAQAvD_BwE&gclsrc=aw.ds)
@@ -83,7 +82,7 @@ we cannot go for spot VM here - otherwise it would be three times cheaper.
 ## Kafka VM
 
 Kafka used less than one of the two CPUs available in the local test. `n4-standard-2` therefore should be enough.
-That would be around `3.30$/30h` in `europe-west3` (same historical quote) with `20GB` balanced hyperdisk boot disk.
+That would be around `3.30$/30h` with `20GB` balanced hyperdisk boot disk.
 
 If needed, we can go for a highmem variant, which would bump to `4.30$/30h`, so not that much difference.
 
