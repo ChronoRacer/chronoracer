@@ -12,16 +12,8 @@ from .kafka import ShutdownPublisher
 from .models import BuildFinished, ExportDone, Phase, Race, TerraformAction, TerraformRun, \
     TerraformStatus
 
-# GCP label-safe, Core cap 12 chars. Operator supplies; Relay never mints.
-RACE_ID_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9_-]{0,11})$")
-
-
-def ensure_race_id_valid(race_id: str):
-    if not race_id or not RACE_ID_PATTERN.fullmatch(race_id):
-        raise ValueError(
-            "raceId must be 1–12 chars, GCP label-safe: lowercase letters, digits, underscore, dash"
-        )
-
+# GCP label-safe, Core cap 12 chars due to CompactString
+GCP_LABEL_COMPACT_STRING_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9_-]{0,11})$")
 
 class RelayService:
     def __init__(self, repository: RaceRepository, object_store: ObjectStore | None = None,
@@ -37,7 +29,6 @@ class RelayService:
         self._operation_lock = asyncio.Lock()
 
     async def start(self, race_id: str, config: dict[str, Any], started_by='unknown'):
-        ensure_race_id_valid(race_id)
         async with self._operation_lock:
             return await self._start(race_id, config, started_by)
 

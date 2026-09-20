@@ -153,7 +153,7 @@ def produce_change_driver_messages(producer):
     for _ in range(count):
         loop_start = time.monotonic()
 
-        payload = str(uuid.uuid4().hex).encode('utf-8')
+        payload = str(uuid.uuid4().hex).encode('utf-8')[:12]
 
         producer.produce(
             topic=topic,

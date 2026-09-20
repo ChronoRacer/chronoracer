@@ -1,6 +1,7 @@
 {
-  "raceId": "deptest2",
-   "config": {
+  "raceId": "deptest3",
+  "initialDriverId": "driver123",
+  "config": {
      "runtime": {
        "heartbeat_interval_s": 35
      },

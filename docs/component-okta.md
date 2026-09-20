@@ -68,13 +68,13 @@ Out of Okta:
 
 ```bash
 CLIENT_ID="QwcTbS7a6Tn70WZo58UIl57mDxaJZp0V"
-CLIENT_SECRET=""
+OKTA_CLIENT_SECRET=""
 OKTA_ACCESS_TOKEN="$(curl --request POST \
   --url https://chronoracer.eu.auth0.com/oauth/token \
   --header 'content-type: application/json' \
   --data "{
     \"client_id\":\"$CLIENT_ID\",
-    \"client_secret\":\"$CLIENT_SECRET\",
+    \"client_secret\":\"$OKTA_CLIENT_SECRET\",
     \"audience\":\"https://api.chronoracer.com\",
     \"grant_type\":\"client_credentials\"
   }" | jq -r '.access_token')"
