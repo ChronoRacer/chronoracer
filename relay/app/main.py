@@ -12,12 +12,13 @@ from .kafka import DevShutdownPublisher, KafkaShutdownPublisher, KafkaHeartbeatR
 from .gcp.repository import FirestoreRaceRepository, InMemoryRaceRepository
 from .gcp.storage import DevObjectStore, GCSObjectStore
 from .models import BuildFinished
-from .service import RelayService
+from .service import GCP_LABEL_COMPACT_STRING_PATTERN, RelayService
 
 
 class StartRequest(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
-    race_id: str = Field(..., alias='raceId', min_length=1)
+    race_id: str = Field(..., alias='raceId', pattern=GCP_LABEL_COMPACT_STRING_PATTERN.pattern)
+    initial_driver_id: str = Field(..., alias='initialDriverId', pattern=GCP_LABEL_COMPACT_STRING_PATTERN.pattern)
 
 
 def create_app() -> FastAPI:
@@ -52,8 +53,15 @@ def create_app() -> FastAPI:
     @app.post("/race/start", status_code=status.HTTP_202_ACCEPTED)
     async def start(request: StartRequest, user: dict = Depends(okta_user)):
         logger.info("Received race start request")
+        core_config = {
+            **request.config,
+            'race': {
+                **request.config.get('race', {}),
+                'initial_driver_id': request.initial_driver_id,
+            },
+        }
         try:
-            return await app.state.service.start(request.race_id, request.config, user.get('sub', 'unknown'))
+            return await app.state.service.start(request.race_id, core_config, user.get('sub', 'unknown'))
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 

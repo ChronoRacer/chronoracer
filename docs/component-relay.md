@@ -59,12 +59,14 @@ This file also owns two timers other docs use: `service.heartbeat_freshness_seco
 
 Caller: Okta.
 
-Input: required `raceId` (no default; operator chooses) and config dict (opaque Core YAML mapping; partial OK). Relay
-does not mint `raceId` and does not schema-validate Core. `raceId` rules: [Firestore](component-firestore.md). On retry
-from `failed`, config is ignored; the original YAML stays. `raceId` must match the active race.
+Input: required `raceId` and `initialDriverId` (no defaults; operator chooses), plus a config dict (opaque Core YAML
+mapping; partial OK). Both IDs use the same 1–12 character, GCP label-safe format. Relay writes
+`initialDriverId` into the uploaded config as `race.initial_driver_id`, overriding any value in the supplied config.
+Relay does not mint `raceId` and does not schema-validate the rest of Core.
+On retry from `failed`, config is ignored; the original YAML stays. `raceId` must match the active race.
 
 New race (pointer empty): reject if `raceId` is invalid or `races/{raceId}` already exists (including destroyed races).
-Upload operator YAML as-is to `{raceId}/core-config.yaml` (no platform inject; overlay at
+Upload the operator YAML, with the required `race.initial_driver_id` injection, to `{raceId}/core-config.yaml` (overlay at
 boot: [Core](component-core.md)); one transaction stamps apply `in_flight` as [Firestore](component-firestore.md);
 trigger Cloud Build apply with substitutions `raceId`, `action`, `runToken`; write `buildId`. Trigger failure: phase
 `failed`, `terraformRun.status` `failed`, `lastError`, pointer stays. Stamp clears `lastError`.
