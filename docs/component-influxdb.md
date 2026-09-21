@@ -8,30 +8,35 @@ Responsibility:
 
 - store sensor measurements for the race
 - serve queries from Core on the same VM
-- serve read queries from the [Dashboard](component-dashboard.md) over the VPC
+- expose local Prometheus-compatible server metrics for Ops Agent
 - dump tables on export (plugin) so Core can upload to GCS
 
 Core owns Kafka consume and control flow. The Influx Kafka plugin is unused.
 
 ## Access model
 
-The HTTP listener binds all interfaces on the Core VM, not only localhost, so the Dashboard can query it over Direct
-VPC Egress. Reachability is cut down by firewall instead: only the Dashboard Cloud Run subnet may reach the Influx HTTP
-port on tag `core`, which excludes the Kafka VM and Relay. Subnet and firewall
-resource: [Terraform](component-terraform.md).
+The HTTP listener binds localhost only. Core writes and queries locally; Ops Agent on the same VM scrapes `/metrics`.
+No Cloud Run service or other VM can reach Influx directly. [Dashboard](component-dashboard.md) reads the resulting
+metrics from Cloud Monitoring instead of querying Influx.
 
-Port and database name live in [`platform.json`](../infra/contract/platform.json), because the firewall rule, the
-Dashboard datasource, the systemd bind, and Core's own client all need the same values. The
+Port and database name live in [`platform.json`](../infra/contract/platform.json), because the systemd bind, Ops Agent
+scrape config, and Core's own client all need the same values. The
 [`core/default-config.yaml`](../core/default-config.yaml) entries are local-development defaults that the boot-time
 platform overlay wins over, the same way the `localhost:9092` broker works ([Core](component-core.md)).
 
-Authentication uses one shared admin token from Secret Manager, the same value for Core and the Dashboard. Core boot
-renders Influx's JSON token file from it: [Core startup](../core/startup/README.md). Creation and rotation
-window: [Influx token runbook](operator-influx-token.md). Rationale for not generating it on the
-VM: [ADR - Dashboard](adr-dashboard.md).
+Authentication uses one admin token from Secret Manager. Core is its only consumer and boot renders Influx's JSON
+token file from it: [Core startup](../core/startup/README.md). Creation and rotation:
+[Influx token runbook](operator-influx-token.md).
 
-InfluxDB 3 Core supports admin tokens only; read-scoped tokens are an Enterprise feature. Every token holder can write
-and delete. Dashboard-side mitigation: [Dashboard](component-dashboard.md).
+InfluxDB 3 Core supports admin tokens only; read-scoped tokens are an Enterprise feature. Localhost binding and
+Core-only secret access keep that privilege off browser-facing services.
+
+## Operational metrics
+
+InfluxDB 3 Core exposes Prometheus-compatible metrics on unauthenticated `GET /metrics` on the same localhost listener.
+Ops Agent's Prometheus receiver scrapes them and sends them to Cloud Monitoring. Required Dashboard signals are ingest
+lines/bytes counters, HTTP write outcomes, and available server errors. Exact names and labels must be verified against
+the pinned InfluxDB version before a Dashboard image is accepted; per-table labels are not assumed.
 
 ## Startup
 

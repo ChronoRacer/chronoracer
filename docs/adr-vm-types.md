@@ -32,6 +32,8 @@ by [Terraform](component-terraform.md).
   work compete on one physical core.
 - The VM must provide enough memory for both processes, InfluxDB cache, the operating system, and short bursts beyond
   the measured run.
+- Core also serializes a bounded Protobuf telemetry stream, while Ops Agent scrapes host, process, and Influx metrics.
+  Neither workload existed in the baseline below.
 
 ### Evidence
 
@@ -90,3 +92,7 @@ For some reason, the N4 version is cheaper than the E2 version in the pricing ca
 current region is `europe-west1`).
 
 ## [!IMPORTANT] These values might change after load testing on real GCP infrastructure
+
+The accepted defaults predate Core's Telemetry WebSocket and Ops Agent on both VMs. Before production use, repeat the
+GCP load test with Telemetry connected and deliberately slow. Acceptance requires no ingest throughput regression or
+unbounded Core memory growth; preview loss is acceptable and must appear as stream gaps.

@@ -23,6 +23,7 @@ sequenceDiagram
     participant CB as CloudBuild
     participant Kafka
     participant Core
+    participant Telemetry
     participant GCS
     participant PS as PubSub
     Op ->> Relay: stop race Okta
@@ -42,20 +43,21 @@ sequenceDiagram
     Relay ->> FS: destroying terraformRun destroy in_flight UUID runToken buildId empty
     Relay ->> CB: trigger destroy
     Relay ->> FS: write buildId
-    CB ->> CB: terraform destroy race state
+    CB ->> CB: destroy VMs, Telemetry, and race state
     CB ->> PS: build finished
     PS ->> Relay: push wake
     Relay ->> FS: update historical races
 ```
 
 1. Operator stop. Allowed phases and rejects: [Relay stop](component-relay.md). Does not publish shutdown yet.
-2. Controller `close_ingest`. Private Kafka stays up. Relay publishes shutdown only after this run succeeds.
+2. Controller `close_ingest`. Private Kafka and Telemetry stay up. Relay publishes shutdown only after this run
+   succeeds.
 3. Core on connect reads shutdown (`SHUTDOWN` on the control topic: [Kafka](component-kafka.md)), drains, writes export,
    publishes export-done.
 4. Relay accepts export-done only in `exporting` with mutex not held, then stamps destroy and triggers Cloud Build. Ack
    only after that stamp.
-5. Controller `destroy`. On success Relay moves to `destroyed` and clears the pointer. Status no longer returns a usable
-   Kafka address. Race doc remains.
+5. Controller `destroy`. Both VMs and Telemetry Cloud Run are deleted. On success Relay moves to `destroyed` and clears
+   the pointer. Status no longer returns usable Kafka or Telemetry addresses. Race doc remains.
 
 Firewall delete is not a session kill. Some public produce may still arrive during drain. MVP accepts that. New public
 connections fail.
@@ -74,8 +76,9 @@ Destroy on the graceful path waits for export-done. Force-destroy is the excepti
 `destroyed` / `raceId` mismatch): reject. No second destroy.
 
 Do not keep VM disks after a successful export. Prefix alone is not download access; Relay issues time-limited access on
-historical status. The database dies with the VM, so the [Dashboard](component-dashboard.md) shows nothing after
-destroy; the export is the only record of a finished race.
+historical status. The database and [Telemetry](component-telemetry.md) die with the race stack; the export is the only
+durable record of a finished race. [Dashboard](component-dashboard.md) keeps only operational Cloud Monitoring history,
+not sensor values.
 
 ## Force-destroy flow
 

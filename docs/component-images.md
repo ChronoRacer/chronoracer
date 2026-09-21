@@ -3,18 +3,19 @@
 Packer templates live in [`infra/packer`](../infra/packer). Race Terraform does not build images. Family names: [
 `names.json`](../infra/contract/names.json). Pin for race lifetime: [Terraform](component-terraform.md).
 
-Relay, Dashboard, and the controller Cloud Build image are **not** Packer. Push those first so always-on can
-apply: [Control-plane images](operator-control-plane-images.md).
+Relay, Dashboard, Telemetry, and the controller Cloud Build image are **not** Packer. Push those before the stack that
+consumes each image can apply: [Control-plane images](operator-control-plane-images.md).
 
 For target VMs used, see [ADR - VM types](adr-vm-types.md).
 
 ## Split
 
-**Kafka:** full bake. Overlay + Apache Kafka at `/opt/kafka`. Rebuild the family when Kafka, Java, overlay scripts, or
-contract JSON change. That is rare.
+**Kafka:** full bake. Overlay + Apache Kafka at `/opt/kafka` + Google Cloud Ops Agent with host/process receivers.
+Rebuild the family when Kafka, Java, agent config, overlay scripts, or contract JSON change.
 
-**Core:** hybrid. Packer bakes Debian, InfluxDB 3 Core, `rpk` and its pinned Redpanda Connect package (do not install
-manually with sudo or it will fail), `yq`, Google Cloud CLI, overlay scripts,
+**Core:** hybrid. Packer bakes Debian, InfluxDB 3 Core, Google Cloud Ops Agent with host/process and local Prometheus
+receivers, `rpk` and its pinned Redpanda Connect package (do not install manually with sudo or it will fail), `yq`,
+Google Cloud CLI, overlay scripts,
 `default-config.yaml`, Redpanda templates, contract JSON, and the build-time InfluxDB plugin environment. It does
 **not** bake the Core rust binary, Avro schema, or InfluxDB plugin source files.
 
@@ -73,13 +74,15 @@ overlays as `/chronoracer/gce-metadata.sh`. Boot scripts source it and read proj
 the GCE metadata server. They do not call the Compute API. Core and Kafka service accounts do not need
 `compute.instances.get`.
 
-**Kafka** `/chronoracer/`: overlay from [`kafka/startup`](../kafka/startup) (scripts, `kafka.service`),
+**Kafka** `/chronoracer/`: overlay from [`kafka/startup`](../kafka/startup) (scripts, `kafka.service`, Ops Agent
+configuration),
 `gce-metadata.sh`, plus `names.json` and `platform.json`. No Core dirs (`influxdb-plugins`, `redpanda`). Broker bits at
 `/opt/kafka`. `need()`: `gcloud`, `openssl`, `jq`, `python3`, `curl`, plus `java`.
 
 **Core** `/chronoracer/`: overlay from [`core/startup`](../core/startup) including `fetch-influx-token.sh`,
 `fetch-payload.sh`, systemd units,
-`gce-metadata.sh`, `default-config.yaml`, `redpanda/*.yaml`, contract JSON, empty `influxdb-plugins/`, and the
+Ops Agent configuration, `gce-metadata.sh`, `default-config.yaml`, `redpanda/*.yaml`, contract JSON, empty
+`influxdb-plugins/`, and the
 build-time `/chronoracer/influxdb-plugin-venv`
 (see [InfluxDB plugin environment](component-influxdb.md#plugin-python-environment)). Packer installs Debian
 `python3-yaml` (for `merge_config.py`). `need()` after payload: `influxdb3`, `python3` + PyYAML,

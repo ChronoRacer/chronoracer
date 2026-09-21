@@ -2,14 +2,14 @@
 
 Operator apply. What this stack creates, IAM, and residuals: [Terraform](../../docs/component-terraform.md).
 
-Requires `gs://chronoracer-state` from [../bootstrap](../bootstrap). Relay, controller, and dashboard images before a
-full apply: [Control-plane images](../../docs/operator-control-plane-images.md). VM
+Requires `gs://chronoracer-state` from [../bootstrap](../bootstrap). Relay, controller, Dashboard, and Telemetry images
+before the stack that consumes them: [Container images](../../docs/operator-control-plane-images.md). VM
 families: [Compute images](../../docs/component-images.md). Secret payloads:
 [Kafka TLS](../../docs/operator-domain-and-tls.md), [Influx token](../../docs/operator-influx-token.md),
-[Dashboard OAuth](../../docs/operator-dashboard-oauth.md).
+[Browser OAuth](../../docs/operator-browser-oauth.md).
 
-Cloud Run mounts the Influx token and Dashboard OAuth secrets at `latest`. A revision does not start with zero
-versions. Create the secret resources, upload payloads, then full apply:
+Dashboard Cloud Run mounts the browser OAuth secret at `latest`. Race Telemetry mounts the same secret; Core VM reads
+the Influx token at boot. Create the secret resources, upload payloads, then full apply:
 
 ```bash
 # After bootstrap + terraform.tfvars (project_id, DNS, image URIs).
@@ -19,7 +19,7 @@ terraform fmt
 terraform validate
 terraform apply -var-file=terraform.tfvars \
   -target=google_secret_manager_secret.influx_token \
-  -target=google_secret_manager_secret.dashboard_oauth
+  -target=google_secret_manager_secret.browser_oauth
 # Upload versions (runbooks above), then:
 terraform apply -var-file=terraform.tfvars
 ```

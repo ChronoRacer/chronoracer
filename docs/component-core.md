@@ -5,8 +5,8 @@ Code at: [Core root](../core)
 Where: one paid VM. Core and InfluxDB 3 Core (self-managed, single node) share that VM.
 
 Shared VM pain points: Core and database share similar load spikes which means that VM usage can spike greatly and when
-it does, it's from both components at the same time. Dashboard queries land on that same VM and are unthrottled in
-MVP: [Dashboard](component-dashboard.md).
+it does, it's from both components at the same time. Telemetry streaming adds bounded serialization and network work;
+it must never backpressure the ingest pipeline: [Telemetry stream](#telemetry-stream).
 
 Lifecycle: race-scoped. Created at the start. After export succeeds, VM and disk are destroyed.
 
@@ -18,6 +18,7 @@ Core responsibility:
 - process, validate data
 - batch and write to the database
 - serve as a buffer for the database
+- expose accepted logical points on one private, best-effort telemetry WebSocket
 - handle shutdown sequence export flow (for both database and Kafka)
 
 ## Data pipeline batch contract
@@ -38,6 +39,62 @@ interval settings.
 The control path is intentionally separate: a different message sink forwards each control record immediately on a
 single-message channel and uses `fetch.min.bytes=1`/`fetch.wait.max.ms=0` Kafka settings. Control events are not subject
 to the sensor-data batch size or timer because control events must be acted on as soon as they are available.
+
+## Telemetry stream
+
+Core owns the private stream contract consumed by [Telemetry](component-telemetry.md). It is not a general Core API.
+The only serving surface is:
+
+- private WebSocket upgrade: `GET /telemetry/v1`
+- required WebSocket subprotocol: `chronoracer.telemetry.v1`
+- binary frames: one versioned Protobuf `StreamEvent` per frame
+- listener: Core private interface on the telemetry port from
+  [`platform.json`](../infra/contract/platform.json)
+- caller authorization: dedicated Telemetry subnet firewall; no application credential or TLS on this private hop
+
+Core emits points after validation, deserialization, absolute-timestamp expansion, and driver assignment, but before
+the Influx write. Each point has the same logical fields as the persisted Influx point:
+
+| Field             | Protobuf type | Meaning                                                        |
+|-------------------|---------------|----------------------------------------------------------------|
+| `sensor_id`       | `string`      | Sensor identifier and Influx measurement name                  |
+| `timestamp_nanos` | `uint64`      | Absolute Unix timestamp in nanoseconds                          |
+| `value`           | `double`      | Accepted IEEE-754 sensor value                                 |
+| `driver_id`       | `string`      | Driver assigned by Core using the same state as persistence     |
+
+“Accepted” means Core produced a logical point. It does not promise the later database write succeeds. Kafka delivery
+is at-least-once, processing batches run concurrently, and source timestamps are authoritative; Telemetry must accept
+duplicate points and timestamps that are not in arrival order.
+
+### Protobuf event contract
+
+The schema has a top-level `StreamEvent` with a `oneof` payload:
+
+- `hello`: `protocol_version`, `race_id`, `stream_id`, `next_sequence`
+- `point_batch`: `first_sequence`, repeated `Point`
+- `gap`: `first_sequence`, `dropped_point_count`
+
+`protocol_version` is `1` and must agree with the WebSocket path and subprotocol. `stream_id` is new for each Core
+process lifetime. A mismatch between `hello.race_id` and Telemetry's configured race is fatal to that connection.
+
+Core assigns one monotonically increasing `uint64` sequence to every logical point before attempting delivery.
+`point_batch.first_sequence` is the sequence of its first point; remaining points occupy consecutive values. A batch
+must not be empty. `next_sequence` is the sequence Core will assign next, allowing a reconnect to detect points emitted
+while disconnected. `gap.first_sequence` and `dropped_point_count` describe a consecutive range Core could not put on
+the transport path.
+
+WebSocket transport is reliable while connected, but the preview contract is best-effort:
+
+- Core uses a bounded, non-blocking transport queue.
+- Full queue drops preview points and advances sequence; it never waits in the ingest path.
+- Core emits a `gap` for known queue loss as soon as the connection can accept it.
+- Reconnect to the same `stream_id` compares sequence values and exposes disconnected loss.
+- New `stream_id` means Core restarted; the amount lost across that boundary may be unknown.
+- Core retains no point history and never replays.
+
+Telemetry reconnects with capped backoff and handles WebSocket ping/pong. Core closes the stream during process
+shutdown. No connection, slow consumer, serialization error, socket error, or gap-signalling error may fail or pause
+the persistence pipeline. GCP load testing must prove this isolation before production use.
 
 ## Startup
 

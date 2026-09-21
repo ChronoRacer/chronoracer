@@ -1,24 +1,18 @@
 # Dashboard
 
-For documentation, see the [main document](../docs/component-dashboard.md).
+Architecture, datasource, panels, and container contract:
+[Dashboard](../docs/component-dashboard.md). Decision:
+[ADR - Dashboard and live telemetry](../docs/adr-dashboard.md).
 
-To run locally (assuming InfluxDB Docker Compose from [here](../core/dev-only/dev-docker/influx_db/docker-compose.yaml) is also running):
+This image is Grafana OSS with a provisioned Google Cloud Monitoring datasource and race-fleet dashboards. It must not
+contain an Influx datasource or sensor-value panels.
 
-```pwsh
-docker run --rm `
-  --name chronoracer-dashboard `                                                                                                                                                                                                 
-  --add-host host.docker.internal:host-gateway `                                                                                                                                                                                 
-  -p 3000:3000 `                                                                                                                                                                                                                 
-  -e GF_SERVER_HTTP_PORT=3000 `                                                                                                                                                                                                  
-  -e GF_SERVER_ROOT_URL=http://localhost:3000/ `                                                                                                                                                                                 
-  -e GF_AUTH_GENERIC_OAUTH_CLIENT_ID="QwcTbS7a6Tn70WZo58UIl57mDxaJZp0V" `                                                                                                                                                        
-  -e GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET="$CLIENT_SECRET" `                                                                                                                                                                      
-  -e GF_AUTH_GENERIC_OAUTH_AUTH_URL="https://chronoracer.eu.auth0.com/authorize" `                                                                                                                                               
-  -e GF_AUTH_GENERIC_OAUTH_TOKEN_URL="https://chronoracer.eu.auth0.com/oauth/token" `                                                                                                                                            
-  -e GF_AUTH_GENERIC_OAUTH_API_URL="https://chronoracer.eu.auth0.com/userinfo" `                                                                                                                                                 
-  -e INFLUX_URL="http://host.docker.internal:8181" `                                                                                                                                                                             
-  -e INFLUX_DATABASE="chrono_db" `                                                                                                                                                                                               
-  -e INFLUX_TOKEN="$token" `                                                                                                                                                                                                     
-  europe-west1-docker.pkg.dev/chronoracer/chronoracer/dashboard:latest   
-```
-Our Okta app has `localhost:3000` added as valid callback URLs.
+Local development needs:
+
+- Grafana environment variables from the component contract
+- Google Application Default Credentials with read-only Cloud Monitoring access
+- Auth0 localhost callback registration
+- Cloud Monitoring test metrics from a race or fixture project
+
+Do not use a downloaded service-account JSON key. Use operator ADC locally; production uses the Cloud Run attached
+service identity. Production acceptance also requires the Cloud Run ADC proof in the component document.

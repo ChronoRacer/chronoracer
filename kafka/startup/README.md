@@ -3,7 +3,9 @@
 Listeners and boot contract: [Kafka](../../docs/component-kafka.md). Bake inventory: [Compute images](../../docs/component-images.md). TLS payload: [Kafka TLS runbook](../../docs/operator-domain-and-tls.md). Race metadata keys: [Terraform](../../docs/component-terraform.md).
 
 1. Terraform `startup-script` (see [Terraform](../../docs/component-terraform.md)) execs `/chronoracer/entrypoint.sh`.
-2. [`entrypoint.sh`](entrypoint.sh) only installs `kafka.service` and `systemctl enable --now kafka`. TLS + config happen in the unit on **every** start (including reboot): tmpfs keystore does not survive reboot.
+2. [`entrypoint.sh`](entrypoint.sh) installs `kafka.service`, enables the baked Ops Agent host/process configuration,
+   then `systemctl enable --now kafka`. TLS + config happen in the Kafka unit on **every** start (including reboot):
+   tmpfs keystore does not survive reboot. Fleet metrics: [Dashboard](../../docs/component-dashboard.md).
 
 `kafka.service` (`UMask=0077`, `Environment=CHRONORACER_DIR=/chronoracer`):
 
