@@ -12,11 +12,14 @@ pub struct GcsPubSubManager<'a> {
     race_id: &'a CompactString,
 }
 
+fn topic_resource_name(project_id: &str, topic_id: &str) -> String {
+    format!("projects/{project_id}/topics/{topic_id}")
+}
+
 impl<'a> GcsPubSubManager<'a> {
     pub async fn new(race_id: &'a CompactString, gcp_config: &'a GcpConfig) -> Result<Self> {
-        let publisher = Publisher::builder(&gcp_config.pubsub_topic_id)
-            .build()
-            .await?;
+        let topic_name = topic_resource_name(&gcp_config.project_id, &gcp_config.pubsub_topic_id);
+        let publisher = Publisher::builder(&topic_name).build().await?;
         Ok(Self {
             publisher: Arc::new(publisher),
             race_id,
@@ -34,5 +37,19 @@ impl<'a> GcsPubSubManager<'a> {
         info!("Published shutdown message, id={message_id}");
         self.publisher.flush().await;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn resolves_topic_id_to_pubsub_resource_name() {
+        let project_id = "chronoracer";
+        let topic_id = "export-done";
+
+        assert_eq!(
+            super::topic_resource_name(project_id, topic_id),
+            "projects/chronoracer/topics/export-done"
+        );
     }
 }

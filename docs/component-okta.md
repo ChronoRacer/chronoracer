@@ -69,8 +69,8 @@ Out of Okta:
 ## Operator token (no UI)
 
 ```bash
+# OKTA_CLIENT_SECRET="fill_me_in"
 CLIENT_ID="QwcTbS7a6Tn70WZo58UIl57mDxaJZp0V"
-OKTA_CLIENT_SECRET=""
 OKTA_ACCESS_TOKEN="$(curl --request POST \
   --url https://chronoracer.eu.auth0.com/oauth/token \
   --header 'content-type: application/json' \
