@@ -51,9 +51,31 @@ secret upload: [Browser OAuth runbook](operator-browser-oauth.md).
 Grafana's built-in login form is disabled. Every authenticated user is a Viewer; nobody can edit panels or run ad-hoc
 queries from the UI.
 
-## Data path
+## Dashboards
+
+Dashboards can be provided in V1 or V2 format as JSON files ([V1](/dashboard/dashboard_files/v1) and [V2](/dashboard/dashboard_files/v2)).
+Version specifications [here](https://github.com/grafana/grafana/tree/main/apps/dashboard/kinds) - copy spec to AI when generating.
+
+Dashboard are loaded by entrypoint scripts (V2 requires API calls) or automatically by Grafana.
+
+### Race fleet dashboard
 
 Dashboard has one datasource: Google Cloud Monitoring.
+
+Provisioned as code. The current-race fleet dashboard answers “is the race infrastructure alive and keeping up?”
+
+| Area      | Required signals                                                                                            |
+|-----------|-------------------------------------------------------------------------------------------------------------|
+| Kafka VM  | instance up; one whole-VM CPU, memory, disk, and network panel                                              |
+| Core VM   | instance up; one whole-VM CPU, memory, disk, and network panel                                              |
+| InfluxDB  | accepted lines/bytes rate and write outcomes from [Core](component-core.md#cloud-monitoring-write-counters) |
+| Telemetry | active instance, request count, request latency, server errors                                              |
+
+Native Compute / Ops Agent host panels group by `resource.label.instance_id`. Core write counters use the same
+instance id on the `gce_instance` resource, so reused VM names still do not merge races.
+
+Between races the race-fleet panels show no active resources. Historical Cloud Monitoring retention is operational
+evidence, not finished-race sensor data.
 
 ```mermaid
 flowchart LR
@@ -81,43 +103,6 @@ flowchart LR
 
 Ops Agent on both race VMs publishes whole-VM CPU, memory, disk, and network, and excludes the process scraper. Ingest lines, bytes, and write outcomes are custom metrics written by [Core](component-core.md#cloud-monitoring-write-counters).
 
-Dashboard does not use Direct VPC Egress, connect to a race VM, or hold an Influx token.
-
-## Google authentication gate
-
-Dashboard's attached service account has only the read permissions needed for Cloud Monitoring. No service-account JSON
-key is created or mounted.
-
-Grafana calls its attached-identity datasource mode `GCE Default Service Account`. The implementation uses Google
-Application Default Credentials, and Cloud Run exposes its attached service identity through the metadata server. The
-official Grafana support text names GCE rather than Cloud Run, so this configuration has a mandatory deployment proof
-before implementation acceptance:
-
-1. cold-start Dashboard on Cloud Run with no credential file
-2. pass datasource health check
-3. query one native Compute metric
-4. query one Ops Agent host metric and one Core custom metric
-
-Failure stops the Dashboard migration. Do not fall back to a long-lived JSON key; revisit the Dashboard runtime or
-authentication design in the ADR.
-
-## Dashboards
-
-Provisioned as code. The current-race fleet dashboard answers “is the race infrastructure alive and keeping up?”
-
-| Area       | Required signals                                                                 |
-|------------|----------------------------------------------------------------------------------|
-| Kafka VM   | instance up; one whole-VM CPU, memory, disk, and network panel                   |
-| Core VM    | instance up; one whole-VM CPU, memory, disk, and network panel                   |
-| InfluxDB   | accepted lines/bytes rate and write outcomes from [Core](component-core.md#cloud-monitoring-write-counters) |
-| Telemetry  | active instance, request count, request latency, server errors                   |
-
-Native Compute / Ops Agent host panels group by `resource.label.instance_id`. Core write counters use the same
-instance id on the `gce_instance` resource, so reused VM names still do not merge races.
-
-Between races the race-fleet panels show no active resources. Historical Cloud Monitoring retention is operational
-evidence, not finished-race sensor data.
-
 ## Accepted risks
 
 - Cloud Monitoring and Ops Agent introduce sampling and ingestion delay. Dashboard is fleet health, not near-real-time
@@ -129,16 +114,16 @@ evidence, not finished-race sensor data.
 
 The image contains only Grafana configuration, provisioned datasource, and dashboards.
 
-| Variable                              | Source                        | Use                   |
-|---------------------------------------|-------------------------------|-----------------------|
-| `GCP_PROJECT_ID`                      | Terraform                     | Monitoring project    |
-| `GF_SERVER_HTTP_PORT`                 | [`platform.json`](../infra/contract/platform.json) | Port Grafana binds |
-| `GF_SERVER_ROOT_URL`                  | Mapped Dashboard hostname     | OAuth redirect base   |
-| `GF_AUTH_GENERIC_OAUTH_CLIENT_ID`     | [`platform.json`](../infra/contract/platform.json) | Auth0 application |
-| `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET` | Secret Manager                | Auth0 application     |
-| `GF_AUTH_GENERIC_OAUTH_AUTH_URL`      | Derived from Auth0 issuer     | Login redirect        |
-| `GF_AUTH_GENERIC_OAUTH_TOKEN_URL`     | Derived from Auth0 issuer     | Token exchange        |
-| `GF_AUTH_GENERIC_OAUTH_API_URL`       | Derived from Auth0 issuer     | Userinfo              |
+| Variable                              | Source                                             | Use                 |
+|---------------------------------------|----------------------------------------------------|---------------------|
+| `GCP_PROJECT_ID`                      | Terraform                                          | Monitoring project  |
+| `GF_SERVER_HTTP_PORT`                 | [`platform.json`](../infra/contract/platform.json) | Port Grafana binds  |
+| `GF_SERVER_ROOT_URL`                  | Mapped Dashboard hostname                          | OAuth redirect base |
+| `GF_AUTH_GENERIC_OAUTH_CLIENT_ID`     | [`platform.json`](../infra/contract/platform.json) | Auth0 application   |
+| `GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET` | Secret Manager                                     | Auth0 application   |
+| `GF_AUTH_GENERIC_OAUTH_AUTH_URL`      | Derived from Auth0 issuer                          | Login redirect      |
+| `GF_AUTH_GENERIC_OAUTH_TOKEN_URL`     | Derived from Auth0 issuer                          | Token exchange      |
+| `GF_AUTH_GENERIC_OAUTH_API_URL`       | Derived from Auth0 issuer                          | Userinfo            |
 
 `GF_SERVER_ROOT_URL` is `https://dashboard.{dns zone}`, not the generated `run.app` URL. A Terraform check asserts the
 domain mapping hostname. Auth0 callback registration: [Browser OAuth runbook](operator-browser-oauth.md).

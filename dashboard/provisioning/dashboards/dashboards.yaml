@@ -4,9 +4,9 @@ providers:
   - name: Chronoracer dashboards
     orgId: 1
     folder: Chronoracer
+    folderUid: chronoracer
     type: file
     disableDeletion: true
     allowUiUpdates: false
-    updateIntervalSeconds: 20
     options:
       path: /etc/grafana/provisioning/dashboards/json
