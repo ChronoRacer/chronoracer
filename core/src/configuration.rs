@@ -248,6 +248,23 @@ impl GcpConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct TelemetryConfig {
+    pub port: u16,
+    pub max_queue_points: usize,
+    pub max_queue_age_ms: u32,
+}
+
+impl TelemetryConfig {
+    pub fn mock_config() -> Self {
+        Self {
+            port: 9470,
+            max_queue_points: 16_384,
+            max_queue_age_ms: 250,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CoreConfig {
     pub kafka: KafkaConfig,
     pub processing: ProcessingConfig,
@@ -255,6 +272,7 @@ pub struct CoreConfig {
     pub race: RaceConfig,
     pub runtime: RuntimeConfig,
     pub gcp: GcpConfig,
+    pub telemetry: TelemetryConfig,
 }
 
 impl CoreConfig {
@@ -286,6 +304,7 @@ impl CoreConfig {
             race: RaceConfig::mock_config(),
             runtime: RuntimeConfig::mock_config(),
             gcp: GcpConfig::mock_config(),
+            telemetry: TelemetryConfig::mock_config(),
         }
     }
 }
@@ -329,6 +348,9 @@ mod tests {
                 assert_eq!(loaded.kafka.brokers.len(), 1);
                 assert_eq!(loaded.kafka.brokers[0], "localhost:9092".to_string());
                 assert_eq!(loaded.kafka.dlq_config.publish_timeout_sec, 5);
+                assert_eq!(loaded.telemetry.port, 9470);
+                assert_eq!(loaded.telemetry.max_queue_points, 16_384);
+                assert_eq!(loaded.telemetry.max_queue_age_ms, 250);
             }
             Err(e) => {
                 panic!("{}", e);

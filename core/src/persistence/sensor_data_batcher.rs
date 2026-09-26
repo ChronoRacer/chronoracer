@@ -89,7 +89,7 @@ impl SensorDataBatcher {
 
                     let mut downstream_closed = false;
                     for data in data_batch {
-                        sensor_data_into_points(data, &mut buffer, &self.driver_id.get());
+                        sensor_data_into_points(&data, &mut buffer, &self.driver_id.get());
 
                         if buffer.len() >= self.flush_max_combined_batch_size {
                             let to_flush = std::mem::replace(&mut buffer, get_buffer());
@@ -129,12 +129,12 @@ impl SensorDataBatcher {
 }
 
 fn sensor_data_into_points(
-    data: UnwoundSensorDataMessage,
+    data: &UnwoundSensorDataMessage,
     buffer: &mut Vec<SimplePoint>,
     current_driver_id: &Arc<CompactString>,
 ) {
-    let shared_measurement: Arc<str> = Arc::from(data.sensor_id);
-    buffer.extend(data.readings.into_iter().map(|reading| SimplePoint {
+    let shared_measurement = Arc::clone(&data.sensor_id);
+    buffer.extend(data.readings.iter().map(|reading| SimplePoint {
         measurement: Arc::clone(&shared_measurement),
         driver: Arc::clone(current_driver_id),
         value: reading.value,
@@ -149,14 +149,14 @@ mod tests {
     use tokio::sync::mpsc;
     use tokio::time::{Duration, timeout};
 
-    fn message(sensor_id: &str, value: f64) -> UnwoundSensorDataMessage {
-        UnwoundSensorDataMessage {
-            sensor_id: sensor_id.to_string(),
+    fn message(sensor_id: &str, value: f64) -> Arc<UnwoundSensorDataMessage> {
+        Arc::new(UnwoundSensorDataMessage {
+            sensor_id: Arc::from(sensor_id),
             readings: Box::new([AbsoluteSensorReading {
                 value,
                 timestamp: 1_000_000,
             }]),
-        }
+        })
     }
 
     #[tokio::test]
