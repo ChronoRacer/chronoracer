@@ -34,3 +34,8 @@ output "public_firewall_present" {
   value       = length(google_compute_firewall.kafka_public) == 1
   description = "True when ingest_open created chronoracer-kafka-public."
 }
+
+output "telemetry_url" {
+  value       = google_cloud_run_v2_service.telemetry.uri
+  description = "Generated Telemetry Cloud Run URI. Controller copies this to Firestore as telemetryUrl."
+}

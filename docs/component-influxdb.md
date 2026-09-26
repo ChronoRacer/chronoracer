@@ -8,19 +8,18 @@ Responsibility:
 
 - store sensor measurements for the race
 - serve queries from Core on the same VM
-- expose local Prometheus-compatible server metrics for Ops Agent
 - dump tables on export (plugin) so Core can upload to GCS
 
 Core owns Kafka consume and control flow. The Influx Kafka plugin is unused.
 
 ## Access model
 
-The HTTP listener binds localhost only. Core writes and queries locally; Ops Agent on the same VM scrapes `/metrics`.
-No Cloud Run service or other VM can reach Influx directly. [Dashboard](component-dashboard.md) reads the resulting
-metrics from Cloud Monitoring instead of querying Influx.
+The HTTP listener binds localhost only. Core writes and queries locally. No Cloud Run service or other VM can reach
+Influx directly. [Dashboard](component-dashboard.md) reads Core's write counters from Cloud Monitoring instead of
+querying Influx: [Core](component-core.md#cloud-monitoring-write-counters).
 
-Port and database name live in [`platform.json`](../infra/contract/platform.json), because the systemd bind, Ops Agent
-scrape config, and Core's own client all need the same values. The
+Port and database name live in [`platform.json`](../infra/contract/platform.json), because the systemd bind and Core's
+own client need the same values. The
 [`core/default-config.yaml`](../core/default-config.yaml) entries are local-development defaults that the boot-time
 platform overlay wins over, the same way the `localhost:9092` broker works ([Core](component-core.md)).
 
@@ -33,10 +32,7 @@ Core-only secret access keep that privilege off browser-facing services.
 
 ## Operational metrics
 
-InfluxDB 3 Core exposes Prometheus-compatible metrics on unauthenticated `GET /metrics` on the same localhost listener.
-Ops Agent's Prometheus receiver scrapes them and sends them to Cloud Monitoring. Required Dashboard signals are ingest
-lines/bytes counters, HTTP write outcomes, and available server errors. Exact names and labels must be verified against
-the pinned InfluxDB version before a Dashboard image is accepted; per-table labels are not assumed.
+Dashboard ingest signals are Core write counters, not this process: [Core](component-core.md#cloud-monitoring-write-counters).
 
 ## Startup
 

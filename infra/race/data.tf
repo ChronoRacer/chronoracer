@@ -9,6 +9,16 @@ data "google_compute_subnetwork" "chronoracer" {
   region  = var.region
 }
 
+data "google_compute_subnetwork" "telemetry_run" {
+  name    = local.names.telemetry_run_subnet
+  project = var.project_id
+  region  = var.region
+}
+
+data "google_project" "this" {
+  project_id = var.project_id
+}
+
 data "google_compute_zones" "available" {
   project = var.project_id
   region  = var.region
@@ -28,6 +38,16 @@ data "google_service_account" "kafka" {
 data "google_service_account" "core" {
   account_id = local.names.core_sa
   project    = var.project_id
+}
+
+data "google_service_account" "telemetry" {
+  account_id = local.names.telemetry_sa
+  project    = var.project_id
+}
+
+data "google_secret_manager_secret" "okta_oauth" {
+  secret_id = local.names.okta_oauth_secret
+  project   = var.project_id
 }
 
 data "google_secret_manager_secret" "kafka_tls" {

@@ -38,6 +38,14 @@ resource "google_service_account" "dashboard" {
   depends_on = [google_project_service.apis]
 }
 
+resource "google_service_account" "telemetry" {
+  project      = var.project_id
+  account_id   = local.names.telemetry_sa
+  display_name = "Chronoracer Telemetry"
+
+  depends_on = [google_project_service.apis]
+}
+
 resource "google_service_account" "build_finished_push" {
   project      = var.project_id
   account_id   = local.names.build_push_sa

@@ -48,16 +48,17 @@ resource "google_secret_manager_secret_version" "relay_config" {
     kafka_public_port              = local.kafka_public_port
     kafka_control_topic            = local.platform.kafka_control_topic
     kafka_heartbeat_topic          = local.platform.kafka_heartbeat_topic
+    kafka_event_topic              = local.platform.kafka_event_topic
     cloud_build_topic              = local.cloud_build_topic
     export_done_topic              = local.platform.export_done_topic
   })
 }
 
 resource "google_cloud_run_v2_service" "relay" {
-  name     = local.names.relay_service
-  project  = var.project_id
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  name                = local.names.relay_service
+  project             = var.project_id
+  location            = var.region
+  ingress             = "INGRESS_TRAFFIC_ALL"
   deletion_protection = false
 
   template {
@@ -194,7 +195,7 @@ resource "google_cloudbuild_trigger" "race_controller" {
   name        = local.names.trigger
   project     = var.project_id
   location    = var.region
-  description = "Relay-invoked race Terraform in var.region. Substitutions _RACE_ID _ACTION _RUN_TOKEN. Env PROJECT_ID KAFKA_FQDN ZONE from always-on."
+  description = "Relay-invoked race Terraform in var.region. Substitutions _RACE_ID _ACTION _RUN_TOKEN. Env PROJECT_ID REGION KAFKA_FQDN ZONE TELEMETRY_IMAGE from always-on."
 
   service_account = google_service_account.controller.id
 
@@ -218,8 +219,10 @@ resource "google_cloudbuild_trigger" "race_controller" {
         "ACTION=$_ACTION",
         "RUN_TOKEN=$_RUN_TOKEN",
         "PROJECT_ID=${var.project_id}",
+        "REGION=${var.region}",
         "KAFKA_FQDN=${var.kafka_fqdn}",
         "ZONE=${var.zone}",
+        "TELEMETRY_IMAGE=${var.telemetry_image}",
       ]
     }
   }

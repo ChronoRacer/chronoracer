@@ -17,11 +17,10 @@ Current component shapes: [Dashboard](component-dashboard.md) and [Telemetry](co
 
 1. Keep **Dashboard** as always-on Grafana OSS for race-fleet health only.
 2. Dashboard reads only Google Cloud Monitoring. It has no Influx token, no database route, and no race-sensor panels.
-3. Install Ops Agent on both race VMs. Collect host and process metrics; on Core, scrape InfluxDB 3 Core's local
-   Prometheus-compatible `/metrics` endpoint for ingest metrics.
+3. Install Ops Agent on both race VMs. Both collect whole-VM host metrics only (CPU, memory, disk, network).
 4. Add **Telemetry** as a race-scoped Cloud Run service for accepted sensor values.
-5. Telemetry pulls a versioned Protobuf stream from a private WebSocket exposed by Core. It does not consume Kafka and
-   does not query InfluxDB.
+5. Telemetry pulls a versioned Protobuf stream from Core. The protocol is
+   [gRPC server streaming](adr-telemetry-stream.md). It does not consume Kafka and does not query InfluxDB.
 6. Telemetry is read-only and operator-authenticated. Any lifecycle write remains on Relay.
 7. Neither Dashboard nor Telemetry affects race readiness or ingest.
 
@@ -29,7 +28,7 @@ Current component shapes: [Dashboard](component-dashboard.md) and [Telemetry](co
 
 Fleet metrics and race values have different lifecycles, sources, and failure meaning.
 
-Dashboard survives races and answers whether VMs, processes, Influx ingest, and Telemetry infrastructure are healthy.
+Dashboard survives races and answers whether VMs, Influx ingest, and Telemetry infrastructure are healthy.
 Cloud Monitoring retains this operational data independently of the race VMs. Grafana remains useful because it
 provides provisioned operational dashboards and Auth0 login without custom UI code.
 
@@ -37,7 +36,7 @@ Telemetry exists only while a race exists and answers what accepted values are a
 preview state but owns no durable record. This isolates preview-specific load and behavior from the always-on
 operations dashboard.
 
-## Why Core WebSocket
+## Why a Core stream
 
 The preview must contain Core-accepted, processed values with Core's driver assignment. Reading raw Kafka would require
 Telemetry to duplicate Core validation and transformation and could disagree with persisted data.
@@ -46,16 +45,12 @@ A dedicated Kafka preview topic was rejected. It would add another producer and 
 that is the critical ingest buffer. Current local load results leave headroom but do not prove GCP broker capacity, and
 the preview does not need Kafka durability.
 
-Core instead exposes one private WebSocket upgrade path. Telemetry is the only network-authorized client. Core copies
-logical points into a bounded, non-blocking transport queue after driver assignment and before database write. Slow or
-absent Telemetry can lose preview points but cannot backpressure ingest. Sequence ranges and gap events expose known
-loss; Core stores no replay history.
+Core exposes one private server stream. Telemetry is the only network-authorized client. Protocol and rejected
+transports: [ADR - Core telemetry stream protocol](adr-telemetry-stream.md). What the stream carries, and how loss
+works: [Core](component-core.md#telemetry-stream).
 
 Rejected: **Core pushes outbound to Telemetry**. It makes the critical process own destination discovery, OAuth/IAM
 calling behavior, and reconnect policy. Pulling keeps Core unaware of the consumer.
-
-Rejected: **raw TCP stream**. It avoids HTTP upgrade parsing but needs custom framing, keepalive, and version
-negotiation. A WebSocket-only listener provides those mechanics without creating a general REST API.
 
 ## Why race-scoped Cloud Run
 
@@ -78,9 +73,9 @@ complicates binding one service to changing race identity and state.
 
 ## Why Cloud Monitoring for Dashboard
 
-InfluxDB 3 Core exposes Prometheus-compatible server metrics at `/metrics`. Ops Agent can scrape that endpoint locally
-and write the metrics to Cloud Monitoring. Grafana's Google Cloud Monitoring datasource can query both those Prometheus
-metrics and native Compute Engine/Cloud Run metrics.
+Core writes cumulative ingest counters to Cloud Monitoring from data it already has at flush time. Grafana's Google
+Cloud Monitoring datasource queries those custom metrics, Ops Agent host metrics, and native Compute Engine/Cloud Run
+metrics.
 
 This removes:
 
@@ -92,14 +87,15 @@ This removes:
 Grafana's datasource labels its attached-identity mode as “GCE Default Service Account.” Its implementation resolves
 Google Application Default Credentials, and Cloud Run supplies ADC from the attached service account through the
 metadata server. Official Grafana documentation names Compute Engine, not Cloud Run, so a deployment proof is required
-before implementation is accepted: provision the datasource without a JSON key, query native Cloud Monitoring and
-Ops-Agent Prometheus metrics, and verify cold-start behavior. Long-lived service-account JSON keys are not an accepted
+before implementation is accepted: provision the datasource without a JSON key, query native Cloud Monitoring, one Ops
+Agent host metric, and one Core custom metric, and verify cold-start behavior. Long-lived service-account JSON keys are not an accepted
 fallback; failure of the proof requires a new runtime/authentication decision.
 
 ## Security and failure boundaries
 
 - Dashboard service account gets read-only Cloud Monitoring access.
-- Telemetry gets only its browser OAuth secret and VPC access from its dedicated subnet to Core's telemetry port.
+- Telemetry gets shared browser OAuth secret access (same Secret Manager resource as Dashboard) and VPC access from its
+  dedicated subnet to Core's telemetry port.
 - Core's telemetry endpoint has no public route and no application credential; firewall source range is its
   authorization boundary.
 - Dashboard or Telemetry failure never blocks Kafka, Core, Influx, shutdown, or export.

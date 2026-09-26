@@ -12,11 +12,13 @@ def test_output_values_strip_dot():
         "core_instance": {"value": "ci"},
         "kafka_public_ip": {"value": "1.1.1.1"},
         "kafka_hostname": {"value": "ingest.chronoracer.live."},
+        "telemetry_url": {"value": "https://telemetry-1.europe-west1.run.app"},
     }
     values = _output_values(raw)
     assert values is not None
     assert values.kafka_hostname == "ingest.chronoracer.live"
     assert values.kafka_instance == "ki"
+    assert values.telemetry_url == "https://telemetry-1.europe-west1.run.app"
 
 
 def test_output_values_missing_key():
@@ -42,6 +44,7 @@ TF_JSON = json.dumps(
         "core_instance": {"value": "ci"},
         "kafka_public_ip": {"value": "1.1.1.1"},
         "kafka_hostname": {"value": "ingest.chronoracer.live."},
+        "telemetry_url": {"value": "https://telemetry-1.europe-west1.run.app"},
     }
 )
 
@@ -68,6 +71,7 @@ def test_apply_runs_init_apply_output(monkeypatch, tmp_path: Path, capsys):
     assert result.ok
     assert result.outputs is not None
     assert result.outputs.kafka_hostname == "ingest.chronoracer.live"
+    assert result.outputs.telemetry_url == "https://telemetry-1.europe-west1.run.app"
     assert seen[0][1] == "init"
     assert seen[1][1] == "apply"
     assert seen[2][1:] == ["output", "-json"]

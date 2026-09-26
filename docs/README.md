@@ -21,6 +21,7 @@ Each concept has one owner. Other docs link it. Do not copy or rephrase the same
 | Race-fleet health dashboards and datasource                                            | [Dashboard](component-dashboard.md)                               |
 | Near-real-time race preview                                                            | [Telemetry](component-telemetry.md)                               |
 | Dashboard/Telemetry split and rejected options                                         | [ADR - Dashboard](adr-dashboard.md)                               |
+| Core to Telemetry stream protocol                                                      | [ADR - Core telemetry stream](adr-telemetry-stream.md)            |
 | Packer VM images and Core payload                                                      | [Compute images](component-images.md)                             |
 | Control-plane Docker publish                                                           | [Control-plane images](operator-control-plane-images.md)          |
 | Kafka public TLS issue/upload, Cloud Run domain verify                                 | [Kafka TLS](operator-domain-and-tls.md)                           |
@@ -75,7 +76,7 @@ flowchart LR
     Operators -->|HTTPS Okta, browser| Dash
     Operators -->|HTTPS Okta, browser| Telemetry
     Dash -->|read metrics| Monitoring
-    CoreDB -->|Ops Agent metrics| Monitoring
+    CoreDB -->|host metrics and write counters| Monitoring
     Kafka -->|Ops Agent metrics| Monitoring
     Monitoring -->|query results| Dash
     Operators -->|manual| TF
@@ -93,7 +94,7 @@ flowchart LR
     CoreDB -->|private, heartbeat| Kafka
     Devices -->|TLS Okta, data| Kafka
     Kafka -->|private, data, control events| CoreDB
-    Telemetry -->|private, Protobuf WebSocket| CoreDB
+    Telemetry -->|private, gRPC h2c| CoreDB
     Kafka -->|private, heartbeat| Relay
     CoreDB -->|private, exports| GcsRace
     GcsArt -->|private, Core payload| CoreDB

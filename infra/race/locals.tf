@@ -6,6 +6,8 @@ locals {
   kafka_hostname    = trimsuffix(var.kafka_fqdn, ".")
 
   core_config_gcs_uri = "gs://${data.google_storage_bucket.race.name}/${var.race_id}/core-config.yaml"
+  core_telemetry_url  = "http://${local.names.core_vm}.${var.zone}.c.${var.project_id}.internal:${local.platform.core_telemetry_port}"
+  telemetry_root_url  = "https://${local.names.telemetry_service}-${data.google_project.this.number}.${var.region}.run.app"
 
   # Inline so the controller image (copied *.tf only) does not need extra files at apply.
   overlay_startup = <<-EOT

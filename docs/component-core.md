@@ -18,7 +18,8 @@ Core responsibility:
 - process, validate data
 - batch and write to the database
 - serve as a buffer for the database
-- expose accepted logical points on one private, best-effort telemetry WebSocket
+- expose accepted logical points on one private, best-effort telemetry gRPC stream
+- publish cumulative Influx write counters to Cloud Monitoring
 - handle shutdown sequence export flow (for both database and Kafka)
 
 ## Data pipeline batch contract
@@ -42,59 +43,80 @@ to the sensor-data batch size or timer because control events must be acted on a
 
 ## Telemetry stream
 
-Core owns the private stream contract consumed by [Telemetry](component-telemetry.md). It is not a general Core API.
-The only serving surface is:
+Core owns what the private preview stream carries. [Telemetry](component-telemetry.md) is the only caller. This is not a
+general Core API. The RPC, windows, batch cap, compression, and rejected transports are owned by
+[ADR - Core telemetry stream protocol](adr-telemetry-stream.md). Wire fields are in
+[`telemetry_v1.proto`](../core/proto/telemetry_v1.proto).
 
-- private WebSocket upgrade: `GET /telemetry/v1`
-- required WebSocket subprotocol: `chronoracer.telemetry.v1`
-- binary frames: one versioned Protobuf `StreamEvent` per frame
-- listener: Core private interface on the telemetry port from
-  [`platform.json`](../infra/contract/platform.json)
-- caller authorization: dedicated Telemetry subnet firewall; no application credential or TLS on this private hop
+The listener binds `0.0.0.0` on `core_telemetry_port` from
+[`platform.json`](../infra/contract/platform.json). No TLS and no application credential. The dedicated Telemetry
+subnet firewall is the authorization boundary. Until that firewall exists, VPC clients cannot connect. The Core VM has
+no public address.
 
-Core emits points after validation, deserialization, absolute-timestamp expansion, and driver assignment, but before
-the Influx write. Each point has the same logical fields as the persisted Influx point:
+The copy happens after Avro unwind (validation and absolute timestamps) and before the batch is sent into persistence.
+It does not happen in the batcher or the flusher. The 2 second and 4 second flush intervals delay only the Influx write.
 
-| Field             | Protobuf type | Meaning                                                        |
-|-------------------|---------------|----------------------------------------------------------------|
-| `sensor_id`       | `string`      | Sensor identifier and Influx measurement name                  |
-| `timestamp_nanos` | `uint64`      | Absolute Unix timestamp in nanoseconds                          |
-| `value`           | `double`      | Accepted IEEE-754 sensor value                                 |
-| `driver_id`       | `string`      | Driver assigned by Core using the same state as persistence     |
+The driver on a preview point is the driver at that copy. Persistence stamps the driver later, when the batcher builds
+the database point. A driver change while the message waits behind a slow flush can make those two drivers differ. The
+preview keeps the earlier one.
+
+With no `Watch` call, the parse path checks one atomic and returns. It does not copy, assign a sequence, or count
+drops. Disconnect discards the unsent queue. A new `Watch` does not report how many points were missed while idle.
+
+While a call is active, the queue is a FIFO. It drops the oldest unsent points once they are older than
+`telemetry.max_queue_age_ms` (250) or the queue holds more than `telemetry.max_queue_points` (16384). A client that
+keeps up receives every point, in queue order. One active `Watch`. A new call cancels the previous one, drops its
+queue, and starts the sequence again. `stream_id` stays constant for the Core process, so a restart is a new id.
+
+Each point has the same logical fields as the persisted Influx point:
+
+| Field             | Protobuf type | Meaning                                                                 |
+|-------------------|---------------|-------------------------------------------------------------------------|
+| `sensor_id`       | `string`      | Sensor identifier and Influx measurement name                           |
+| `timestamp_nanos` | `uint64`      | Absolute Unix timestamp in nanoseconds                                  |
+| `value`           | `double`      | Accepted IEEE-754 sensor value                                          |
+| `driver_id`       | `string`      | Driver read at the unwind copy, not the later persistence stamp         |
 
 “Accepted” means Core produced a logical point. It does not promise the later database write succeeds. Kafka delivery
 is at-least-once, processing batches run concurrently, and source timestamps are authoritative; Telemetry must accept
 duplicate points and timestamps that are not in arrival order.
 
-### Protobuf event contract
+### Events
 
-The schema has a top-level `StreamEvent` with a `oneof` payload:
+`StreamEvent` is one gRPC message:
 
-- `hello`: `protocol_version`, `race_id`, `stream_id`, `next_sequence`
-- `point_batch`: `first_sequence`, repeated `Point`
-- `gap`: `first_sequence`, `dropped_point_count`
+- `hello`: `protocol_version` is `1`, plus `race_id`, `stream_id`, and `next_sequence`. `next_sequence` is the first
+  sequence this call will assign. It is not a count of points emitted while disconnected. A `race_id` mismatch is fatal
+  for that Telemetry connection.
+- `point_batch`: `first_sequence` and one or more `Point` values. The following points use the next sequences. A batch
+  is not empty.
+- `gap`: `first_sequence` and `dropped_point_count` for a consecutive range dropped while this call was up (age, the
+  point cap, or a full handoff).
 
-`protocol_version` is `1` and must agree with the WebSocket path and subprotocol. `stream_id` is new for each Core
-process lifetime. A mismatch between `hello.race_id` and Telemetry's configured race is fatal to that connection.
+Sequence numbers are assigned on the telemetry task for this call. Points that never fit on the handoff still consume a
+sequence range so that loss is a `gap`. Core keeps no history and does not replay.
 
-Core assigns one monotonically increasing `uint64` sequence to every logical point before attempting delivery.
-`point_batch.first_sequence` is the sequence of its first point; remaining points occupy consecutive values. A batch
-must not be empty. `next_sequence` is the sequence Core will assign next, allowing a reconnect to detect points emitted
-while disconnected. `gap.first_sequence` and `dropped_point_count` describe a consecutive range Core could not put on
-the transport path.
+The parse thread does not lock the preview queue and does not wait on gRPC or TCP. It `try_send`s the batch onto a
+bounded handoff and returns. The telemetry task assigns sequences and drops the oldest unsent points for age or the
+point cap. If that handoff is already over budget, the parse thread records a tail gap and still returns. Serialization,
+HTTP/2 flow control, and send errors stay on the serving task. That task is not part of the data-pipeline or
+control-task supervisors: its death does not exit Core and does not start export. Shutdown cancels the listener and
+does not wait for it before export.
 
-WebSocket transport is reliable while connected, but the preview contract is best-effort:
+No connection, slow consumer, or gap may fail or pause the persistence pipeline. GCP load testing must prove this
+isolation before production use.
 
-- Core uses a bounded, non-blocking transport queue.
-- Full queue drops preview points and advances sequence; it never waits in the ingest path.
-- Core emits a `gap` for known queue loss as soon as the connection can accept it.
-- Reconnect to the same `stream_id` compares sequence values and exposes disconnected loss.
-- New `stream_id` means Core restarted; the amount lost across that boundary may be unknown.
-- Core retains no point history and never replays.
+## Cloud Monitoring write counters
 
-Telemetry reconnects with capped backoff and handles WebSocket ping/pong. Core closes the stream during process
-shutdown. No connection, slow consumer, serialization error, socket error, or gap-signalling error may fail or pause
-the persistence pipeline. GCP load testing must prove this isolation before production use.
+Core publishes three cumulative custom metrics for [Dashboard](component-dashboard.md) ingest panels. Names:
+
+| Metric | Meaning |
+|--------|---------|
+| `custom.googleapis.com/chronoracer/influx_write_lines` | Lines Influx accepted |
+| `custom.googleapis.com/chronoracer/influx_write_bytes` | Bytes in fully successful writes |
+| `custom.googleapis.com/chronoracer/influx_write_requests` | Write calls, label `outcome` = `ok`, `partial`, or `error` |
+
+Counters increment once per flush. A background task sends one `CreateTimeSeries` every 60 seconds while `gcp.enabled` is true. Partial writes count accepted lines and the `partial` outcome, and do not add bytes. Publish failure, or missing GCE metadata, is logged and does not stop ingest.
 
 ## Startup
 

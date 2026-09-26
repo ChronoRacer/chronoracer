@@ -29,7 +29,8 @@ pulled by race Cloud Run, so a missing tag fails race apply. Publish all four.
 1. GCP project, `gcloud auth application-default login`, `gcloud auth login`.
 2. Bootstrap state bucket: [`infra/bootstrap`](../infra/bootstrap). Always-on backend is `gs://chronoracer-state/base/`.
 3. [`infra/always-on/terraform.tfvars`](../infra/always-on/terraform.tfvars): `project_id`, `dns_zone_dns_name`,
-   `kafka_fqdn`, and the four image URIs whose **tag** matches `CONTROL_PLANE_IMAGE_TAG` (default `latest`).
+   `kafka_fqdn`, and the four image URIs (`relay_image`, `controller_image`, `dashboard_image`, `telemetry_image`) whose
+   **tag** matches `CONTROL_PLANE_IMAGE_TAG` (default `latest`).
 4. Local path: Docker. Remote path: Cloud Build in `europe-west1` (`gcloud builds submit --region=europe-west1`; enabled
    when the always-on `-target` enables APIs). Do not submit the control-plane bake as a global build.
 
@@ -51,7 +52,7 @@ Script:
 1. `terraform init` + `terraform apply -target` Artifact Registry. `--remote` also creates the Cloud Build service
    identity and `artifactregistry.writer` on that repo (legacy Cloud Build SA + Cloud Build agent).
 2. Build `linux/amd64`: controller from repo root (`controller/Dockerfile`); Relay from `relay/` (`relay/Dockerfile`);
-   Dashboard from `dashboard/` (`dashboard/Dockerfile`); Telemetry from its implementation root and Dockerfile.
+   Dashboard from `dashboard/` (`dashboard/Dockerfile`); Telemetry from `telemetry/` (`telemetry/Dockerfile`).
 3. Push `{region}-docker.pkg.dev/{project}/{ar_repo}/{ar_relay_image}:{tag}` and the controller, Dashboard, and
    Telemetry images the same way.
 4. Print the four `*_image` lines. Those strings must match Terraform inputs before always-on or race apply.

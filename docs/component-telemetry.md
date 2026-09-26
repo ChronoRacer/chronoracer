@@ -15,7 +15,7 @@ may use it. Browser authentication is shared with the Dashboard: [Okta](componen
 
 ## Responsibility
 
-- connect to Core's private telemetry WebSocket for the whole race
+- connect to Core's private gRPC `Watch` stream for the whole race
 - retain and shape the received preview data for browser use
 - present accepted sensor values with near-real-time target latency of two to five seconds
 - expose read-only browser HTTPS and WebSocket surfaces
@@ -59,7 +59,7 @@ Telemetry is the only client allowed to reach Core's telemetry port. Always-on T
 
 - a dedicated `/26` Direct VPC Egress subnet
 - a firewall rule from that subnet to the `core` network tag on the telemetry port
-- the Telemetry service account and browser OAuth secret access
+- the Telemetry service account and access to the shared browser OAuth secret (same resource as Dashboard)
 
 Race Terraform attaches those resources to the Cloud Run service. The port is owned by
 [`platform.json`](../infra/contract/platform.json). No application credential or TLS is used on this private hop; the
@@ -88,11 +88,11 @@ Environment-specific values are injected by race Terraform:
 
 | Variable               | Source                               | Use                                      |
 |------------------------|--------------------------------------|------------------------------------------|
-| `CORE_TELEMETRY_URL`   | Core internal name + telemetry port  | Private `/telemetry/v1` WebSocket        |
+| `CORE_TELEMETRY_URL`   | Core internal name + telemetry port  | Private h2c gRPC `Watch`             |
 | `RACE_ID`              | Relay/controller race input          | Reject mismatched Core `hello` events    |
 | `TELEMETRY_ROOT_URL`   | Cloud Run service output             | OAuth callback and browser origin        |
 | `OAUTH_CLIENT_ID`      | [`platform.json`](../infra/contract/platform.json) | Shared Auth0 application |
-| `OAUTH_CLIENT_SECRET`  | Secret Manager                       | Authorization-code token exchange        |
+| `OAUTH_CLIENT_SECRET`  | Shared browser OAuth secret (Secret Manager) | Authorization-code token exchange        |
 | `OAUTH_ISSUER`         | [`platform.json`](../infra/contract/platform.json) | Auth0 authorization and token endpoints |
 
 Resource names and ports remain owned by contract files. Cloud Run wiring belongs to

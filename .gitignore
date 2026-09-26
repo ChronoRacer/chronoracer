@@ -10,3 +10,4 @@ crash.log
 /infra/always-on/kafka-tls.pem
 /infra/always-on/ingest.chronoracer.live/
 /infra/packer/build/*.back
+**/__pycache__/

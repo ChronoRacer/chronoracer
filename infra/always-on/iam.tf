@@ -71,6 +71,30 @@ resource "google_service_account_iam_member" "controller_as_core" {
   member             = "serviceAccount:${google_service_account.controller.email}"
 }
 
+resource "google_service_account_iam_member" "controller_as_telemetry" {
+  service_account_id = google_service_account.telemetry.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.controller.email}"
+}
+
+resource "google_project_iam_member" "controller_run_create" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.controller_run_create.id
+  member  = "serviceAccount:${google_service_account.controller.email}"
+}
+
+resource "google_project_iam_member" "controller_run" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.controller_run.id
+  member  = "serviceAccount:${google_service_account.controller.email}"
+
+  condition {
+    title       = "telemetry-service-only"
+    description = "Canonical race Telemetry Cloud Run service."
+    expression  = "resource.name == \"projects/${var.project_id}/locations/${var.region}/services/${local.names.telemetry_service}\""
+  }
+}
+
 resource "google_service_account_iam_member" "controller_self" {
   service_account_id = google_service_account.controller.name
   role               = "roles/iam.serviceAccountUser"
@@ -299,28 +323,62 @@ resource "google_artifact_registry_repository_iam_member" "dashboard_reader" {
   member     = "serviceAccount:${google_service_account.dashboard.email}"
 }
 
-resource "google_secret_manager_secret_iam_member" "dashboard_secrets" {
-  for_each = {
-    influx_token    = google_secret_manager_secret.influx_token.secret_id
-    dashboard_oauth = google_secret_manager_secret.dashboard_oauth.secret_id
-  }
-
+resource "google_secret_manager_secret_iam_member" "okta_oauth" {
   project   = var.project_id
-  secret_id = each.value
+  secret_id = google_secret_manager_secret.okta_oauth.secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.dashboard.email}"
 }
 
-resource "google_secret_manager_secret_iam_member" "run_agent_dashboard_secrets" {
-  for_each = {
-    influx_token    = google_secret_manager_secret.influx_token.secret_id
-    dashboard_oauth = google_secret_manager_secret.dashboard_oauth.secret_id
-  }
+resource "google_artifact_registry_repository_iam_member" "telemetry_reader" {
+  project    = var.project_id
+  location   = var.region
+  repository = google_artifact_registry_repository.chronoracer.name
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:${google_service_account.telemetry.email}"
+}
 
+resource "google_secret_manager_secret_iam_member" "telemetry_oauth" {
   project   = var.project_id
-  secret_id = each.value
+  secret_id = google_secret_manager_secret.okta_oauth.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.telemetry.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "run_agent_okta_oauth" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.okta_oauth.secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = local.run_agent
+}
+
+resource "google_project_iam_member" "dashboard_monitoring" {
+  project = var.project_id
+  role    = "roles/monitoring.viewer"
+  member  = "serviceAccount:${google_service_account.dashboard.email}"
+}
+
+locals {
+  race_vm_sa_emails = {
+    kafka = google_service_account.kafka.email
+    core  = google_service_account.core.email
+  }
+}
+
+resource "google_project_iam_member" "vm_ops_agent_metrics" {
+  for_each = local.race_vm_sa_emails
+
+  project = var.project_id
+  role    = "roles/monitoring.metricWriter"
+  member  = "serviceAccount:${each.value}"
+}
+
+resource "google_project_iam_member" "vm_ops_agent_logs" {
+  for_each = local.race_vm_sa_emails
+
+  project = var.project_id
+  role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${each.value}"
 }
 
 resource "google_project_iam_member" "iap_ssh" {
@@ -335,6 +393,27 @@ resource "google_secret_manager_secret_iam_member" "run_agent_relay_config" {
   secret_id = google_secret_manager_secret.relay_config.secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = local.run_agent
+}
+
+resource "google_compute_subnetwork_iam_member" "run_agent_direct_vpc" {
+  for_each = {
+    relay     = google_compute_subnetwork.relay_run.name
+    telemetry = google_compute_subnetwork.telemetry_run.name
+  }
+
+  project    = var.project_id
+  region     = var.region
+  subnetwork = each.value
+  role       = "roles/compute.networkUser"
+  member     = local.run_agent
+}
+
+resource "google_compute_subnetwork_iam_member" "controller_telemetry_direct_vpc" {
+  project    = var.project_id
+  region     = var.region
+  subnetwork = google_compute_subnetwork.telemetry_run.name
+  role       = "roles/compute.networkUser"
+  member     = "serviceAccount:${google_service_account.controller.email}"
 }
 
 resource "google_artifact_registry_repository_iam_member" "run_agent_reader" {

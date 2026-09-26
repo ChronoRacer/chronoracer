@@ -23,8 +23,10 @@ def terraform_vars(cfg: Config) -> dict[str, str]:
     return {
         "race_id": cfg.race_id,
         "project_id": cfg.project_id,
+        "region": cfg.region,
         "kafka_fqdn": cfg.kafka_fqdn,
         "zone": cfg.zone,
+        "telemetry_image": cfg.telemetry_image,
         "ingest_open": ingest_open,
     }
 

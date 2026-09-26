@@ -52,7 +52,7 @@ sequenceDiagram
 1. Operator start (Okta). New race vs retry from `failed`: [Relay start](component-relay.md).
 2. Cloud Build runs controller `apply`. Both VMs and Telemetry service are in one apply. Core must tolerate Kafka not
    listening yet (currently Core dies on Kafka not listening, but runs as service so will restart). Telemetry retries
-   until Core's private WebSocket listener is available.
+   until Core's private gRPC listener is available.
 3. Kafka boot: [Kafka startup](../kafka/startup/README.md). Core boot: [Core startup](../core/startup/README.md).
 4. Pub/Sub wakes Relay, or status replays a terminal build: [Relay build-finished](component-relay.md).
 5. Status returns hostname, port, public IP, and Telemetry URL only when Healthcheck says ready. Devices already have

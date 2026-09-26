@@ -43,7 +43,7 @@ Resources:
 - VPC and three subnets, all with Private Google Access: the `/24` VM subnet, a Relay Cloud Run subnet, and a
   Telemetry Cloud Run subnet (each Cloud Run subnet at least `/26`, the Google minimum for Direct VPC Egress)
 - Baseline firewall (IAP SSH only, no public `22` to the internet; no public Core; private Kafka from the VM subnet and
-  the Relay subnet to tag `kafka`; Core telemetry WebSocket from the Telemetry subnet only to tag `core` — ports:
+  the Relay subnet to tag `kafka`; Core telemetry gRPC from the Telemetry subnet only to tag `core` — ports:
   [`platform.json`](../infra/contract/platform.json))
 - Cloud DNS managed zone and stable Kafka FQDN (zone exists with no A record between races). Always-on also creates
   Cloud Run domain mappings and `CNAME` records to `ghs.googlehosted.com.` for `relay.{dns zone}` and
@@ -51,10 +51,10 @@ Resources:
   [ADR - Region](adr-region.md). Domain verification is a one-time operator step:
   [Domain and TLS](operator-domain-and-tls.md)
 - Secret Manager secret resources for the long-lived public TLS cert ([Kafka TLS runbook](operator-domain-and-tls.md)),
-  the Core-only Influx admin token ([Influx token runbook](operator-influx-token.md)), and the shared browser Auth0
-  client secret ([Browser OAuth runbook](operator-browser-oauth.md)). Values uploaded by operator/CI, not per race. Cloud
-  Run
-  revisions that reference those secrets need an enabled `latest` version at create; sequence:
+  the Core-only Influx admin token ([Influx token runbook](operator-influx-token.md)), and **one** shared browser Auth0
+  client secret ([Browser OAuth runbook](operator-browser-oauth.md)). Dashboard and Telemetry both mount that secret;
+  [`names.json`](../infra/contract/names.json) key `okta_oauth_secret`. Cloud
+  Run revisions that reference those secrets need an enabled `latest` version at create; sequence:
   [always-on README](../infra/always-on/README.md)
 - Race GCS bucket, artifacts GCS bucket, layout: [GCS](component-gcs_buckets.md)
 - Firestore database
@@ -75,11 +75,12 @@ Resources:
   tags: [Control-plane images](operator-control-plane-images.md)
 - Service accounts and IAM (below)
 - Project `_Default` log sink exclusions ([`logging.tf`](../infra/always-on/logging.tf)): drop unread infra noise
-  (firewall, VPC flows, health checks, guest-agent chatter). **Keep** GCE `startupscript`,
+  (firewall, VPC flows, health checks, guest-agent chatter, Ops Agent self-logs). **Keep** GCE `startupscript`,
   `google_metadata_script_runner`, and serial console so race VM boot script stdout stays in Cloud Logging.
 - Google-managed service agents via `google_project_service_identity` (google-beta): Cloud Build, Pub/Sub, Cloud Run,
   Compute, Artifact Registry, Secret Manager. Created before IAM bindings so first apply on a new project does not fail
-  with a missing agent SA. Extra grants: Cloud Run service agent reads Relay config, browser OAuth secret, and AR; Cloud
+  with a missing agent SA. Extra grants: Cloud Run service agent reads Relay config, the shared browser OAuth secret
+  (one resource for Dashboard and Telemetry revisions), and AR; Cloud
   Build agent reads
   AR; Pub/Sub push SAs
   `roles/run.invoker` (in addition to public invoker).
@@ -111,9 +112,9 @@ race bucket, image families). Missing resource = plan fail. Adjust names only vi
 | Relay                    | Firestore; write Core YAML object; read `*/export/**` and issue time-limited download access; trigger Cloud Build; read and list Cloud Build (bind + replay); receive both Pub/Sub pushes | Terraform state; create VMs; Secret Manager payload                                                                                                                                            |
 | Controller (Cloud Build) | Race Terraform (Compute, Telemetry Cloud Run, DNS A in the existing zone, race public firewall); race Firestore fields on `apply` only, token-gated; read Core YAML object; `race/` state prefix | Change VPC, IAM identities, Secret Manager payload, `base/` state prefix; write phase on `close_ingest` / `destroy`; apply Terraform when `runToken` mismatches; force-unlock state |
 | Kafka VM                 | Read TLS secret; write its Ops Agent metrics to Cloud Monitoring                                                                                                                         | GCS; Cloud Build; Firestore; Pub/Sub                                                                                                                                                           |
-| Core VM                  | Read `{raceId}/core-config.yaml`; write `{raceId}/export/**`; publish export-done; read artifacts `core/current.json` and its release; read the Influx token secret payload; write Ops Agent metrics | Firestore; any other Secret Manager payload (TLS cert included); Terraform state; Cloud Build; write `core-config.yaml`; write artifacts                                               |
+| Core VM                  | Read `{raceId}/core-config.yaml`; write `{raceId}/export/**`; publish export-done; read artifacts `core/current.json` and its release; read the Influx token secret payload; write Cloud Monitoring metrics | Firestore; any other Secret Manager payload (TLS cert included); Terraform state; Cloud Build; write `core-config.yaml`; write artifacts                                               |
 | Dashboard                | Read Cloud Monitoring; read the browser Auth0 client secret payload                                                                                                                        | Firestore; GCS; Kafka; InfluxDB; VPC race endpoints; Cloud Build; Terraform state; Relay endpoints; any other Secret Manager payload                                                           |
-| Telemetry                | Read the browser Auth0 client secret payload; private WebSocket to Core from its dedicated subnet                                                                                          | Firestore; GCS; Kafka; InfluxDB; Cloud Monitoring; Cloud Build; Terraform state; Relay endpoints; any other Secret Manager payload                                                             |
+| Telemetry                | Read the browser Auth0 client secret payload; private gRPC `Watch` to Core from its dedicated subnet                                                                                       | Firestore; GCS; Kafka; InfluxDB; Cloud Monitoring; Cloud Build; Terraform state; Relay endpoints; any other Secret Manager payload                                                             |
 
 Residual (GCP constraints, not project Editor):
 
@@ -133,10 +134,9 @@ Residual (GCP constraints, not project Editor):
 - Controller `secretmanager.viewer` on the TLS **secret resource** (metadata for the race data source). Not
   `secretAccessor`. Kafka VM is the only accessor of the payload.
 - Controller `roles/iam.serviceAccountViewer` so SA data sources fail if Kafka/Core SAs are missing.
-- Controller gets the Cloud Run service permissions, including `setIamPolicy` for public invocation, under an IAM
-  condition restricted to the canonical Telemetry service resource name. It can act as the Telemetry service account.
-  This is a residual project-level grant if Cloud Run rejects the resource-name condition; implementation must prove
-  the condition before accepting the policy and must not grant general IAM administration.
+- Controller Cloud Run create/list/`operations.get` is project-scoped (create conditions are unreliable, same as
+  firewall). Get/update/delete/`setIamPolicy` are bound under an IAM condition on the canonical Telemetry service
+  resource name. Controller can act as the Telemetry service account. Do not grant general IAM administration.
 - State bucket: controller `objectAdmin` only under `race/`; `legacyBucketReader` on the bucket (Terraform init lists
   objects; GET of `base/` stays denied).
 - Always-on creates Google service agents with `google_project_service_identity` before binding them. Cloud Run service

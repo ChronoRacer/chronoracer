@@ -6,7 +6,16 @@ from pathlib import Path
 from loguru import logger
 
 ACTIONS = frozenset({"apply", "close_ingest", "destroy"})
-REQUIRED_ENV = ("RACE_ID", "ACTION", "RUN_TOKEN", "PROJECT_ID", "KAFKA_FQDN", "ZONE")
+REQUIRED_ENV = (
+    "RACE_ID",
+    "ACTION",
+    "RUN_TOKEN",
+    "PROJECT_ID",
+    "REGION",
+    "KAFKA_FQDN",
+    "ZONE",
+    "TELEMETRY_IMAGE",
+)
 
 
 @dataclass(frozen=True)
@@ -15,8 +24,10 @@ class Config:
     action: str
     run_token: str
     project_id: str
+    region: str
     kafka_fqdn: str
     zone: str
+    telemetry_image: str
     terraform_dir: Path
     names_path: Path
     firestore_database: str
@@ -37,8 +48,10 @@ def load_config(env: dict[str, str] | None = None) -> Config | None:
         action=action,
         run_token=source["RUN_TOKEN"],
         project_id=source["PROJECT_ID"],
+        region=source["REGION"],
         kafka_fqdn=source["KAFKA_FQDN"],
         zone=source["ZONE"],
+        telemetry_image=source["TELEMETRY_IMAGE"],
         terraform_dir=Path(source.get("TERRAFORM_DIR", "/app/infra/race")),
         names_path=Path(source.get("NAMES_JSON", "/app/infra/contract/names.json")),
         firestore_database=source.get("FIRESTORE_DATABASE", "(default)"),

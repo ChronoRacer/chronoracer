@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Create Artifact Registry (always-on -target), then push Relay + controller + dashboard.
-# Cloud Run apply needs the Relay and dashboard images to exist. Do this after bootstrap,
-# before a full always-on apply.
+# Create Artifact Registry (always-on -target), then push Relay + controller + dashboard + telemetry.
+# Cloud Run apply needs the Relay and dashboard images to exist. Race apply needs telemetry.
+# Do this after bootstrap, before a full always-on apply.
 #
 #   ./infra/always-on/publish-control-plane-images.sh
 #   ./infra/always-on/publish-control-plane-images.sh --remote
@@ -27,14 +27,14 @@ need() {
 }
 
 usage() {
-  echo "usage: $0 [--remote] [all|relay|controller|dashboard] [--nopush] [--check-tf]" >&2
+  echo "usage: $0 [--remote] [all|relay|controller|dashboard|telemetry] [--nopush] [--check-tf]" >&2
   exit 1
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --remote) REMOTE=1; shift ;;
-    all|relay|controller|dashboard) IMAGES="$1"; shift ;;
+    all|relay|controller|dashboard|telemetry) IMAGES="$1"; shift ;;
     --nopush) NO_PUSH=1; shift ;;
     --check-tf) CHECK_TF=1; shift ;;
     -h|--help) usage ;;
@@ -55,6 +55,7 @@ AR_REPO="$(jq -er '.ar_repo' "${NAMES_JSON}")"
 RELAY_NAME="$(jq -er '.ar_relay_image' "${NAMES_JSON}")"
 CONTROLLER_NAME="$(jq -er '.ar_controller_image' "${NAMES_JSON}")"
 DASHBOARD_NAME="$(jq -er '.ar_dashboard_image' "${NAMES_JSON}")"
+TELEMETRY_NAME="$(jq -er '.ar_telemetry_image' "${NAMES_JSON}")"
 
 PROJECT_ID="${PROJECT_ID:-}"
 if [[ -z "${PROJECT_ID}" && -f "${TFVARS}" ]]; then
@@ -76,6 +77,7 @@ TAG="${CONTROL_PLANE_IMAGE_TAG:-latest}"
 RELAY_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${RELAY_NAME}:${TAG}"
 CONTROLLER_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${CONTROLLER_NAME}:${TAG}"
 DASHBOARD_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${DASHBOARD_NAME}:${TAG}"
+TELEMETRY_URI="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${TELEMETRY_NAME}:${TAG}"
 
 ensure_registry() {
   if [[ "${CHECK_TF}" -eq 0 ]]; then
@@ -138,11 +140,20 @@ push_docker() {
       docker push "${DASHBOARD_URI}"
     fi
   fi
+  if [[ "${IMAGES}" == "all" || "${IMAGES}" == "telemetry" ]]; then
+    echo "Building ${TELEMETRY_URI}"
+    docker build --platform linux/amd64 -f "${REPO_ROOT}/telemetry/Dockerfile" -t "${TELEMETRY_URI}" "${REPO_ROOT}/telemetry"
+    if [[ "${NO_PUSH}" -eq 1 ]]; then
+      echo "Skipping push for $TELEMETRY_URI"
+    else
+      docker push "${TELEMETRY_URI}"
+    fi
+  fi
 }
 
 push_remote() {
   [[ "${IMAGES}" == "all" ]] || {
-    echo "--remote publishes every image; omit relay|controller|dashboard" >&2
+    echo "--remote publishes every image; omit relay|controller|dashboard|telemetry" >&2
     exit 1
   }
   if [[ "${NO_PUSH}" -eq 1 ]]; then
@@ -150,12 +161,12 @@ push_remote() {
     exit 1
   fi
   ensure_registry
-  echo "Submitting Cloud Build for ${RELAY_URI}, ${CONTROLLER_URI} and ${DASHBOARD_URI} in ${REGION}"
+  echo "Submitting Cloud Build for ${RELAY_URI}, ${CONTROLLER_URI}, ${DASHBOARD_URI} and ${TELEMETRY_URI} in ${REGION}"
   gcloud builds submit "${REPO_ROOT}" \
     --project="${PROJECT_ID}" \
     --region="${REGION}" \
     --config="${SCRIPT_DIR}/cloudbuild.control-plane.yaml" \
-    --substitutions="_TAG=${TAG},_REGION=${REGION},_REPO=${AR_REPO},_RELAY_IMAGE=${RELAY_NAME},_CONTROLLER_IMAGE=${CONTROLLER_NAME},_DASHBOARD_IMAGE=${DASHBOARD_NAME}"
+    --substitutions="_TAG=${TAG},_REGION=${REGION},_REPO=${AR_REPO},_RELAY_IMAGE=${RELAY_NAME},_CONTROLLER_IMAGE=${CONTROLLER_NAME},_DASHBOARD_IMAGE=${DASHBOARD_NAME},_TELEMETRY_IMAGE=${TELEMETRY_NAME}"
 }
 
 if [[ "${REMOTE}" -eq 1 ]]; then
@@ -169,4 +180,5 @@ echo "Images:"
 echo "  relay_image        = \"${RELAY_URI}\""
 echo "  controller_image   = \"${CONTROLLER_URI}\""
 echo "  dashboard_image    = \"${DASHBOARD_URI}\""
+echo "  telemetry_image    = \"${TELEMETRY_URI}\""
 echo "Put those exact strings in ${TFVARS}, then: terraform apply -var-file=terraform.tfvars"

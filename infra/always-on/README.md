@@ -19,7 +19,7 @@ terraform fmt
 terraform validate
 terraform apply -var-file=terraform.tfvars \
   -target=google_secret_manager_secret.influx_token \
-  -target=google_secret_manager_secret.browser_oauth
+  -target=google_secret_manager_secret.okta_oauth
 # Upload versions (runbooks above), then:
 terraform apply -var-file=terraform.tfvars
 ```

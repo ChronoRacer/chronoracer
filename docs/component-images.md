@@ -10,11 +10,11 @@ For target VMs used, see [ADR - VM types](adr-vm-types.md).
 
 ## Split
 
-**Kafka:** full bake. Overlay + Apache Kafka at `/opt/kafka` + Google Cloud Ops Agent with host/process receivers.
+**Kafka:** full bake. Overlay + Apache Kafka at `/opt/kafka` + Google Cloud Ops Agent with whole-VM host metrics (no process scraper).
 Rebuild the family when Kafka, Java, agent config, overlay scripts, or contract JSON change.
 
-**Core:** hybrid. Packer bakes Debian, InfluxDB 3 Core, Google Cloud Ops Agent with host/process and local Prometheus
-receivers, `rpk` and its pinned Redpanda Connect package (do not install manually with sudo or it will fail), `yq`,
+**Core:** hybrid. Packer bakes Debian, InfluxDB 3 Core, Google Cloud Ops Agent with whole-VM host metrics (no process
+scraper), `rpk` and its pinned Redpanda Connect package (do not install manually with sudo or it will fail), `yq`,
 Google Cloud CLI, overlay scripts,
 `default-config.yaml`, Redpanda templates, contract JSON, and the build-time InfluxDB plugin environment. It does
 **not** bake the Core rust binary, Avro schema, or InfluxDB plugin source files.
@@ -76,12 +76,12 @@ the GCE metadata server. They do not call the Compute API. Core and Kafka servic
 
 **Kafka** `/chronoracer/`: overlay from [`kafka/startup`](../kafka/startup) (scripts, `kafka.service`, Ops Agent
 configuration),
-`gce-metadata.sh`, plus `names.json` and `platform.json`. No Core dirs (`influxdb-plugins`, `redpanda`). Broker bits at
+`gce-metadata.sh`, `enable-ops-agent.sh`, plus `names.json` and `platform.json`. No Core dirs (`influxdb-plugins`, `redpanda`). Broker bits at
 `/opt/kafka`. `need()`: `gcloud`, `openssl`, `jq`, `python3`, `curl`, plus `java`.
 
 **Core** `/chronoracer/`: overlay from [`core/startup`](../core/startup) including `fetch-influx-token.sh`,
 `fetch-payload.sh`, systemd units,
-Ops Agent configuration, `gce-metadata.sh`, `default-config.yaml`, `redpanda/*.yaml`, contract JSON, empty
+Ops Agent template plus renderer, `gce-metadata.sh`, `enable-ops-agent.sh`, `default-config.yaml`, `redpanda/*.yaml`, contract JSON, empty
 `influxdb-plugins/`, and the
 build-time `/chronoracer/influxdb-plugin-venv`
 (see [InfluxDB plugin environment](component-influxdb.md#plugin-python-environment)). Packer installs Debian

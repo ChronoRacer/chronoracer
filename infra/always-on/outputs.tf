@@ -11,9 +11,9 @@ output "relay_run_subnet_name" {
   description = "Relay Direct VPC Egress subnet. Not allowed to reach Influx."
 }
 
-output "dashboard_run_subnet_name" {
-  value       = google_compute_subnetwork.dashboard_run.name
-  description = "Dashboard Direct VPC Egress subnet. Only source range allowed to reach Influx."
+output "telemetry_run_subnet_name" {
+  value       = google_compute_subnetwork.telemetry_run.name
+  description = "Telemetry Direct VPC Egress subnet. Only this range may reach Core telemetry."
 }
 
 output "dns_zone_name" {
@@ -65,9 +65,9 @@ output "influx_token_secret_id" {
   description = "Upload the token payload here: docs/operator-influx-token.md"
 }
 
-output "dashboard_oauth_secret_id" {
-  value       = google_secret_manager_secret.dashboard_oauth.secret_id
-  description = "Upload the Auth0 client secret here: docs/operator-dashboard-oauth.md"
+output "okta_oauth_secret_id" {
+  value       = google_secret_manager_secret.okta_oauth.secret_id
+  description = "Upload the Auth0 client secret here: docs/operator-browser-oauth.md"
 }
 
 output "race_bucket" {
@@ -97,14 +97,13 @@ output "dashboard_sa_email" {
   value = google_service_account.dashboard.email
 }
 
+output "telemetry_sa_email" {
+  value = google_service_account.telemetry.email
+}
+
 output "dashboard_oauth_callback_url" {
   value       = "${local.dashboard_uri}/login/generic_oauth"
   description = "Register in the Auth0 application: docs/operator-dashboard-oauth.md"
-}
-
-output "influx_private_url" {
-  value       = local.influx_private_url
-  description = "Dashboard datasource target. Resolves only while a race is running."
 }
 
 output "cloud_build_trigger_id" {
