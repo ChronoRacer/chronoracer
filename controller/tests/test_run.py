@@ -14,8 +14,10 @@ def _cfg(**overrides) -> Config:
         action="apply",
         run_token="tok",
         project_id="proj",
+        region="europe-west1",
         kafka_fqdn="ingest.chronoracer.live.",
         zone="europe-west1-b",
+        telemetry_image="europe-west1-docker.pkg.dev/proj/chronoracer/telemetry:latest",
         terraform_dir=Path("/tmp"),
         names_path=Path("/tmp/names.json"),
         firestore_database="(default)",
@@ -72,6 +74,7 @@ OUTPUTS = TerraformOutputs(
     core_instance="projects/p/zones/z/instances/core",
     kafka_public_ip="1.2.3.4",
     kafka_hostname="ingest.chronoracer.live",
+    telemetry_url="https://telemetry-1.europe-west1.run.app",
 )
 
 
@@ -102,6 +105,8 @@ def test_apply_success_writes_outputs():
     assert run(_cfg(), store, FakeYaml(), tf) == 0
     assert store.applied == OUTPUTS
     assert tf.calls[0][1]["ingest_open"] == "true"
+    assert tf.calls[0][1]["region"] == "europe-west1"
+    assert tf.calls[0][1]["telemetry_image"].endswith("/telemetry:latest")
 
 
 def test_apply_terraform_fail_writes_failed():

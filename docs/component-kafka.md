@@ -66,7 +66,7 @@ Shared rules:
 - Key: `{sensorId}` (`ID` column in `sensors.xlsx`)
 - Avro: yes. Canonical schema: [`core/avro/sensor_data.avsc`](../core/avro/sensor_data.avsc)
 
-Car computer evaluates immediate warnings, so a short send delay only slows the dashboard. Analysis wants a window, so
+Car computer evaluates immediate warnings, so a short send delay only slows the Telemetry preview. Analysis wants a window, so
 the producer may batch readings in one message. Each `delta` is nanoseconds from `timestamp` and must be at most 2
 seconds (`2000000000`). Core also batches internally: [Core](component-core.md#data-pipeline-batch-contract).
 

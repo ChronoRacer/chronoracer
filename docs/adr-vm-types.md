@@ -90,3 +90,7 @@ For some reason, the N4 version is cheaper than the E2 version in the pricing ca
 current region is `europe-west1`).
 
 ## [!IMPORTANT] These values might change after load testing on real GCP infrastructure
+
+The accepted defaults predate Core's telemetry stream and Ops Agent on both VMs. Before production use, repeat the
+GCP load test with Telemetry connected and deliberately slow. Acceptance requires no ingest throughput regression or
+unbounded Core memory growth; preview loss is acceptable and must appear as stream gaps.

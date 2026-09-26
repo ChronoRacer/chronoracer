@@ -49,6 +49,11 @@ variable "dashboard_image" {
   description = "Dashboard (Grafana) Cloud Run image. Publish before full apply: docs/operator-control-plane-images.md"
 }
 
+variable "telemetry_image" {
+  type        = string
+  description = "Telemetry Cloud Run image. Race stack pulls it. Publish before the first race: docs/operator-control-plane-images.md"
+}
+
 variable "iap_ssh_members" {
   type        = list(string)
   description = "IAM members granted IAP tunnel to VMs (user: or group:). Empty = no IAP SSH users."
@@ -68,7 +73,7 @@ variable "subnet_cidr" {
 
 variable "relay_run_subnet_cidr" {
   type        = string
-  description = "Relay Direct VPC Egress subnet. Separate from the Dashboard subnet so Relay cannot reach Influx."
+  description = "Relay Direct VPC Egress subnet. No VMs. Dashboard has no race-VPC route."
   default     = "10.20.1.0/26"
 
   validation {
@@ -82,18 +87,18 @@ variable "relay_run_subnet_cidr" {
   }
 }
 
-variable "dashboard_run_subnet_cidr" {
+variable "telemetry_run_subnet_cidr" {
   type        = string
-  description = "Dashboard Direct VPC Egress subnet. Only source range allowed to reach Influx HTTP."
-  default     = "10.20.1.64/26"
+  description = "Telemetry Direct VPC Egress subnet. Only this range may reach Core telemetry."
+  default     = "10.20.2.0/26"
 
   validation {
-    condition     = can(cidrnetmask(var.dashboard_run_subnet_cidr))
-    error_message = "dashboard_run_subnet_cidr must be a valid CIDR."
+    condition     = can(cidrnetmask(var.telemetry_run_subnet_cidr))
+    error_message = "telemetry_run_subnet_cidr must be a valid CIDR."
   }
 
   validation {
-    condition     = tonumber(split("/", var.dashboard_run_subnet_cidr)[1]) <= 26
-    error_message = "dashboard_run_subnet_cidr must be /26 or larger; Google requires at least /26 for Direct VPC Egress."
+    condition     = tonumber(split("/", var.telemetry_run_subnet_cidr)[1]) <= 26
+    error_message = "telemetry_run_subnet_cidr must be /26 or larger; Google requires at least /26 for Direct VPC Egress."
   }
 }

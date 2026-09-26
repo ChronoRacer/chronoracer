@@ -15,5 +15,5 @@ For documentation see the main document: [Terraform](../docs/component-terraform
 - VM images: [Compute images](../docs/component-images.md).
 - Secret payloads to upload: [Kafka TLS](../docs/operator-domain-and-tls.md),
   [Influx token](../docs/operator-influx-token.md),
-  [Dashboard OAuth](../docs/operator-dashboard-oauth.md).
+  [Browser OAuth](../docs/operator-browser-oauth.md).
 

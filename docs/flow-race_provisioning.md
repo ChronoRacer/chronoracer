@@ -1,7 +1,7 @@
 # Flow - Race provisioning
 
-Goal: start one race. Create the two race VMs, ensure Kafka readiness, and only then hand operators the Kafka hostname,
-port, and public IP.
+Goal: start one race. Create the two race VMs and Telemetry Cloud Run service, ensure Kafka/Core readiness, and only
+then hand operators the Kafka hostname, port, public IP, and Telemetry URL.
 
 MVP: one active race. No queue. Always-on stack is a separate Terraform root; race apply must not manage it.
 
@@ -21,6 +21,7 @@ sequenceDiagram
     participant PS as PubSub
     participant Kafka
     participant Core
+    participant Telemetry
     Op ->> Relay: start race Okta
     Relay ->> Relay: reject if race ongoing
     Relay ->> Relay: upload YAML then atomic pointer plus race doc
@@ -32,6 +33,7 @@ sequenceDiagram
     Ctrl ->> TF: apply ingest_open true
     TF ->> Kafka: Kafka VM plus ephemeral public IP
     TF ->> Core: Core plus Influx VM
+    TF ->> Telemetry: Cloud Run min/max one plus VPC egress
     TF ->> TF: DNS A record TTL 30s plus public 9094 firewall
     Ctrl ->> FS: status applied
     Ctrl ->> CB: exit
@@ -44,16 +46,18 @@ sequenceDiagram
     Relay ->> FS: read applied
     Relay ->> CB: replay if build already terminal
     Relay ->> Kafka: read last heartbeat
-    Relay ->> Op: ready plus hostname port IP
+    Relay ->> Op: ready plus hostname port IP telemetry URL
 ```
 
 1. Operator start (Okta). New race vs retry from `failed`: [Relay start](component-relay.md).
-2. Cloud Build runs controller `apply`. Both VMs in one apply. Core must tolerate Kafka not listening yet (Currently
-   Core dies on Kafka not listening, but runs as service so will restart).
+2. Cloud Build runs controller `apply`. Both VMs and Telemetry service are in one apply. Core must tolerate Kafka not
+   listening yet (currently Core dies on Kafka not listening, but runs as service so will restart). Telemetry retries
+   until Core's private gRPC listener is available.
 3. Kafka boot: [Kafka startup](../kafka/startup/README.md). Core boot: [Core startup](../core/startup/README.md).
 4. Pub/Sub wakes Relay, or status replays a terminal build: [Relay build-finished](component-relay.md).
-5. Status returns hostname, port, and public IP only when Healthcheck says ready. Devices already have Okta client id
-   and secret. They use that hostname/IP (TLS SNI/verify on the hostname).
+5. Status returns hostname, port, public IP, and Telemetry URL only when Healthcheck says ready. Devices already have
+   Okta client id and secret. They use that hostname/IP (TLS SNI/verify on the hostname). Operators use the Telemetry
+   URL with browser Auth0 login.
 
 IP may change every race; hostname and cert do not.
 
@@ -61,7 +65,7 @@ IP may change every race; hostname and cert do not.
 
 Canonical ready/unhealthy rules. Relay status only exposes them; Firestore does not store them.
 
-Core has no API. Health is a heartbeat on the private Kafka heartbeat topic, key `CORE`
+Core has no health API. Health is a heartbeat on the private Kafka heartbeat topic, key `CORE`
 ([Kafka topics](component-kafka.md)). Relay on status reads the last retained record. It does not start a consumer at
 latest and hope a beat arrives during the request.
 
@@ -78,9 +82,9 @@ private Kafka accepted a connection.
 
 Provisioning (`starting`) cannot use Kafka. That phase is Firestore plus Cloud Build (push, or status bind/replay).
 
-The [Dashboard](component-dashboard.md) is not part of readiness. It never publishes or reads a heartbeat, and an
-unreachable dashboard says nothing about race health. It only becomes useful once Influx has data, which is after
-ready.
+The [Dashboard](component-dashboard.md) and [Telemetry](component-telemetry.md) are not part of readiness. Neither
+publishes or reads a heartbeat, and an unreachable UI says nothing about race health. Telemetry may still be connecting
+to Core when Relay first reports ready; this can lose preview points but cannot delay ingest.
 
 Relay scale-to-zero: heartbeat is read on status only. Unsolicited wakes: Cloud Build finished, and export-done. Missed
 Cloud Build push is recovered on status. Export-done is not.

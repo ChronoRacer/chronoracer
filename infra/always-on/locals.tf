@@ -6,7 +6,6 @@ locals {
 
   kafka_private_port = local.platform.kafka_private_port
   kafka_public_port  = local.platform.kafka_public_port
-  influx_http_port   = local.platform.influx_http_port
   cloud_build_topic  = local.platform.cloud_build_topic
 
   kafka_private_bootstrap = "${local.names.kafka_vm}.${var.zone}.c.${var.project_id}.internal:${local.kafka_private_port}"
@@ -14,10 +13,6 @@ locals {
   dns_zone_hostname       = trimsuffix(var.dns_zone_dns_name, ".")
   relay_hostname          = "relay.${local.dns_zone_hostname}"
   dashboard_hostname      = "dashboard.${local.dns_zone_hostname}"
-
-  # Core VM is private-only and race-scoped, but its name and zone are stable, so the
-  # Dashboard datasource URL never changes between races.
-  influx_private_url = "http://${local.names.core_vm}.${var.zone}.c.${var.project_id}.internal:${local.influx_http_port}"
 
   build_finished_audience = "chronoracer-relay-build-finished"
   export_done_audience    = "chronoracer-relay-export-done"
@@ -49,5 +44,6 @@ locals {
     "iap.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "logging.googleapis.com",
+    "monitoring.googleapis.com",
   ]
 }

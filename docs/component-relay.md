@@ -88,10 +88,12 @@ If mutex held: reconcile, then re-read Firestore.
 If pointer empty: no active race; return `raceId` null.
 
 Else: `raceId`, phase, ready, unhealthy, `lastError`, `startedBy`, `startedAt`, `terraformRun`. Kafka hostname, port,
-and public IP only when ready. Do not return export URLs or last-race data.
+public IP, and the generated Telemetry URL only when ready. The Telemetry URL comes from the controller-persisted
+Terraform output; Relay never constructs it. Do not return export URLs or last-race data.
 
 Ready / unhealthy are derived. Not written back. Rules: [Race provisioning Healthcheck](flow-race_provisioning.md).
-Other phases: both false. Read fail still returns phase, `startedAt`.
+Other phases: both false. Read fail still returns phase, `startedAt`. Telemetry is not probed and never changes either
+flag: [Telemetry](component-telemetry.md).
 
 Export-done is not recovered here. Hung `exporting` uses force-destroy.
 

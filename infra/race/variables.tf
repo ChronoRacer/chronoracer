@@ -4,8 +4,9 @@ variable "project_id" {
 }
 
 variable "region" {
-  type    = string
-  default = "europe-west1"
+  type        = string
+  description = "GCP region. Controller passes always-on var.region (must match Relay subnet and Telemetry Cloud Run location)."
+  default     = "europe-west1"
 }
 
 variable "zone" {
@@ -37,6 +38,11 @@ variable "kafka_fqdn" {
 variable "ingest_open" {
   type        = bool
   description = "apply=true (public 9094 present). close_ingest=false (firewall absent). Same state both times."
+}
+
+variable "telemetry_image" {
+  type        = string
+  description = "Telemetry Cloud Run image (Artifact Registry). Publish before race apply: docs/operator-control-plane-images.md"
 }
 
 variable "kafka_machine_type" {

@@ -20,6 +20,9 @@ Always-on Terraform maps:
 
 Plus `CNAME` records to `ghs.googlehosted.com.`.
 
+Race-scoped [Telemetry](component-telemetry.md) uses its deterministic generated `run.app` URL. It has no DNS record,
+domain mapping, or operator-managed certificate.
+
 Google requires the domain to be **verified on this GCP project** before the mapping resource applies, but after NS are
 delegated from Porkbun to Cloud DNS. One Search Console flow (includes adding a TXT record in Cloud DNS zone).
 

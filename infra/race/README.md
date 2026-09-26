@@ -12,4 +12,5 @@ terraform validate
 terraform plan -var-file=terraform.tfvars -lock-timeout=5m
 ```
 
-Required vars: `project_id`, `race_id`, `kafka_fqdn`, `ingest_open`. Image families must exist or apply fails.
+Required vars: `project_id`, `region`, `race_id`, `kafka_fqdn`, `ingest_open`, and the published Telemetry image URI. Compute
+image families and the Telemetry tag must exist or apply fails.

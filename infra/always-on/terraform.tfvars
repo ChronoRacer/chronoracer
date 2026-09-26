@@ -7,4 +7,5 @@ kafka_fqdn        = "ingest.chronoracer.live."
 relay_image      = "europe-west1-docker.pkg.dev/chronoracer/chronoracer/relay:latest"
 controller_image = "europe-west1-docker.pkg.dev/chronoracer/chronoracer/controller:latest"
 dashboard_image  = "europe-west1-docker.pkg.dev/chronoracer/chronoracer/dashboard:latest"
+telemetry_image  = "europe-west1-docker.pkg.dev/chronoracer/chronoracer/telemetry:latest"
 iap_ssh_members  = ["user:ignacy.smolinski@gmail.com"]

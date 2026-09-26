@@ -7,9 +7,9 @@ physical proximity to Poland and Germany. That region does not offer Cloud Run d
 Dashboard stay on generated `run.app` URLs instead of names on `chronoracer.live`. It is also the more expensive of the
 two realistic EU options.
 
-Nothing here is latency-critical. The Dashboard already polls InfluxDB and then Grafana polls on top of that
-([Dashboard](component-dashboard.md), [ADR - Dashboard](adr-dashboard.md)). Kafka ingest is not a closed-loop control
-path.
+Telemetry targets a two-to-five-second preview, but it is not a closed-loop control path and all of its components stay
+inside one region. Dashboard fleet metrics tolerate Cloud Monitoring sampling delay. Neither requirement justifies a
+more expensive or split region ([ADR - Dashboard and live telemetry](adr-dashboard.md)).
 
 ## Decision
 
@@ -58,5 +58,6 @@ Registry locations, and two image families. The whole point of one region is to 
 
 **Load balancer + serverless NEG** as a substitute for domain mapping in `europe-west3`. Works, but adds a paid
 always-on forwarding rule so a scale-to-zero service can have a pretty name. Domain mapping in `europe-west1` does the
-same job without that. We cannot use Firebase Hosting because it does not support websockets. Alternatively, we could delegate
-a DNS record to Cloudflare so it's flattened with the Cloud Run URL, but that introduces additional external dependency.
+same job without that. Race-scoped Telemetry deliberately uses its deterministic `run.app` URL and needs no mapping.
+We cannot use Firebase Hosting for WebSocket proxying. Delegating DNS to Cloudflare for URL flattening would introduce
+an unnecessary external dependency.

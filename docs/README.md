@@ -18,13 +18,15 @@ Each concept has one owner. Other docs link it. Do not copy or rephrase the same
 | Core layers and in-process flows                                                       | [Core](component-core.md)                                         |
 | Core boot scripts                                                                      | [Core startup](../core/startup/README.md)                         |
 | Influx tables and plugins                                                              | [InfluxDB](component-influxdb.md)                                 |
-| Live dashboard shape, panels, datasource                                               | [Dashboard](component-dashboard.md)                               |
-| Dashboard decision and rejected options                                                | [ADR - Dashboard](adr-dashboard.md)                               |
+| Race-fleet health dashboards and datasource                                            | [Dashboard](component-dashboard.md)                               |
+| Near-real-time race preview                                                            | [Telemetry](component-telemetry.md)                               |
+| Dashboard/Telemetry split and rejected options                                         | [ADR - Dashboard](adr-dashboard.md)                               |
+| Core to Telemetry stream protocol                                                      | [ADR - Core telemetry stream](adr-telemetry-stream.md)            |
 | Packer VM images and Core payload                                                      | [Compute images](component-images.md)                             |
 | Control-plane Docker publish                                                           | [Control-plane images](operator-control-plane-images.md)          |
 | Kafka public TLS issue/upload, Cloud Run domain verify                                 | [Kafka TLS](operator-domain-and-tls.md)                           |
 | Influx token create/rotate                                                             | [Influx token](operator-influx-token.md)                          |
-| Dashboard Auth0 login setup                                                            | [Dashboard OAuth](operator-dashboard-oauth.md)                    |
+| Shared browser Auth0 login setup                                                       | [Browser OAuth](operator-browser-oauth.md)                        |
 | Okta apps and operator tokens                                                          | [Okta](component-okta.md)                                         |
 | Start sequence and ready/unhealthy detection                                           | [Race provisioning](flow-race_provisioning.md)                    |
 | Stop, export, destroy sequence                                                         | [Race destruction](flow-race_destruction.md)                      |
@@ -37,12 +39,11 @@ Directory READMEs under `infra/`, `core/`, `kafka/` are how-to for that tree. Th
 
 Deployment on Google Cloud Platform.
 
-Whatever can be in the free tier is in the free tier (Cloud Run scale-to-zero; Firestore, Pub/Sub, Cloud Build have
-generous free tier limits).
+Whatever can be in the free tier is in the free tier (always-on Cloud Run services scale to zero; Firestore, Pub/Sub,
+Cloud Build have generous free tier limits). Race Telemetry intentionally keeps one billed Cloud Run instance warm.
 
-Not free: Cloud DNS, Artifact Registry, GCS buckets. Race VMs are paid and sized to be reliable. Direct VPC Egress
-network cost for Relay and the Dashboard scales to zero with them (revisit if cold start is too long - might need to
-change to VPC connector);
+Not free: Cloud DNS, Artifact Registry, GCS buckets. Race VMs are paid and sized to be reliable. Direct VPC Egress is
+used by Relay and race Telemetry; Dashboard has no race-VPC route.
 
 Region: all GCP resources in `europe-west1` (Compute zone `europe-west1-b`). Do not split regions. Why:
 [ADR - Region](adr-region.md).
@@ -63,15 +64,21 @@ flowchart LR
         PS[PubSub]
         CB[Cloud Build plus Controller]
         TF[Terraform]
+        Monitoring[Cloud Monitoring]
     end
     subgraph raceVpc [Race VPC]
         Kafka[Kafka VM]
         CoreDB[Core plus InfluxDB VM]
+        Telemetry[Telemetry Cloud Run]
     end
     Devices[Track devices]
     Operators -->|HTTPS Okta, API| Relay
     Operators -->|HTTPS Okta, browser| Dash
-    Dash -->|private, SQL queries| CoreDB
+    Operators -->|HTTPS Okta, browser| Telemetry
+    Dash -->|read metrics| Monitoring
+    CoreDB -->|host metrics and write counters| Monitoring
+    Kafka -->|Ops Agent metrics| Monitoring
+    Monitoring -->|query results| Dash
     Operators -->|manual| TF
     Operators -->|manual Core payload| GcsArt
     Relay <-->|private, status| FS
@@ -87,6 +94,7 @@ flowchart LR
     CoreDB -->|private, heartbeat| Kafka
     Devices -->|TLS Okta, data| Kafka
     Kafka -->|private, data, control events| CoreDB
+    Telemetry -->|private, gRPC h2c| CoreDB
     Kafka -->|private, heartbeat| Relay
     CoreDB -->|private, exports| GcsRace
     GcsArt -->|private, Core payload| CoreDB
@@ -104,6 +112,7 @@ See graph above for connections.
 | Core        | [Core](component-core.md)             |
 | InfluxDB    | [InfluxDB](component-influxdb.md)     |
 | Dashboard   | [Dashboard](component-dashboard.md)   |
+| Telemetry   | [Telemetry](component-telemetry.md)   |
 | Relay       | [Relay](component-relay.md)           |
 | Kafka       | [Kafka](component-kafka.md)           |
 | Firestore   | [Firestore](component-firestore.md)   |
@@ -134,7 +143,7 @@ Procedures humans run outside Terraform apply. Code and Terraform do not replace
 
 | Runbook                 | Document                                                                      |
 |-------------------------|-------------------------------------------------------------------------------|
-| Control-plane images    | [Operator — Relay + controller + dashboard](operator-control-plane-images.md) |
+| Container images        | [Operator — Relay + controller + Dashboard + Telemetry](operator-control-plane-images.md) |
 | Domain + Kafka TLS cert | [Operator — Domain, Cloud Run verify, Kafka TLS](operator-domain-and-tls.md)  |
 | Influx admin token      | [Operator — Influx admin token](operator-influx-token.md)                     |
-| Dashboard Auth0 login   | [Operator — Dashboard Auth0 login](operator-dashboard-oauth.md)               |
+| Browser Auth0 login     | [Operator — shared browser Auth0 login](operator-browser-oauth.md)             |

@@ -33,31 +33,33 @@ resource "google_compute_subnetwork" "relay_run" {
   description              = "Relay Direct VPC Egress only. No VMs. No Influx."
 }
 
-resource "google_compute_subnetwork" "dashboard_run" {
-  name                     = local.names.dashboard_run_subnet
+resource "google_compute_subnetwork" "telemetry_run" {
+  name                     = local.names.telemetry_run_subnet
   project                  = var.project_id
   region                   = var.region
   network                  = google_compute_network.chronoracer.id
-  ip_cidr_range            = var.dashboard_run_subnet_cidr
+  ip_cidr_range            = var.telemetry_run_subnet_cidr
   private_ip_google_access = true
-  description              = "Dashboard Direct VPC Egress only. No VMs. Sole Influx source range."
+  description              = "Telemetry Direct VPC Egress only. No VMs. Core telemetry port from this range."
+}
+
+locals {
+  subnet_cidrs_disjoint = (
+    cidrsubnet(format("%s/%s", cidrhost(var.relay_run_subnet_cidr, 0), split("/", var.subnet_cidr)[1]), 0, 0) != var.subnet_cidr &&
+    cidrsubnet(format("%s/%s", cidrhost(var.relay_run_subnet_cidr, -1), split("/", var.subnet_cidr)[1]), 0, 0) != var.subnet_cidr &&
+    cidrsubnet(format("%s/%s", cidrhost(var.telemetry_run_subnet_cidr, 0), split("/", var.subnet_cidr)[1]), 0, 0) != var.subnet_cidr &&
+    cidrsubnet(format("%s/%s", cidrhost(var.telemetry_run_subnet_cidr, -1), split("/", var.subnet_cidr)[1]), 0, 0) != var.subnet_cidr &&
+    cidrsubnet(format("%s/%s", cidrhost(var.telemetry_run_subnet_cidr, 0), split("/", var.relay_run_subnet_cidr)[1]), 0, 0) != var.relay_run_subnet_cidr &&
+    cidrsubnet(format("%s/%s", cidrhost(var.telemetry_run_subnet_cidr, -1), split("/", var.relay_run_subnet_cidr)[1]), 0, 0) != var.relay_run_subnet_cidr &&
+    cidrsubnet(format("%s/%s", cidrhost(var.relay_run_subnet_cidr, 0), split("/", var.telemetry_run_subnet_cidr)[1]), 0, 0) != var.telemetry_run_subnet_cidr &&
+    cidrsubnet(format("%s/%s", cidrhost(var.relay_run_subnet_cidr, -1), split("/", var.telemetry_run_subnet_cidr)[1]), 0, 0) != var.telemetry_run_subnet_cidr
+  )
 }
 
 check "subnet_cidrs_disjoint" {
   assert {
-    condition = (
-    # 1. relay_run start/end not inside subnet_cidr
-    cidrsubnet(format("%s/%s", cidrhost(var.relay_run_subnet_cidr, 0), split("/", var.subnet_cidr)[1]), 0, 0) != var.subnet_cidr &&
-    cidrsubnet(format("%s/%s", cidrhost(var.relay_run_subnet_cidr, -1), split("/", var.subnet_cidr)[1]), 0, 0) != var.subnet_cidr &&
-
-    # 2. dashboard_run start/end not inside subnet_cidr
-    cidrsubnet(format("%s/%s", cidrhost(var.dashboard_run_subnet_cidr, 0), split("/", var.subnet_cidr)[1]), 0, 0) != var.subnet_cidr &&
-    cidrsubnet(format("%s/%s", cidrhost(var.dashboard_run_subnet_cidr, -1), split("/", var.subnet_cidr)[1]), 0, 0) != var.subnet_cidr &&
-
-    # 3. relay_run and dashboard_run do not overlap with each other
-    cidrsubnet(format("%s/%s", cidrhost(var.dashboard_run_subnet_cidr, 0), split("/", var.relay_run_subnet_cidr)[1]), 0, 0) != var.relay_run_subnet_cidr
-    )
-    error_message = "subnet_cidr, relay_run_subnet_cidr, and dashboard_run_subnet_cidr must not overlap. Direct VPC Egress needs a /26 each; defaults are 10.20.0.0/24, 10.20.1.0/26, 10.20.1.64/26."
+    condition     = local.subnet_cidrs_disjoint
+    error_message = "subnet_cidr, relay_run_subnet_cidr, and telemetry_run_subnet_cidr must not overlap. Direct VPC Egress needs a /26; defaults are 10.20.0.0/24, 10.20.1.0/26, and 10.20.2.0/26."
   }
 }
 
@@ -95,22 +97,21 @@ resource "google_compute_firewall" "kafka_private" {
   target_tags   = ["kafka"]
 }
 
-# Dashboard reads Influx on the Core VM. Source is the Dashboard subnet only, so
-# neither the Kafka VM nor Relay can reach the database.
-resource "google_compute_firewall" "influx_private" {
-  name    = local.names.influx_priv_fw
+resource "google_compute_firewall" "core_telemetry" {
+  name    = local.names.core_telemetry_fw
   project = var.project_id
   network = google_compute_network.chronoracer.name
 
-  direction = "INGRESS"
-  priority  = 1000
+  description = "Core telemetry gRPC. Telemetry Direct VPC subnet only. Not Relay, not Kafka."
+  direction   = "INGRESS"
+  priority    = 1000
 
   allow {
     protocol = "tcp"
-    ports    = [tostring(local.influx_http_port)]
+    ports    = [tostring(local.platform.core_telemetry_port)]
   }
 
-  source_ranges = [var.dashboard_run_subnet_cidr]
+  source_ranges = [var.telemetry_run_subnet_cidr]
   target_tags   = ["core"]
 }
 

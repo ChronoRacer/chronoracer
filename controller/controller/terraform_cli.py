@@ -43,6 +43,7 @@ def _output_values(raw: dict) -> TerraformOutputs | None:
             core_instance=str(raw["core_instance"]["value"]),
             kafka_public_ip=str(raw["kafka_public_ip"]["value"]),
             kafka_hostname=hostname,
+            telemetry_url=str(raw["telemetry_url"]["value"]),
         )
     except (KeyError, TypeError):
         return None

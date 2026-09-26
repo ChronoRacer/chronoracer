@@ -1,4 +1,4 @@
-# Publish Relay + controller + dashboard to Artifact Registry. Run from repository root.
+# Publish Relay + controller + dashboard + telemetry to Artifact Registry. Run from repository root.
 # Local wrapper: ./infra/always-on/publish-control-plane-images.sh --remote
 #
 # substitutions: _TAG (required from the wrapper). PROJECT_ID is built-in.
@@ -10,6 +10,7 @@ substitutions:
   _RELAY_IMAGE: relay
   _CONTROLLER_IMAGE: controller
   _DASHBOARD_IMAGE: dashboard
+  _TELEMETRY_IMAGE: telemetry
   _TAG: latest
 
 timeout: 1200s
@@ -45,8 +46,18 @@ steps:
       - -f
       - dashboard/Dockerfile
       - dashboard
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --platform=linux/amd64
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_TELEMETRY_IMAGE}:${_TAG}
+      - -f
+      - telemetry/Dockerfile
+      - .
 
 images:
   - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_CONTROLLER_IMAGE}:${_TAG}
   - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_RELAY_IMAGE}:${_TAG}
   - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_DASHBOARD_IMAGE}:${_TAG}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_TELEMETRY_IMAGE}:${_TAG}

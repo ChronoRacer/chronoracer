@@ -49,6 +49,7 @@ class FirestoreRaceStore:
                 "coreInstance": outputs.core_instance,
                 "kafkaPublicIp": outputs.kafka_public_ip,
                 "kafkaHostname": outputs.kafka_hostname,
+                "telemetryUrl": outputs.telemetry_url,
                 "lastError": firestore.DELETE_FIELD,
             },
         )

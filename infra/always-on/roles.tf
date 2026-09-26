@@ -93,3 +93,34 @@ resource "google_project_iam_custom_role" "controller_dns" {
     "dns.resourceRecordSets.update",
   ]
 }
+
+resource "google_project_iam_custom_role" "controller_run_create" {
+  project     = var.project_id
+  role_id     = "chronoracerControllerRunCreate"
+  title       = "Chronoracer controller Cloud Run create"
+  description = "Create/list Cloud Run services. Conditions on create are unreliable; race module must only create the telemetry service."
+
+  permissions = [
+    "run.locations.get",
+    "run.operations.get",
+    "run.services.create",
+    "run.services.list",
+  ]
+}
+
+resource "google_project_iam_custom_role" "controller_run" {
+  project     = var.project_id
+  role_id     = "chronoracerControllerRun"
+  title       = "Chronoracer controller Telemetry Cloud Run"
+  description = "Mutate the canonical Telemetry Cloud Run service, including public invoker IAM."
+
+  permissions = [
+    "run.revisions.get",
+    "run.revisions.list",
+    "run.services.delete",
+    "run.services.get",
+    "run.services.getIamPolicy",
+    "run.services.setIamPolicy",
+    "run.services.update",
+  ]
+}

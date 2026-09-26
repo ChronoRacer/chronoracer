@@ -70,7 +70,7 @@ Export paths: [GCS](component-gcs_buckets.md). Always-on IAM: [Terraform](compon
   `in_flight` run). Source of truth for the one-build mutex. Not inferred from phase. GCS Terraform state locking is not
   the mutex.
 - terraform outputs after apply (controller): `kafkaInstance`, `coreInstance`, `kafkaPublicIp`, `kafkaHostname` (stable
-  FQDN without trailing dot). Not `kafkaPort`.
+  FQDN without trailing dot), `telemetryUrl` (generated deterministic Cloud Run service URI). Not `kafkaPort`.
 - `startedBy` — Okta subject
 - timestamps: `startedAt`, `appliedAt`, `stoppedAt`, `destroyedAt`
 - `lastError` — set on apply/trigger/build failure. Cleared when Relay stamps a new `terraformRun` (retry start / stop /

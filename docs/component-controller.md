@@ -60,11 +60,16 @@ Relay substitutions (Cloud Build requires `_`; Relay already sends these):
 
 Always-on trigger env (not Relay substitutions; values from always-on apply):
 
-| Process env  | Source                          | Terraform `-var` |
-|--------------|---------------------------------|------------------|
-| `PROJECT_ID` | `var.project_id`                | `project_id`     |
-| `KAFKA_FQDN` | `var.kafka_fqdn` (trailing dot) | `kafka_fqdn`     |
-| `ZONE`       | `var.zone`                      | `zone`           |
+| Process env         | Source                          | Terraform `-var`   |
+|---------------------|---------------------------------|--------------------|
+| `PROJECT_ID`        | `var.project_id`                | `project_id`       |
+| `REGION`            | `var.region`                    | `region`           |
+| `KAFKA_FQDN`        | `var.kafka_fqdn` (trailing dot) | `kafka_fqdn`       |
+| `ZONE`              | `var.zone`                      | `zone`             |
+| `TELEMETRY_IMAGE`   | `var.telemetry_image`           | `telemetry_image`  |
+
+Race Cloud Run (Telemetry), provider region, and subnet lookups use `region`. It must match always-on `var.region`
+(today `europe-west1`). The race module default is not a second source of truth when the controller runs.
 
 Machine types and disk types stay module defaults. Do not pass them unless those defaults change in Terraform.
 
@@ -117,7 +122,8 @@ Every run:
     - `destroy`: `terraform destroy -input=false -auto-approve -lock-timeout=5m` with `-var ingest_open=false` (required
       var; unused by destroy)
 
-Always pass `-var race_id=$RACE_ID`, `-var project_id=$PROJECT_ID`, `-var kafka_fqdn=$KAFKA_FQDN`, `-var zone=$ZONE`.
+Always pass `-var race_id=$RACE_ID`, `-var project_id=$PROJECT_ID`, `-var kafka_fqdn=$KAFKA_FQDN`, `-var zone=$ZONE`,
+`-var telemetry_image=$TELEMETRY_IMAGE`.
 
 Terraform is captured, then the full stdout and stderr of every terraform process in that run is written to the
 controller process stdout as one block.
@@ -143,6 +149,7 @@ Success (terraform apply 0, outputs present):
 - `appliedAt` = server timestamp
 - `kafkaInstance`, `coreInstance`, `kafkaPublicIp`, `kafkaHostname` from terraform outputs `kafka_instance`,
   `core_instance`, `kafka_public_ip`, `kafka_hostname` (`kafka_hostname` is the FQDN **without** trailing dot)
+- `telemetryUrl` from terraform output `telemetry_url` (generated Cloud Run service URI)
 - `kafkaPort` is a constant, not modified by controller
 - delete `lastError` (retry leftovers must not survive `applied`)
 

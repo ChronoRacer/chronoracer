@@ -37,8 +37,7 @@ resource "google_secret_manager_secret" "kafka_tls" {
   depends_on = [google_project_service.apis]
 }
 
-# Shared InfluxDB admin token. Core VM boot renders Influx's token file from it, the Dashboard
-# reads the same value. Payload uploaded by operator: docs/operator-influx-token.md
+# Shared InfluxDB admin token. Core VM boot renders Influx's token file from it. Payload uploaded by operator: docs/operator-influx-token.md
 resource "google_secret_manager_secret" "influx_token" {
   secret_id = local.names.influx_token_secret
   project   = var.project_id
@@ -56,8 +55,8 @@ resource "google_secret_manager_secret" "influx_token" {
 
 # Auth0 client secret for the Dashboard browser login. Payload uploaded by operator:
 # docs/operator-dashboard-oauth.md
-resource "google_secret_manager_secret" "dashboard_oauth" {
-  secret_id = local.names.dashboard_oauth_secret
+resource "google_secret_manager_secret" "okta_oauth" {
+  secret_id = local.names.okta_oauth_secret
   project   = var.project_id
 
   replication {
@@ -85,7 +84,7 @@ resource "google_artifact_registry_repository" "chronoracer" {
   location               = var.region
   repository_id          = local.names.ar_repo
   format                 = "DOCKER"
-  description            = "Controller, Relay, and Dashboard images. Not Kafka/Core VM families."
+  description            = "Controller, Relay, Dashboard, and Telemetry images. Not Kafka/Core VM families."
   cleanup_policy_dry_run = false
 
   cleanup_policies {
