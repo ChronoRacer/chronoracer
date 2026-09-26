@@ -3,6 +3,7 @@ use crate::persistence::database_exporter::InfluxDbExporter;
 use crate::persistence::sensor_data_batcher::{SensorDataBatcher, SimplePoint};
 use crate::persistence::sensor_data_flusher::{BatcherWiring, BatcherWiringType, InfluxDbFlusher};
 use crate::persistence::sensor_data_splitter::SensorDataSplitter;
+use crate::persistence::write_metrics::WriteMetrics;
 use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use crate::runtime_configuration::RetainReadTimeValue;
 use anyhow::{Context, Result, anyhow};
@@ -13,18 +14,19 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
-pub type SensorDataBatch = Vec<UnwoundSensorDataMessage>;
+pub type SensorDataBatch = Vec<Arc<UnwoundSensorDataMessage>>;
 pub type SensorDataRx = tokio::sync::mpsc::Receiver<SensorDataBatch>;
 
-pub struct PersistanceLayerEntryPoint {
+pub struct PersistenceLayerEntryPoint {
     pub(crate) splitter: SensorDataSplitter,
     pub(crate) fast_batcher: SensorDataBatcher,
     pub(crate) normal_batcher: SensorDataBatcher,
     pub(crate) flusher: InfluxDbFlusher,
     pub(crate) exporter: InfluxDbExporter,
+    pub(crate) write_metrics: Arc<WriteMetrics>,
 }
 
-impl PersistanceLayerEntryPoint {
+impl PersistenceLayerEntryPoint {
     pub async fn init(
         config: &'static CoreConfig,
         processed_data_rx: SensorDataRx,
@@ -41,13 +43,13 @@ impl PersistanceLayerEntryPoint {
         let splitter =
             SensorDataSplitter::new(processed_data_rx, fast_tx, normal_tx, persistence_config);
 
-        let (fast_batcher, fast_batcher_wiring) = PersistanceLayerEntryPoint::create_batcher(
+        let (fast_batcher, fast_batcher_wiring) = PersistenceLayerEntryPoint::create_batcher(
             fast_rx,
             driver_id_holder,
             persistence_config,
             BatcherWiringType::Fast,
         );
-        let (normal_batcher, normal_batcher_wiring) = PersistanceLayerEntryPoint::create_batcher(
+        let (normal_batcher, normal_batcher_wiring) = PersistenceLayerEntryPoint::create_batcher(
             normal_rx,
             driver_id_holder,
             persistence_config,
@@ -55,12 +57,14 @@ impl PersistanceLayerEntryPoint {
         );
 
         let race_id = config.race.race_id.clone();
+        let write_metrics = Arc::new(WriteMetrics::new());
         let flusher = InfluxDbFlusher::from_config(
             persistence_config,
             race_id,
             fast_batcher_wiring,
             normal_batcher_wiring,
             Arc::clone(&db_client),
+            Arc::clone(&write_metrics),
         );
 
         let exporter = InfluxDbExporter::new(db_client, &persistence_config.export);
@@ -71,6 +75,7 @@ impl PersistanceLayerEntryPoint {
             normal_batcher,
             flusher,
             exporter,
+            write_metrics,
         })
     }
 
@@ -101,8 +106,8 @@ impl PersistanceLayerEntryPoint {
                 .build()
                 .map_err(|e| anyhow!("Invalid InfluxDB config: {e}"))?,
         )
-            .await
-            .context("Failed to create InfluxDb client")?;
+        .await
+        .context("Failed to create InfluxDb client")?;
 
         client
             .ping()
