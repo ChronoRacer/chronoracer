@@ -5,7 +5,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 from typing import Any
 
-from .auth import OktaAuthenticator, okta_user, pubsub_push
+from .auth import OktaAuthenticator, okta_user, pubsub_push, OktaUser
 from .config import load_config
 from .gcp.builds import DevBuildTrigger, CloudBuildTrigger
 from .kafka import DevEventPublisher, DevShutdownPublisher, KafkaEventPublisher, KafkaHeartbeatReader, KafkaShutdownPublisher
@@ -26,7 +26,7 @@ def create_app() -> FastAPI:
     logger.info("Creating Relay application (GCP enabled: {})", config.gcp.enabled)
     app = FastAPI(title="ChronoRacer Relay", version="1.0.0")
     app.state.config = config
-    app.state.okta = OktaAuthenticator(config.okta.issuer, config.okta.audience)
+    app.state.okta = OktaAuthenticator(config.okta.issuer, config.okta.audience) if config.okta.enabled else None
     app.state.pubsub_auth = {}
     if config.gcp.enabled:
         repository = FirestoreRaceRepository(config.gcp.project_id, config.gcp.firestore_database)
@@ -53,7 +53,7 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     @app.post("/race/start", status_code=status.HTTP_202_ACCEPTED)
-    async def start(request: StartRequest, user: dict = Depends(okta_user)):
+    async def start(request: StartRequest, user: OktaUser = Depends(okta_user)):
         logger.info("Received race start request")
         core_config = {
             **request.config,
@@ -63,14 +63,14 @@ def create_app() -> FastAPI:
             },
         }
         try:
-            return await app.state.service.start(request.race_id, core_config, user.get('sub', 'unknown'))
+            return await app.state.service.start(request.race_id, core_config, user)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except PayloadTooLargeError as exc:
             raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)) from exc
 
     @app.post("/race/event", status_code=status.HTTP_204_NO_CONTENT)
-    async def race_event(request: Request, key: str = Query(..., min_length=1), _: dict = Depends(okta_user)):
+    async def race_event(request: Request, key: str = Query(..., min_length=1), _: OktaUser = Depends(okta_user)):
         content_length = request.headers.get('content-length')
         if content_length is not None:
             try:
@@ -90,15 +90,15 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.get("/race/status")
-    async def race_status(_: dict = Depends(okta_user)):
+    async def race_status(_: OktaUser = Depends(okta_user)):
         return await app.state.service.status()
 
     @app.get("/race/history")
-    async def history(_: dict = Depends(okta_user)):
+    async def history(_: OktaUser= Depends(okta_user)):
         return await app.state.service.history()
 
     @app.get("/race/history/{race_id}")
-    async def historical_race(race_id: str, _: dict = Depends(okta_user),
+    async def historical_race(race_id: str, _: OktaUser = Depends(okta_user),
                               export_race: bool = Query(False)):
         try:
             return await app.state.service.historical_race(race_id, export_race)
@@ -106,7 +106,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/race/stop", status_code=status.HTTP_202_ACCEPTED)
-    async def stop(_: dict = Depends(okta_user)):
+    async def stop(_: OktaUser = Depends(okta_user)):
         logger.info("Received race stop request")
         try:
             return await app.state.service.stop()
@@ -114,7 +114,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.post("/race/force-destroy", status_code=status.HTTP_202_ACCEPTED)
-    async def force_destroy(_: dict = Depends(okta_user)):
+    async def force_destroy(_: OktaUser = Depends(okta_user)):
         logger.warning("Received race force-destroy request")
         try:
             return await app.state.service.force_destroy()

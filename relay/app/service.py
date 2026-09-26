@@ -6,6 +6,7 @@ from loguru import logger
 from typing import Any
 from uuid import uuid4
 
+from .auth import OktaUser
 from .gcp.builds import BuildTrigger
 from .gcp.repository import RaceRepository
 from .gcp.storage import ObjectStore
@@ -36,11 +37,11 @@ class RelayService:
         # This lock is enough - cloud run instances capped at 1 in GCP
         self._operation_lock = asyncio.Lock()
 
-    async def start(self, race_id: str, config: dict[str, Any], started_by='unknown'):
+    async def start(self, race_id: str, config: dict[str, Any], started_by: OktaUser):
         async with self._operation_lock:
             return await self._start(race_id, config, started_by)
 
-    async def _start(self, race_id: str, config: dict[str, Any], started_by='unknown'):
+    async def _start(self, race_id: str, config: dict[str, Any], started_by: OktaUser):
         logger.info("Starting race requested by {}", started_by)
         await self._reconcile()
         pointer = await self.repository.active()
@@ -57,7 +58,7 @@ class RelayService:
             if await self.repository.race(race_id):
                 raise ValueError('raceId already exists')
             now = datetime.now(timezone.utc)
-            race = Race(race_id=race_id, phase=Phase.STARTING, started_by=started_by,
+            race = Race(race_id=race_id, phase=Phase.STARTING, started_by=started_by.sub,
                         started_at=now)
             self._stamp(race, TerraformAction.APPLY)
             yaml_bytes = yaml.safe_dump(config, sort_keys=False).encode('utf-8')

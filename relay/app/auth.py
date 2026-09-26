@@ -3,7 +3,22 @@ from fastapi import HTTPException, Request
 from jwt import PyJWKClient
 from loguru import logger
 from typing import Any
+from pydantic import BaseModel
 
+class OktaUser(BaseModel):
+    sub: str
+
+    def __str__(self):
+        return self.sub
+
+    def __repr__(self):
+        return self.sub
+
+def _mock_user() -> OktaUser:
+    return OktaUser(sub="auth-disabled@chronoracer.live")
+
+def _user_from_okta_dict(okta_dict: dict[str, Any]) -> OktaUser:
+    return OktaUser(sub=okta_dict.get('sub', 'unknown'))
 
 class OktaAuthenticator:
     def __init__(self, issuer: str, audience: str):
@@ -26,12 +41,16 @@ class OktaAuthenticator:
             logger.warning("Token validation failed: {}", type(exc).__name__)
             raise HTTPException(status_code=401, detail="Invalid access token") from exc
 
-
-async def okta_user(request: Request) -> dict[str, Any]:
+async def okta_user(request: Request) -> OktaUser:
+    okta = request.app.state.okta
+    # None if auth is disabled
+    if not okta:
+        return _mock_user()
     authorization = request.headers.get("authorization", "")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() == "bearer" and token:
-        return request.app.state.okta.validate_token(token)
+        valid = okta.validate_token(token)
+        return _user_from_okta_dict(valid)
     raise HTTPException(status_code=401, detail="Bearer token required")
 
 

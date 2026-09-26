@@ -15,6 +15,7 @@ class ServerConfig(BaseModel):
 class OktaConfig(BaseModel):
     issuer: str
     audience: str
+    enabled: bool
 
 
 class GCPConfig(BaseModel):
