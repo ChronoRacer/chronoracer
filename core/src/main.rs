@@ -5,13 +5,15 @@ use crate::gcp::gcp_entrypoint::GcpLayerEntrypoint;
 use crate::logger::init_logger;
 use crate::messaging::messaging_entrypoint::MessagingLayerEntrypoint;
 use crate::monitor::Monitor;
-use crate::persistence::persistence_entrypoint::PersistanceLayerEntryPoint;
+use crate::persistence::persistence_entrypoint::PersistenceLayerEntryPoint;
 use crate::processing::processing_entrypoint::ProcessingLayerEntrypoint;
 use crate::runtime_configuration::RetainReadTimeValue;
+use crate::telemetry::PreviewHub;
 use anyhow::{Context, Result, bail};
 use compact_str::CompactString;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -26,6 +28,7 @@ pub mod monitor;
 pub mod persistence;
 pub mod processing;
 pub mod runtime_configuration;
+pub mod telemetry;
 
 use mimalloc::MiMalloc;
 
@@ -65,7 +68,7 @@ fn run() -> Result<()> {
             .build()
             .context("Failed to build Rayon pool")?,
     );
-    info!("Runtime initalized. Starting...");
+    info!("Runtime initialized. Starting...");
 
     tokio_runtime.block_on(async {
         let data_cancel_token = CancellationToken::new();
@@ -77,6 +80,11 @@ fn run() -> Result<()> {
             RetainReadTimeValue::new(config.race.initial_driver_id.clone());
         let handler: &'static RetainReadTimeValue<CompactString> =
             Box::leak(Box::new(current_driver_id_handler));
+        let preview = PreviewHub::new(
+            handler,
+            config.telemetry.max_queue_points,
+            Duration::from_millis(u64::from(config.telemetry.max_queue_age_ms)),
+        );
         info!(
             "Runtime configuration initialized. Starting with driver_id={}",
             handler.get()
@@ -84,7 +92,7 @@ fn run() -> Result<()> {
 
         // Messaging
         let mut messaging_wrapper = MessagingLayerEntrypoint::init(config).await?;
-        info!("Messaging layer initalized");
+        info!("Messaging layer initialized");
 
         // Processing
         let mut processing_layer = ProcessingLayerEntrypoint::init(
@@ -94,14 +102,15 @@ fn run() -> Result<()> {
             handler,
             shutdown_tx,
             rayon_pool,
+            preview.clone(),
         )?;
-        info!("Processing layer initalized");
+        info!("Processing layer initialized");
 
         // Persistence
-        let mut persistance_wrapper =
-            PersistanceLayerEntryPoint::init(config, processing_layer.processed_data_rx, handler)
+        let mut persistence_wrapper =
+            PersistenceLayerEntryPoint::init(config, processing_layer.processed_data_rx, handler)
                 .await?;
-        info!("Persistance layer initalized");
+        info!("Persistence layer initialized");
 
         // GCP
         let gcp_wrapper = GcpLayerEntrypoint::init(&config.race.race_id, &config.gcp).await?;
@@ -110,14 +119,14 @@ fn run() -> Result<()> {
             None => (None, None),
         };
 
-        info!("GCP layer initalized");
+        info!("GCP layer initialized");
 
         // Monitor
         let monitor = Monitor::new(
             data_cancel_token.clone(),
             data_tracker,
             config,
-            persistance_wrapper.exporter,
+            persistence_wrapper.exporter,
             messaging_wrapper.kafka_exporter,
             storage,
             pubsub,
@@ -134,14 +143,34 @@ fn run() -> Result<()> {
                 .await;
         });
         monitor.track_task(async move { processing_layer.collector.ingest().await });
-        monitor.track_task(async move { persistance_wrapper.splitter.ingest().await });
-        monitor.track_task(async move { persistance_wrapper.fast_batcher.ingest().await });
-        monitor.track_task(async move { persistance_wrapper.normal_batcher.ingest().await });
-        monitor.track_task(async move { persistance_wrapper.flusher.ingest().await });
+        monitor.track_task(async move { persistence_wrapper.splitter.ingest().await });
+        monitor.track_task(async move { persistence_wrapper.fast_batcher.ingest().await });
+        monitor.track_task(async move { persistence_wrapper.normal_batcher.ingest().await });
+        monitor.track_task(async move { persistence_wrapper.flusher.ingest().await });
         info!("Data pipeline started");
+
+        let telemetry_cancel = data_cancel_token.clone();
+        let telemetry_port = config.telemetry.port;
+        let telemetry_race = config.race.race_id.clone();
+        tokio::spawn(async move {
+            telemetry::serve(preview, telemetry_cancel, telemetry_port, telemetry_race).await;
+        });
 
         // Control tasks
         let mut control_tasks = JoinSet::new();
+        if config.gcp.enabled {
+            let write_metrics = Arc::clone(&persistence_wrapper.write_metrics);
+            let project_id = config.gcp.project_id.clone();
+            let max_retries = config.gcp.max_retries;
+            control_tasks.spawn(async move {
+                persistence::write_metrics_publisher::publish_write_metrics(
+                    project_id,
+                    max_retries,
+                    write_metrics,
+                )
+                .await;
+            });
+        }
         control_tasks.spawn(async move { processing_layer.control_filter.ingest().await });
         control_tasks.spawn(async move { messaging_wrapper.control_sink.ingest().await });
         control_tasks.spawn(async move { messaging_wrapper.dlq_handler.ingest().await });

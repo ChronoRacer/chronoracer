@@ -147,10 +147,8 @@ impl<'a> Monitor<'a> {
             kafka_succeeded,
             self.notify_shutdown_on_failed_kafka_export,
         );
-        let db_notification = export_notification_allowed(
-            db_succeeded,
-            self.notify_shutdown_on_failed_db_export,
-        );
+        let db_notification =
+            export_notification_allowed(db_succeeded, self.notify_shutdown_on_failed_db_export);
 
         if kafka_notification && db_notification {
             info!("Sending shutdown notification...");
@@ -158,7 +156,9 @@ impl<'a> Monitor<'a> {
                 error!("Failed to send shutdown notification: {e}");
             }
         } else {
-            error!("Shutdown notification not sent (Kafka: {kafka_notification}, DB: {db_notification})");
+            error!(
+                "Shutdown notification not sent (Kafka: {kafka_notification}, DB: {db_notification})"
+            );
         }
 
         info!("Shutdown sequence complete");
@@ -211,7 +211,7 @@ mod tests {
 
     #[tokio::test]
     async fn upload_to_gcs_succeeds_when_no_files() {
-        let result = Monitor::upload_to_gcs(None, vec!()).await;
+        let result = Monitor::upload_to_gcs(None, vec![]).await;
 
         assert!(result.is_ok());
     }

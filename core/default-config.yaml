@@ -1,6 +1,7 @@
 runtime:
   rayon_threads: 4
-  tokio_workers: 2
+  tokio_workers: 3
+  # tokio_blocking is nearly unused, we can overlap with workers
   tokio_blocking: 1
   heartbeat_interval_s: 30
   data_pipeline_drain_timeout_s: 180

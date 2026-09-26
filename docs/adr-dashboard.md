@@ -9,7 +9,7 @@ Problem: operators need two different views during a race:
 
 The previous Dashboard design mixed both concerns by polling InfluxDB from Grafana. Polling persisted batches cannot
 provide a reliable near-real-time preview, gives Grafana an admin-scoped database token, and lets UI queries compete
-with ingest on the Core VM.
+with ingest on the Core VM. Additionally, a small Grafana instance could not handle the polling load of InfluxDB at 5 a second refresh rate.
 
 Current component shapes: [Dashboard](component-dashboard.md) and [Telemetry](component-telemetry.md).
 
