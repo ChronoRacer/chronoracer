@@ -89,8 +89,8 @@ impl<'a> GcsStorageManager<'a> {
                 .set_if_generation_match(0)
                 .send_unbuffered(),
         )
-            .await
-            .map(|o| o.name)
-            .map_err(Into::into)
+        .await
+        .map(|o| o.name)
+        .map_err(Into::into)
     }
 }

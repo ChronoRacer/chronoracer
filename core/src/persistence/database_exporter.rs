@@ -77,7 +77,7 @@ impl InfluxDbExporter {
                         &mut backoff,
                         format!("HTTP {status}: {body}"),
                     )
-                        .await?;
+                    .await?;
                 }
                 Err(error) => {
                     self.retry_or_fail(&mut attempts, &mut backoff, error.to_string())
@@ -140,7 +140,9 @@ impl InfluxDbExporter {
 
         info!(
             "Database export finished. Exported {} out of {} tables. Time taken: {:.2?}",
-            response.tables_exported, response.tables_found, started_at.elapsed()
+            response.tables_exported,
+            response.tables_found,
+            started_at.elapsed()
         );
         Ok(exported_files)
     }

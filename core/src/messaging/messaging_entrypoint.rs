@@ -5,7 +5,7 @@ use crate::messaging::kafka_exporter::KafkaExporter;
 use crate::messaging::management::ensure_all_topics_exists;
 use crate::messaging::message_sink::{BatchMessageSink, BatchSinkRx, InstantMessageSink, SinkRx};
 use crate::messaging::partial_message::{PartialMessage, PartialMessageWithError};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use rdkafka::producer::FutureProducer;
 use std::sync::Arc;
 
@@ -85,7 +85,10 @@ fn ensure_kafka_compilation_features() -> Result<()> {
         .get("builtin.features")
         .context("Failed to read librdkafka builtin features")?;
     for required_feature in ["snappy", "lz4"] {
-        if !features.split(',').any(|feature| feature.trim() == required_feature) {
+        if !features
+            .split(',')
+            .any(|feature| feature.trim() == required_feature)
+        {
             bail!("rdkafka was built without {required_feature} support: {features}");
         }
     }
