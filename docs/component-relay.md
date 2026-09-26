@@ -77,7 +77,17 @@ Retry (pointer set, phase `failed`, mutex not held): same `raceId`, no new YAML,
 Output: `raceId`, phase `starting`.
 
 Reject: invalid or reused `raceId`; pointer set and phase is not `failed`; `failed` but mutex held; `raceId` ≠ active
-race.
+race. New-race YAML dump larger than 100KiB (102400 bytes) is `413`.
+
+### Event (operator)
+
+Caller: Okta. Active race only, phase `applied`. Input: query `key` (Kafka message key, required, non-empty) and a raw
+request body of any content type. Body is not parsed. Max 100KiB (102400 bytes); larger body is `413`. Empty body is
+allowed.
+
+Relay produces the bytes to the private `event` topic under `key`. Topic: [Kafka](component-kafka.md). Output: `204`.
+
+Reject: no active race; phase is not `applied`.
 
 ### Status (operator)
 

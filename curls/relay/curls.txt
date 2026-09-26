@@ -23,3 +23,9 @@ curl -X GET "https://relay.chronoracer.live/race/history/$raceId" -H "Authorizat
 
 raceId=$(jq -r '.raceId' race_start_request.json)
 curl -X GET "https://relay.chronoracer.live/race/history/${raceId}?export_race=true" -H "Authorization: Bearer $OKTA_ACCESS_TOKEN"
+
+# Operator event (raw bytes, Kafka key)
+
+curl -X POST "https://relay.chronoracer.live/race/event?key=FLAG" \
+  -H "Authorization: Bearer $OKTA_ACCESS_TOKEN" \
+  --data-binary $'opaque-bytes'

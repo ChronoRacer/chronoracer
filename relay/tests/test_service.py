@@ -3,7 +3,7 @@ import yaml
 from app.gcp.repository import InMemoryRaceRepository
 from app.gcp.storage import DevObjectStore
 from app.models import BuildFinished, ExportDone, Phase, TerraformAction, TerraformStatus
-from app.service import RelayService
+from app.service import MAX_OPERATOR_PAYLOAD_BYTES, PayloadTooLargeError, RelayService
 from datetime import datetime, timedelta, timezone
 
 
@@ -37,6 +37,14 @@ class FakeShutdown:
 
     async def close(self):
         self.close_calls += 1
+
+
+class FakeEvents:
+    def __init__(self):
+        self.messages = []
+
+    async def publish(self, key, value):
+        self.messages.append((key, value))
 
 
 class TrackingRepository(InMemoryRaceRepository):
@@ -399,3 +407,66 @@ async def test_ready_status_includes_configured_kafka_port():
     result = await service.status()
 
     assert result['kafkaPort'] == 19092
+
+
+@pytest.mark.asyncio
+async def test_ready_status_includes_telemetry_url():
+    service = RelayService(
+        InMemoryRaceRepository(), builds=FakeBuilds(), heartbeat=FakeHeartbeat()
+    )
+    await service.start('race1', {})
+    race = await service._active()
+    race.phase = Phase.APPLIED
+    race.terraform_run.status = TerraformStatus.SUCCEEDED
+    race.kafka_hostname = 'kafka.example.test'
+    race.kafka_public_ip = '192.0.2.10'
+    race.telemetry_url = 'https://telemetry-1.europe-west1.run.app'
+    await service.repository.save_race(race)
+
+    result = await service.status()
+
+    assert result['telemetryUrl'] == 'https://telemetry-1.europe-west1.run.app'
+
+
+@pytest.mark.asyncio
+async def test_start_rejects_oversized_core_config_yaml():
+    service = RelayService(InMemoryRaceRepository(), builds=FakeBuilds())
+    with pytest.raises(PayloadTooLargeError):
+        await service.start('race1', {'blob': 'x' * MAX_OPERATOR_PAYLOAD_BYTES})
+
+
+@pytest.mark.asyncio
+async def test_publish_event_requires_applied_race():
+    events = FakeEvents()
+    service = RelayService(InMemoryRaceRepository(), builds=FakeBuilds(), events=events)
+    await service.start('race1', {})
+    with pytest.raises(ValueError, match='current state'):
+        await service.publish_event('FLAG', b'payload')
+    assert events.messages == []
+
+
+@pytest.mark.asyncio
+async def test_publish_event_sends_opaque_bytes():
+    events = FakeEvents()
+    service = RelayService(InMemoryRaceRepository(), builds=FakeBuilds(), events=events)
+    await service.start('race1', {})
+    race = await service._active()
+    race.phase = Phase.APPLIED
+    race.terraform_run.status = TerraformStatus.SUCCEEDED
+    await service.repository.save_race(race)
+
+    await service.publish_event('FLAG', b'\x00raw')
+    assert events.messages == [('FLAG', b'\x00raw')]
+
+
+@pytest.mark.asyncio
+async def test_publish_event_rejects_oversized_body():
+    events = FakeEvents()
+    service = RelayService(InMemoryRaceRepository(), builds=FakeBuilds(), events=events)
+    await service.start('race1', {})
+    race = await service._active()
+    race.phase = Phase.APPLIED
+    await service.repository.save_race(race)
+    with pytest.raises(PayloadTooLargeError):
+        await service.publish_event('FLAG', b'x' * (MAX_OPERATOR_PAYLOAD_BYTES + 1))
+    assert events.messages == []

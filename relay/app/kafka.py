@@ -17,6 +17,10 @@ class ShutdownPublisher(Protocol):
     async def close(self) -> None: ...
 
 
+class EventPublisher(Protocol):
+    async def publish(self, key: str, value: bytes) -> None: ...
+
+
 class HeartbeatReader(Protocol):
     async def read_last(self) -> datetime | None: ...
 
@@ -164,3 +168,74 @@ class KafkaShutdownPublisher(ShutdownPublisher):
             raise error
 
         logger.info("Published shutdown for race '{}'", race_id)
+
+
+class DevEventPublisher:
+    def __init__(self, topic: str):
+        self.topic, self.messages = topic, []
+
+    async def publish(self, key: str, value: bytes) -> None:
+        self.messages.append((key, value))
+
+
+class KafkaEventPublisher:
+    def __init__(self, bootstrap: str, topic: str):
+        self.topic = topic
+        self.bootstrap = bootstrap
+        self._publish_lock = asyncio.Lock()
+        self._delivery_timeout_seconds = 7
+
+    def _new_producer(self) -> Producer:
+        return Producer({
+            'bootstrap.servers': self.bootstrap,
+            'client.id': 'relay',
+            'acks': 'all',
+            'enable.idempotence': True,
+            'retries': 3,
+            'retry.backoff.ms': 250,
+            'delivery.timeout.ms': self._delivery_timeout_seconds * 1000,
+            'socket.timeout.ms': KAFKA_SOCKET_TIMEOUT_MS,
+            'request.timeout.ms': KAFKA_SOCKET_TIMEOUT_MS,
+            'socket.connection.setup.timeout.ms': KAFKA_SOCKET_TIMEOUT_MS,
+            'compression.type': 'snappy'
+        })
+
+    async def publish(self, key: str, value: bytes) -> None:
+        logger.info("Publishing operator event key {} ({} bytes)", key, len(value))
+        async with self._publish_lock:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._publish_sync, key, value)
+
+    def _publish_sync(self, key: str, value: bytes) -> None:
+        delivery_error = None
+        producer = self._new_producer()
+
+        def _delivery_callback(error, _message):
+            nonlocal delivery_error
+            if error is not None:
+                delivery_error = error
+
+        try:
+            try:
+                producer.produce(
+                    topic=self.topic,
+                    key=key,
+                    value=value,
+                    on_delivery=_delivery_callback
+                )
+                remaining = producer.flush(self._delivery_timeout_seconds)
+            except (BufferError, KafkaException) as exc:
+                logger.error("Failed to publish operator event key '{}': {}", key, exc)
+                raise
+
+            if delivery_error is not None:
+                logger.error("Kafka delivery failed for operator event key '{}': {}", key, delivery_error)
+                raise KafkaException(delivery_error)
+            if remaining:
+                error = TimeoutError(f'Kafka event delivery timed out with {remaining} message(s) pending')
+                logger.error("Kafka delivery failed for operator event key '{}': {}", key, error)
+                raise error
+
+            logger.info("Published operator event key '{}'", key)
+        finally:
+            producer.close()
