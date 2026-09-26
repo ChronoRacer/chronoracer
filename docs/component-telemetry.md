@@ -86,23 +86,55 @@ The implementation must preserve these externally visible properties:
 
 Environment-specific values are injected by race Terraform:
 
-| Variable               | Source                               | Use                                      |
-|------------------------|--------------------------------------|------------------------------------------|
-| `CORE_TELEMETRY_URL`   | Core internal name + telemetry port  | Private h2c gRPC `Watch`             |
-| `RACE_ID`              | Relay/controller race input          | Reject mismatched Core `hello` events    |
-| `TELEMETRY_ROOT_URL`   | Cloud Run service output             | OAuth callback and browser origin        |
-| `OAUTH_CLIENT_ID`      | [`platform.json`](../infra/contract/platform.json) | Shared Auth0 application |
-| `OAUTH_CLIENT_SECRET`  | Shared browser OAuth secret (Secret Manager) | Authorization-code token exchange        |
-| `OAUTH_ISSUER`         | [`platform.json`](../infra/contract/platform.json) | Auth0 authorization and token endpoints |
+| Variable              | Source                                             | Use                                     |
+|-----------------------|----------------------------------------------------|-----------------------------------------|
+| `CORE_TELEMETRY_URL`  | Core internal name + telemetry port                | Private h2c gRPC `Watch`                |
+| `RACE_ID`             | Relay/controller race input                        | Reject mismatched Core `hello` events   |
+| `TELEMETRY_ROOT_URL`  | Cloud Run service output                           | OAuth callback and browser origin       |
+| `OAUTH_CLIENT_ID`     | [`platform.json`](../infra/contract/platform.json) | Shared Auth0 application                |
+| `OAUTH_CLIENT_SECRET` | Shared browser OAuth secret (Secret Manager)       | Authorization-code token exchange       |
+| `OAUTH_ISSUER`        | [`platform.json`](../infra/contract/platform.json) | Auth0 authorization and token endpoints |
 
 Resource names and ports remain owned by contract files. Cloud Run wiring belongs to
 [Terraform](component-terraform.md); Auth0 values and callbacks belong to
 [Browser OAuth](operator-browser-oauth.md).
 
-## Accepted risks and implementation gates
+## Architecture
+
+[IMPORTANT!] Component not implemented - current files are a stub that should be fully replaced.
+
+Telemetry **MUST** not open multiple connections to Core, especially not one dedicated connection per user.
+It should instead have a fan-out architecture model with one, permanent and reliable connection to Core with an internal
+dedup and caching mechanism, later replaying the data to individual connected users. A monolith app is preferred over a
+client/server setup.
+
+```mermaid
+graph LR
+    subgraph telemetry["Telemetry component"]
+        tel_ingest["Stream sink"]
+        cd["Caching, deduplication (sorting if needed)"]
+        fanout["Fan-out entrypoint"]
+    end
+
+    subgraph users["Users"]
+        u1["User 1"]
+        u2["User 2"]
+        u3["User 3"]
+    end
+
+    core["Core telemetry server"] -->|private, single permanent connection| tel_ingest
+    tel_ingest --> cd
+    cd -->|prepared data| fanout
+    fanout -->|Okta, data visualization| u1
+    fanout -->|Okta, data visualization| u2
+    fanout -->|Okta, data visualization| u3
+```
+
+## Accepted risks
 
 - Preview delivery is best-effort. Core reports known loss but never retains history for replay.
 - One warm Cloud Run instance costs for the race duration even with no browser connected.
 - Runtime memory disappears on Telemetry restart.
 - Core and Telemetry stream throughput must be load-tested on GCP before production use. Preview overload must lose
   preview points, never slow Core ingestion.
+- Telemetry scaling issues with a single connection (CR locked to one instance) - needs load testing (current values in Terraform for sure not enough)
