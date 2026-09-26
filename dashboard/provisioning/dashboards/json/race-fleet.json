@@ -1,0 +1,1089 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "title": "Fleet",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp-monitoring"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp-monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "refId": "A",
+          "timeSeriesList": {
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "filters": [
+              "metric.type",
+              "=",
+              "compute.googleapis.com/instance/uptime",
+              "AND",
+              "metadata.system_labels.name",
+              "=",
+              "kafka"
+            ],
+            "groupBys": [
+              "resource.label.instance_id"
+            ],
+            "perSeriesAligner": "ALIGN_DELTA",
+            "preprocessor": "none",
+            "projectName": "",
+            "view": "FULL"
+          }
+        }
+      ],
+      "title": "Kafka VM",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp-monitoring"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp-monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "refId": "A",
+          "timeSeriesList": {
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "filters": [
+              "metric.type",
+              "=",
+              "compute.googleapis.com/instance/uptime",
+              "AND",
+              "metadata.system_labels.name",
+              "=",
+              "core"
+            ],
+            "groupBys": [
+              "resource.label.instance_id"
+            ],
+            "perSeriesAligner": "ALIGN_DELTA",
+            "preprocessor": "none",
+            "projectName": "",
+            "view": "FULL"
+          }
+        }
+      ],
+      "title": "Core VM",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp-monitoring"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp-monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "refId": "A",
+          "timeSeriesList": {
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "crossSeriesReducer": "REDUCE_SUM",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/container/instance_count",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "telemetry"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "perSeriesAligner": "ALIGN_MAX",
+            "preprocessor": "none",
+            "projectName": "",
+            "view": "FULL"
+          }
+        }
+      ],
+      "title": "Telemetry instances",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp-monitoring"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp-monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "refId": "A",
+          "timeSeriesList": {
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "crossSeriesReducer": "REDUCE_SUM",
+            "filters": [
+              "metric.type",
+              "=",
+              "custom.googleapis.com/chronoracer/influx_write_lines"
+            ],
+            "groupBys": [
+              "resource.label.instance_id"
+            ],
+            "perSeriesAligner": "ALIGN_RATE",
+            "preprocessor": "rate",
+            "projectName": "",
+            "view": "FULL"
+          }
+        }
+      ],
+      "title": "Influx lines/s",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 101,
+      "title": "Host metrics",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp-monitoring"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 6
+      },
+      "id": 5,
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "aliasBy": "{{resource.label.instance_id}}",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp-monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "refId": "A",
+          "timeSeriesList": {
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "filters": [
+              "metric.type",
+              "=",
+              "agent.googleapis.com/cpu/utilization",
+              "AND",
+              "metadata.system_labels.name",
+              "=",
+              "$vm"
+            ],
+            "groupBys": [
+              "resource.label.instance_id"
+            ],
+            "perSeriesAligner": "ALIGN_MEAN",
+            "preprocessor": "none",
+            "projectName": "",
+            "view": "FULL"
+          }
+        }
+      ],
+      "title": "$vm CPU",
+      "type": "timeseries",
+      "repeat": "vm",
+      "repeatDirection": "h"
+    },
+    {
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp-monitoring"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 6
+      },
+      "id": 6,
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "aliasBy": "{{resource.label.instance_id}} used",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp-monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "refId": "A",
+          "timeSeriesList": {
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "filters": [
+              "metric.type",
+              "=",
+              "agent.googleapis.com/memory/percent_used",
+              "AND",
+              "metadata.system_labels.name",
+              "=",
+              "$vm",
+              "AND",
+              "metric.label.state",
+              "=",
+              "used"
+            ],
+            "groupBys": [
+              "resource.label.instance_id"
+            ],
+            "perSeriesAligner": "ALIGN_MEAN",
+            "preprocessor": "none",
+            "projectName": "",
+            "view": "FULL"
+          }
+        }
+      ],
+      "title": "$vm Memory used",
+      "type": "timeseries",
+      "repeat": "vm",
+      "repeatDirection": "h"
+    },
+    {
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp-monitoring"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "id": 7,
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "aliasBy": "{{resource.label.instance_id}} {{metric.label.device}}",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp-monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "refId": "A",
+          "timeSeriesList": {
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "filters": [
+              "metric.type",
+              "=",
+              "agent.googleapis.com/disk/percent_used",
+              "AND",
+              "metadata.system_labels.name",
+              "=",
+              "$vm",
+              "AND",
+              "metric.label.state",
+              "=",
+              "used"
+            ],
+            "groupBys": [
+              "resource.label.instance_id",
+              "metric.label.device"
+            ],
+            "perSeriesAligner": "ALIGN_MEAN",
+            "preprocessor": "none",
+            "projectName": "",
+            "view": "FULL"
+          }
+        }
+      ],
+      "title": "$vm Disk used",
+      "type": "timeseries",
+      "repeat": "vm",
+      "repeatDirection": "h"
+    },
+    {
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp-monitoring"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "id": 8,
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "aliasBy": "{{resource.label.instance_id}} {{metric.label.direction}}",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp-monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "refId": "A",
+          "timeSeriesList": {
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "crossSeriesReducer": "REDUCE_SUM",
+            "filters": [
+              "metric.type",
+              "=",
+              "agent.googleapis.com/interface/traffic",
+              "AND",
+              "metadata.system_labels.name",
+              "=",
+              "$vm"
+            ],
+            "groupBys": [
+              "resource.label.instance_id",
+              "metric.label.direction"
+            ],
+            "perSeriesAligner": "ALIGN_RATE",
+            "preprocessor": "rate",
+            "projectName": "",
+            "view": "FULL"
+          }
+        }
+      ],
+      "title": "$vm Network",
+      "type": "timeseries",
+      "repeat": "vm",
+      "repeatDirection": "h"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "id": 103,
+      "title": "InfluxDB ingest",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp-monitoring"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      },
+      "id": 16,
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp-monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "refId": "A",
+          "timeSeriesList": {
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "crossSeriesReducer": "REDUCE_SUM",
+            "filters": [
+              "metric.type",
+              "=",
+              "custom.googleapis.com/chronoracer/influx_write_lines"
+            ],
+            "groupBys": [
+              "resource.label.instance_id"
+            ],
+            "perSeriesAligner": "ALIGN_RATE",
+            "preprocessor": "rate",
+            "projectName": "",
+            "view": "FULL"
+          }
+        }
+      ],
+      "title": "Accepted lines/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp-monitoring"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 23
+      },
+      "id": 17,
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp-monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "refId": "B",
+          "timeSeriesList": {
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "crossSeriesReducer": "REDUCE_SUM",
+            "filters": [
+              "metric.type",
+              "=",
+              "custom.googleapis.com/chronoracer/influx_write_bytes"
+            ],
+            "groupBys": [
+              "resource.label.instance_id"
+            ],
+            "perSeriesAligner": "ALIGN_RATE",
+            "preprocessor": "rate",
+            "projectName": "",
+            "view": "FULL"
+          }
+        }
+      ],
+      "title": "Accepted bytes/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp-monitoring"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "id": 18,
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp-monitoring"
+          },
+          "aliasBy": "{{metric.label.outcome}}",
+          "queryType": "timeSeriesList",
+          "refId": "A",
+          "timeSeriesList": {
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "crossSeriesReducer": "REDUCE_SUM",
+            "filters": [
+              "metric.type",
+              "=",
+              "custom.googleapis.com/chronoracer/influx_write_requests"
+            ],
+            "groupBys": [
+              "resource.label.instance_id",
+              "metric.label.outcome"
+            ],
+            "perSeriesAligner": "ALIGN_RATE",
+            "preprocessor": "rate",
+            "projectName": "",
+            "view": "FULL"
+          }
+        }
+      ],
+      "title": "HTTP write outcomes",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 39
+      },
+      "id": 104,
+      "title": "Telemetry Cloud Run",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp-monitoring"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "id": 19,
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "aliasBy": "{{metric.label.response_code_class}}",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp-monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "refId": "A",
+          "timeSeriesList": {
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "crossSeriesReducer": "REDUCE_SUM",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "telemetry"
+            ],
+            "groupBys": [
+              "metric.label.response_code_class"
+            ],
+            "perSeriesAligner": "ALIGN_RATE",
+            "preprocessor": "rate",
+            "projectName": "",
+            "view": "FULL"
+          }
+        }
+      ],
+      "title": "Request count",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp-monitoring"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "id": 20,
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "aliasBy": "p99",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp-monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "refId": "A",
+          "timeSeriesList": {
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "crossSeriesReducer": "REDUCE_MEAN",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_latencies",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "telemetry"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "perSeriesAligner": "ALIGN_PERCENTILE_99",
+            "preprocessor": "none",
+            "projectName": "",
+            "view": "FULL"
+          }
+        }
+      ],
+      "title": "Request latency p99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "stackdriver",
+        "uid": "gcp-monitoring"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "smooth",
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "id": 21,
+      "pluginVersion": "13.0.2",
+      "targets": [
+        {
+          "aliasBy": "5xx",
+          "datasource": {
+            "type": "stackdriver",
+            "uid": "gcp-monitoring"
+          },
+          "queryType": "timeSeriesList",
+          "refId": "A",
+          "timeSeriesList": {
+            "alignmentPeriod": "cloud-monitoring-auto",
+            "crossSeriesReducer": "REDUCE_SUM",
+            "filters": [
+              "metric.type",
+              "=",
+              "run.googleapis.com/request_count",
+              "AND",
+              "resource.label.service_name",
+              "=",
+              "telemetry",
+              "AND",
+              "metric.label.response_code_class",
+              "=",
+              "5xx"
+            ],
+            "groupBys": [
+              "resource.label.service_name"
+            ],
+            "perSeriesAligner": "ALIGN_RATE",
+            "preprocessor": "rate",
+            "projectName": "",
+            "view": "FULL"
+          }
+        }
+      ],
+      "title": "Server errors",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "chronoracer",
+    "fleet"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": "",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "hide": 0,
+        "includeAll": true,
+        "label": "VM",
+        "multi": true,
+        "name": "vm",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "kafka",
+            "value": "kafka"
+          },
+          {
+            "selected": false,
+            "text": "core",
+            "value": "core"
+          }
+        ],
+        "query": "kafka,core",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Race fleet health",
+  "uid": "race-fleet-health",
+  "version": 1,
+  "weekStart": ""
+}

@@ -9,4 +9,5 @@ export CHRONORACER_DIR="/chronoracer"
 
 install -m 644 "${CHRONORACER_DIR}/kafka.service" /etc/systemd/system/kafka.service
 systemctl daemon-reload
+"${CHRONORACER_DIR}/enable-ops-agent.sh"
 systemctl enable --now kafka.service

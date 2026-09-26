@@ -3,7 +3,7 @@
 Listeners and boot contract: [Kafka](../../docs/component-kafka.md). Bake inventory: [Compute images](../../docs/component-images.md). TLS payload: [Kafka TLS runbook](../../docs/operator-domain-and-tls.md). Race metadata keys: [Terraform](../../docs/component-terraform.md).
 
 1. Terraform `startup-script` (see [Terraform](../../docs/component-terraform.md)) execs `/chronoracer/entrypoint.sh`.
-2. [`entrypoint.sh`](entrypoint.sh) installs `kafka.service`, enables the baked Ops Agent host/process configuration,
+2. [`entrypoint.sh`](entrypoint.sh) installs `kafka.service`, enables the baked Ops Agent whole-VM host configuration,
    then `systemctl enable --now kafka`. TLS + config happen in the Kafka unit on **every** start (including reboot):
    tmpfs keystore does not survive reboot. Fleet metrics: [Dashboard](../../docs/component-dashboard.md).
 
@@ -14,5 +14,6 @@ Listeners and boot contract: [Kafka](../../docs/component-kafka.md). Bake invent
 3. `ExecStartPre` [`format-kraft.sh`](format-kraft.sh): format `/var/lib/kafka/data` (`700`) once using a static single-node controller quorum
 4. `ExecStart` [`start-kafka.sh`](start-kafka.sh): source `kafka.env` then exec broker. Needed because systemd `EnvironmentFile=` is loaded **before** `ExecStartPre` would create the file.
 5. `ExecStartPost` [`wait-public-listener.sh`](wait-public-listener.sh): fail closed if the public ingest port never binds.
+6. `ExecStartPost` [`create-topics.sh`](create-topics.sh): create `event` on the private listener if missing. Topic name: [Kafka](../../docs/component-kafka.md).
 
 Keystore password is random, local to the VM, never Terraform.

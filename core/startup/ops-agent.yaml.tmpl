@@ -1,0 +1,24 @@
+# Whole-VM host metrics only. The process scraper walks /proc and is omitted.
+# CPU and memory panels read these host series. Ingest counters are written by Core.
+logging:
+  service:
+    pipelines:
+      default_pipeline:
+        receivers: []
+metrics:
+  receivers:
+    hostmetrics:
+      type: hostmetrics
+      collection_interval: 60s
+  processors:
+    exclude_process_metrics:
+      type: exclude_metrics
+      metrics_pattern:
+        - agent.googleapis.com/processes/.*
+  service:
+    pipelines:
+      default_pipeline:
+        receivers:
+          - hostmetrics
+        processors:
+          - exclude_process_metrics

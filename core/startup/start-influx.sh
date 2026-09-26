@@ -47,9 +47,8 @@ PORT="$(jq -er '.influx_http_port' "${PLATFORM_JSON}")" || {
 }
 HOST="http://127.0.0.1:${PORT}"
 
-# All interfaces: Core uses localhost, the Dashboard comes in over the VPC and is filtered
-# by firewall (docs/component-influxdb.md).
-printf 'INFLUX_HTTP_BIND=0.0.0.0:%s\n' "${PORT}" >"${INFLUX_ENV}"
+# Localhost only
+printf 'INFLUX_HTTP_BIND=127.0.0.1:%s\n' "${PORT}" >"${INFLUX_ENV}"
 chmod 644 "${INFLUX_ENV}"
 
 install -d -m 700 "${DATA_DIR}"

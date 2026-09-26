@@ -1,8 +1,8 @@
 resource "google_cloud_run_v2_service" "dashboard" {
-  name     = local.names.dashboard_service
-  project  = var.project_id
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  name                = local.names.dashboard_service
+  project             = var.project_id
+  location            = var.region
+  ingress             = "INGRESS_TRAFFIC_ALL"
   deletion_protection = false
 
   template {
@@ -20,15 +20,6 @@ resource "google_cloud_run_v2_service" "dashboard" {
 
     max_instance_request_concurrency = 20
 
-    vpc_access {
-      egress = "PRIVATE_RANGES_ONLY"
-
-      network_interfaces {
-        network    = google_compute_network.chronoracer.id
-        subnetwork = google_compute_subnetwork.dashboard_run.id
-      }
-    }
-
     containers {
       image = var.dashboard_image
 
@@ -43,6 +34,11 @@ resource "google_cloud_run_v2_service" "dashboard" {
         }
         cpu_idle          = true
         startup_cpu_boost = true
+      }
+
+      env {
+        name  = "GCP_PROJECT_ID"
+        value = var.project_id
       }
 
       env {
@@ -79,27 +75,7 @@ resource "google_cloud_run_v2_service" "dashboard" {
         name = "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET"
         value_source {
           secret_key_ref {
-            secret  = google_secret_manager_secret.dashboard_oauth.secret_id
-            version = "latest"
-          }
-        }
-      }
-
-      env {
-        name  = "INFLUX_URL"
-        value = local.influx_private_url
-      }
-
-      env {
-        name  = "INFLUX_DATABASE"
-        value = local.platform.influx_database
-      }
-
-      env {
-        name = "INFLUX_TOKEN"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.influx_token.secret_id
+            secret  = google_secret_manager_secret.okta_oauth.secret_id
             version = "latest"
           }
         }
@@ -110,8 +86,9 @@ resource "google_cloud_run_v2_service" "dashboard" {
   depends_on = [
     google_project_service.apis,
     google_project_service_identity.this["run.googleapis.com"],
-    google_secret_manager_secret_iam_member.dashboard_secrets,
-    google_secret_manager_secret_iam_member.run_agent_dashboard_secrets,
+    google_secret_manager_secret_iam_member.okta_oauth,
+    google_secret_manager_secret_iam_member.run_agent_okta_oauth,
+    google_project_iam_member.dashboard_monitoring,
     google_artifact_registry_repository_iam_member.run_agent_reader,
     google_artifact_registry_repository_iam_member.dashboard_reader,
   ]

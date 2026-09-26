@@ -37,6 +37,14 @@ build {
   }
 
   provisioner "shell" {
+    execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash '{{ .Path }}'"
+    environment_vars = [
+      "OPS_AGENT_VERSION=${var.ops_agent_version}",
+    ]
+    script = "scripts/install-ops-agent.sh"
+  }
+
+  provisioner "shell" {
     inline = ["mkdir -p /tmp/overlay /tmp/contract"]
   }
 
@@ -50,8 +58,11 @@ build {
       "../../kafka/startup/format-kraft.sh",
       "../../kafka/startup/start-kafka.sh",
       "../../kafka/startup/wait-public-listener.sh",
+      "../../kafka/startup/create-topics.sh",
       "../../kafka/startup/kafka.service",
+      "../../kafka/startup/ops-agent.yaml",
       "scripts/gce-metadata.sh",
+      "scripts/enable-ops-agent.sh",
     ]
     destination = "/tmp/overlay/"
   }
@@ -86,9 +97,15 @@ build {
       "test -x /chronoracer/format-kraft.sh",
       "test -x /chronoracer/start-kafka.sh",
       "test -x /chronoracer/wait-public-listener.sh",
+      "test -x /chronoracer/create-topics.sh",
       "test -f /chronoracer/gce-metadata.sh",
       "test -f /chronoracer/render_server_properties.py",
       "test -f /chronoracer/kafka.service",
+      "test -f /chronoracer/ops-agent.yaml",
+      "grep -Fq 'exclude_process_metrics' /chronoracer/ops-agent.yaml",
+      "if grep -Eq '__[A-Z0-9_]+__' /chronoracer/ops-agent.yaml; then exit 1; fi",
+      "test -x /chronoracer/enable-ops-agent.sh",
+      "systemctl cat google-cloud-ops-agent.service >/dev/null",
       "test -f /chronoracer/names.json",
       "test -f /chronoracer/platform.json",
       "test ! -e /chronoracer/default-config.yaml",

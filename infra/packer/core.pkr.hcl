@@ -39,6 +39,14 @@ build {
   }
 
   provisioner "shell" {
+    execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash '{{ .Path }}'"
+    environment_vars = [
+      "OPS_AGENT_VERSION=${var.ops_agent_version}",
+    ]
+    script = "scripts/install-ops-agent.sh"
+  }
+
+  provisioner "shell" {
     inline = ["mkdir -p /tmp/overlay /tmp/contract /tmp/redpanda"]
   }
 
@@ -52,7 +60,10 @@ build {
       "../../core/startup/merge_config.py",
       "../../core/startup/influxdb3.service",
       "../../core/startup/chronoracer-core.service",
+      "../../core/startup/ops-agent.yaml.tmpl",
+      "../../core/startup/render-ops-agent.sh",
       "scripts/gce-metadata.sh",
+      "scripts/enable-ops-agent.sh",
     ]
     destination = "/tmp/overlay/"
   }
@@ -103,6 +114,13 @@ build {
       "test -f /chronoracer/merge_config.py",
       "test -f /chronoracer/influxdb3.service",
       "test -f /chronoracer/chronoracer-core.service",
+      "test -f /chronoracer/ops-agent.yaml.tmpl",
+      "grep -Fq 'exclude_process_metrics' /chronoracer/ops-agent.yaml.tmpl",
+      "if grep -Eq '__[A-Z0-9_]+__' /chronoracer/ops-agent.yaml.tmpl; then exit 1; fi",
+      "test ! -e /chronoracer/ops-agent.yaml",
+      "test -x /chronoracer/render-ops-agent.sh",
+      "test -x /chronoracer/enable-ops-agent.sh",
+      "systemctl cat google-cloud-ops-agent.service >/dev/null",
       "test -f /chronoracer/default-config.yaml",
       "test -x /chronoracer/influxdb-plugin-venv/bin/python",
       "/chronoracer/influxdb-plugin-venv/bin/python -c 'import pyarrow'",
