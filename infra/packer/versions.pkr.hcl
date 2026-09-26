@@ -41,3 +41,9 @@ variable "redpanda_connect_version" {
   default     = "4.105.0"
   description = "Redpanda Connect version installed by rpk in the Core image."
 }
+
+variable "ops_agent_version" {
+  type        = string
+  default     = "2.69.0"
+  description = "Google Cloud Ops Agent version for add-google-cloud-ops-agent-repo.sh --version."
+}

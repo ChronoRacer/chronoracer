@@ -16,10 +16,9 @@ Access: public URL, Auth0 login required. Browser OAuth is shared with
 
 ## Responsibility
 
-- show whether the current race VMs and their required processes are active
-- show CPU, memory, disk, and network pressure on Kafka and Core VMs
-- show Kafka, Core, and InfluxDB process health
-- show InfluxDB ingest throughput and errors from server metrics
+- show whether each race VM is up
+- show whole-VM CPU, memory, disk, and network, one panel per VM
+- show InfluxDB ingest throughput and write outcomes from [Core](component-core.md#cloud-monitoring-write-counters)
 - show Telemetry Cloud Run instance, request, latency, and error health
 
 Not its responsibility:
@@ -64,30 +63,23 @@ flowchart LR
     Monitoring[Google Cloud Monitoring]
     subgraph kafkaVm [Kafka VM]
         KafkaAgent[Ops Agent]
-        Kafka[Kafka process]
     end
     subgraph coreVm [Core VM]
         CoreAgent[Ops Agent]
-        Core[Core process]
-        Influx[InfluxDB]
+        Core[Core]
     end
     Telemetry[Telemetry Cloud Run]
 
     Operator -->|HTTPS login| Auth0
     Operator -->|HTTPS| Dash
     Dash -->|ADC, read-only API| Monitoring
-    KafkaAgent -->|host and process metrics| Monitoring
-    CoreAgent -->|host and process metrics| Monitoring
-    CoreAgent -->|scrape localhost metrics| Influx
-    CoreAgent -->|Prometheus metrics| Monitoring
+    KafkaAgent -->|whole-VM host metrics| Monitoring
+    CoreAgent -->|whole-VM host metrics| Monitoring
+    Core -->|write counters| Monitoring
     Monitoring -.->|native Cloud Run metrics| Telemetry
-    KafkaAgent -.->|observe| Kafka
-    CoreAgent -.->|observe| Core
 ```
 
-Ops Agent runs on both race VMs. Its host and process receivers publish VM and required-process metrics. On the Core VM,
-its Prometheus receiver also scrapes InfluxDB 3 Core's `localhost` `/metrics` endpoint. The endpoint and metric meaning
-are owned by [InfluxDB](component-influxdb.md).
+Ops Agent on both race VMs publishes whole-VM CPU, memory, disk, and network, and excludes the process scraper. Ingest lines, bytes, and write outcomes are custom metrics written by [Core](component-core.md#cloud-monitoring-write-counters).
 
 Dashboard does not use Direct VPC Egress, connect to a race VM, or hold an Influx token.
 
@@ -104,7 +96,7 @@ before implementation acceptance:
 1. cold-start Dashboard on Cloud Run with no credential file
 2. pass datasource health check
 3. query one native Compute metric
-4. query one Ops-Agent Prometheus metric with PromQL
+4. query one Ops Agent host metric and one Core custom metric
 
 Failure stops the Dashboard migration. Do not fall back to a long-lived JSON key; revisit the Dashboard runtime or
 authentication design in the ADR.
@@ -115,14 +107,13 @@ Provisioned as code. The current-race fleet dashboard answers “is the race inf
 
 | Area       | Required signals                                                                 |
 |------------|----------------------------------------------------------------------------------|
-| Kafka VM   | instance up, CPU, memory, disk, network, Kafka process                           |
-| Core VM    | instance up, CPU, memory, disk, network, Core and InfluxDB processes             |
-| InfluxDB   | accepted lines/bytes rate, write request outcomes, available server error metrics |
+| Kafka VM   | instance up; one whole-VM CPU, memory, disk, and network panel                   |
+| Core VM    | instance up; one whole-VM CPU, memory, disk, and network panel                   |
+| InfluxDB   | accepted lines/bytes rate and write outcomes from [Core](component-core.md#cloud-monitoring-write-counters) |
 | Telemetry  | active instance, request count, request latency, server errors                   |
 
-Exact Influx metric names and labels must be verified against the pinned InfluxDB 3 Core version during the deployment
-proof. Panels use instance identity and current time range so reused VM names do not merge old and current race
-instances.
+Native Compute / Ops Agent host panels group by `resource.label.instance_id`. Core write counters use the same
+instance id on the `gce_instance` resource, so reused VM names still do not merge races.
 
 Between races the race-fleet panels show no active resources. Historical Cloud Monitoring retention is operational
 evidence, not finished-race sensor data.
@@ -131,8 +122,6 @@ evidence, not finished-race sensor data.
 
 - Cloud Monitoring and Ops Agent introduce sampling and ingestion delay. Dashboard is fleet health, not near-real-time
   sensor preview.
-- Required Influx metric names can change across InfluxDB versions; the image pin and dashboard queries must move
-  together.
 - Session loss on cold start remains accepted.
 - Grafana's Cloud Run ADC path remains gated by the deployment proof above.
 

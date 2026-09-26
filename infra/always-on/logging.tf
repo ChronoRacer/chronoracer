@@ -42,6 +42,18 @@ locals {
         )
       EOT
     }
+
+    ops_agent = {
+      description = "Ops Agent self-logs on kafka/core. Syslog collection is already disabled on the agent."
+      filter      = <<-EOT
+        resource.type="gce_instance"
+        (
+          log_id("ops-agent-health")
+          OR log_id("ops-agent-fluent-bit")
+          OR log_id("ops-agent-otel")
+        )
+      EOT
+    }
   }
 }
 

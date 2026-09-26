@@ -15,6 +15,7 @@ ExecStartPre=/chronoracer/render-server-properties.sh
 ExecStartPre=/chronoracer/format-kraft.sh
 ExecStart=/chronoracer/start-kafka.sh
 ExecStartPost=/chronoracer/wait-public-listener.sh
+ExecStartPost=/chronoracer/create-topics.sh
 Restart=on-failure
 RestartSec=5
 

@@ -73,6 +73,7 @@ HEARTBEAT_TOPIC="$(json_get "${PLATFORM_JSON}" kafka_heartbeat_topic)"
 EXPORT_DONE_TOPIC="$(json_get "${PLATFORM_JSON}" export_done_topic)"
 INFLUX_HTTP_PORT="$(json_get "${PLATFORM_JSON}" influx_http_port)"
 INFLUX_DATABASE="$(json_get "${PLATFORM_JSON}" influx_database)"
+CORE_TELEMETRY_PORT="$(json_get "${PLATFORM_JSON}" core_telemetry_port)"
 
 PROJECT="$(gce_project_id)" || exit 1
 ZONE="$(gce_zone)" || exit 1
@@ -99,6 +100,8 @@ kafka:
 persistence:
   db_port: ${INFLUX_HTTP_PORT}
   db_name: "${INFLUX_DATABASE}"
+telemetry:
+  port: ${CORE_TELEMETRY_PORT}
 gcp:
   enabled: true
   project_id: "${PROJECT}"

@@ -7,8 +7,7 @@ Wants=network-online.target
 Type=simple
 UMask=0077
 Environment=VIRTUAL_ENV=/chronoracer/influxdb-plugin-venv
-# INFLUX_HTTP_BIND comes from platform.json via start-influx.sh. Bind is not localhost-only:
-# the Dashboard queries this port over the VPC (docs/component-influxdb.md).
+# INFLUX_HTTP_BIND comes from platform.json via start-influx.sh. Localhost only.
 EnvironmentFile=/chronoracer/influxdb3.env
 ExecStart=/usr/bin/env influxdb3 serve --node-id core --object-store file --data-dir /var/lib/influxdb3 --plugin-dir /chronoracer/influxdb-plugins --http-bind ${INFLUX_HTTP_BIND} --admin-token-file /chronoracer/admin-token.json --disable-package-management
 Restart=on-failure

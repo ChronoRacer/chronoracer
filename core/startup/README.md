@@ -26,14 +26,18 @@ Bake inventory: [Compute images](../../docs/component-images.md). Race metadata 
     - [`start-influx.sh`](start-influx.sh): read the final merged Core config, write `/chronoracer/influxdb3.env` with
       the bind address built from the [`platform.json`](../../infra/contract/platform.json) port (the systemd unit reads it as `EnvironmentFile`),
       `systemctl enable --now influxdb3`, wait for that port on localhost, create its configured database and export
-      trigger `database_export`. Data dir `/var/lib/influxdb3` is `700`. Influx binds localhost only; Ops Agent
-      scrapes its `/metrics` endpoint locally;
+      trigger `database_export`. Data dir `/var/lib/influxdb3` is `700`. Influx binds localhost only;
       access model: [InfluxDB](../../docs/component-influxdb.md#access-model).
 
-3. Enable Ops Agent with host/process receivers and a Prometheus receiver for Influx's local `/metrics`. Monitoring
-   contract: [Dashboard](../../docs/component-dashboard.md#data-path).
+    - [`render-ops-agent.sh`](render-ops-agent.sh): copy [`ops-agent.yaml.tmpl`](ops-agent.yaml.tmpl) to
+      `/chronoracer/ops-agent.yaml`. The template has no substitutions. It keeps whole-VM host metrics and excludes
+      process metrics.
 
-4. `systemctl enable --now chronoracer-core`. Unit `UMask=0077`, `HOME=/root`, and `EnvironmentFile=/chronoracer/core.env` (`CORE_CONFIG_PATH=/chronoracer/core-config.yaml`, `AVRO_SENSOR_DATA_SCHEMA_PATH=/chronoracer/avro/sensor_data.avsc`). Redpanda Connect is installed in the image; the VM does not download it. Core opens only its private `/telemetry/v1` WebSocket listener; contract: [Core telemetry](../../docs/component-core.md#telemetry-stream).
+3. [`enable-ops-agent.sh`](../../infra/packer/scripts/enable-ops-agent.sh) copies that complete config and starts the
+   unit with the host receiver. Monitoring contract: [Dashboard](../../docs/component-dashboard.md#data-path).
+   Ingest counters: [Core](../../docs/component-core.md#cloud-monitoring-write-counters).
+
+4. `systemctl enable --now chronoracer-core`. Unit `UMask=0077`, `HOME=/root`, and `EnvironmentFile=/chronoracer/core.env` (`CORE_CONFIG_PATH=/chronoracer/core-config.yaml`, `AVRO_SENSOR_DATA_SCHEMA_PATH=/chronoracer/avro/sensor_data.avsc`). Redpanda Connect is installed in the image; the VM does not download it. Core opens a private plaintext gRPC `Watch` listener on the telemetry port; contract: [Core telemetry](../../docs/component-core.md#telemetry-stream).
 
 5. Core app reads config from one YAML at `CORE_CONFIG_PATH`. Units run as root; secret files are `600` so only root can read them.
 
@@ -42,8 +46,9 @@ Bake inventory: [Compute images](../../docs/component-images.md). Race metadata 
 ```terminaloutput
 root@core:/chronoracer# ls  
 admin-token.json          core-config.yaml     fetch-influx-token.sh  influxdb3.env      names.json  
-avro                      core.env             fetch-payload.sh       influxdb3.service  platform.json  
-chronoracer-core.service  default-config.yaml  gce-metadata.sh        influxdb-plugins   redpanda  
-core                      entrypoint.sh        influxdb-plugin-venv   merge_config.py    render-config.sh  
-                                                                                         start-influx.sh  
+avro                      core.env             fetch-payload.sh       influxdb3.service  ops-agent.yaml  
+chronoracer-core.service  default-config.yaml  gce-metadata.sh        influxdb-plugins   ops-agent.yaml.tmpl  
+core                      enable-ops-agent.sh  influxdb-plugin-venv   merge_config.py    platform.json  
+entrypoint.sh             render-config.sh     render-ops-agent.sh    redpanda  
+start-influx.sh  
 ```

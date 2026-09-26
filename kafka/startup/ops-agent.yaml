@@ -1,0 +1,24 @@
+# Whole-VM host metrics only. The process scraper walks /proc and is omitted.
+# Default syslog pipeline is emptied so the agent does not ship journal/syslog.
+logging:
+  service:
+    pipelines:
+      default_pipeline:
+        receivers: []
+metrics:
+  receivers:
+    hostmetrics:
+      type: hostmetrics
+      collection_interval: 60s
+  processors:
+    exclude_process_metrics:
+      type: exclude_metrics
+      metrics_pattern:
+        - agent.googleapis.com/processes/.*
+  service:
+    pipelines:
+      default_pipeline:
+        receivers:
+          - hostmetrics
+        processors:
+          - exclude_process_metrics

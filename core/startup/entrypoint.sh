@@ -15,5 +15,7 @@ systemctl daemon-reload
 "${CHRONORACER_DIR}/fetch-payload.sh"
 "${CHRONORACER_DIR}/render-config.sh"
 "${CHRONORACER_DIR}/start-influx.sh"
+"${CHRONORACER_DIR}/render-ops-agent.sh"
+"${CHRONORACER_DIR}/enable-ops-agent.sh"
 
 systemctl enable --now chronoracer-core.service
