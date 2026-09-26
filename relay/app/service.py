@@ -1,5 +1,6 @@
 import asyncio
 import re
+import yaml
 from datetime import datetime, timezone
 from loguru import logger
 from typing import Any
@@ -8,20 +9,27 @@ from uuid import uuid4
 from .gcp.builds import BuildTrigger
 from .gcp.repository import RaceRepository
 from .gcp.storage import ObjectStore
-from .kafka import ShutdownPublisher
+from .kafka import EventPublisher, ShutdownPublisher
 from .models import BuildFinished, ExportDone, Phase, Race, TerraformAction, TerraformRun, \
     TerraformStatus
 
 # GCP label-safe, Core cap 12 chars due to CompactString
 GCP_LABEL_COMPACT_STRING_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9_-]{0,11})$")
+MAX_OPERATOR_PAYLOAD_BYTES = 100 * 1024
+
+
+class PayloadTooLargeError(Exception):
+    pass
+
 
 class RelayService:
     def __init__(self, repository: RaceRepository, object_store: ObjectStore | None = None,
                  builds: BuildTrigger | None = None, shutdown: ShutdownPublisher | None = None, heartbeat=None,
                  heartbeat_freshness_seconds: int = 50, build_bind_window_seconds: int = 600,
-                 kafka_public_port: int = 9094):
+                 kafka_public_port: int = 9094, events: EventPublisher | None = None):
         self.repository = repository
         self.object_store, self.builds, self.shutdown = object_store, builds, shutdown
+        self.events = events
         self.heartbeat, self.heartbeat_freshness_seconds = heartbeat, heartbeat_freshness_seconds
         self.build_bind_window_seconds = build_bind_window_seconds
         self.kafka_public_port = kafka_public_port
@@ -52,6 +60,9 @@ class RelayService:
             race = Race(race_id=race_id, phase=Phase.STARTING, started_by=started_by,
                         started_at=now)
             self._stamp(race, TerraformAction.APPLY)
+            yaml_bytes = yaml.safe_dump(config, sort_keys=False).encode('utf-8')
+            if len(yaml_bytes) > MAX_OPERATOR_PAYLOAD_BYTES:
+                raise PayloadTooLargeError('core config yaml exceeds 100KiB')
             if self.object_store:
                 await self.object_store.put_yaml(f'{race_id}/core-config.yaml', config)
             await self.repository.create_race(race)
@@ -96,6 +107,7 @@ class RelayService:
                     'kafkaPublicIp': race.kafka_public_ip,
                     'kafkaHostname': race.kafka_hostname,
                     'kafkaPort': race.kafka_port or self.kafka_public_port,
+                    'telemetryUrl': race.telemetry_url,
                 }.items() if v is not None})
             return result
 
@@ -106,6 +118,17 @@ class RelayService:
         historical.sort(key=lambda race: race.started_at, reverse=True)
         return [{'raceId': race.race_id, 'startedAt': race.started_at,
                  'destroyedAt': race.destroyed_at} for race in historical]
+
+    async def publish_event(self, key: str, value: bytes):
+        if not key:
+            raise ValueError('kafka key is required')
+        race = await self._active()
+        if race.phase != Phase.APPLIED:
+            raise ValueError('race cannot accept events in its current state')
+        if not self.events:
+            raise RuntimeError('event publisher is not configured')
+        logger.info("Publishing operator event for race {} key {}", race.race_id, key)
+        await self.events.publish(key, value)
 
     async def historical_race(self, race_id: str, export_race: bool = False):
         race = await self.repository.race(race_id)

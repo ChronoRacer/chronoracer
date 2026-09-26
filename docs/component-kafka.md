@@ -43,16 +43,20 @@ on the hostname so DNS lag is not the critical path. Do not use that address unl
 
 ## Topics
 
-Core creates topics on the private listener at runtime, not at Kafka boot.
+Core creates `data`, `control`, `heartbeat`, and `dlq` on the private listener at runtime. Kafka boot creates `event`
+([create-topics.sh](../kafka/startup/create-topics.sh)) after the public listener binds. Core does not create, consume,
+or export `event`.
 
-| Topic       | Name owner                                                                                         | Partitions | Replication |
-|-------------|----------------------------------------------------------------------------------------------------|------------|-------------|
-| `data`      | [`platform.json`](../infra/contract/platform.json) `kafka_data_topic`                              | 4          | 1           |
-| `control`   | [`platform.json`](../infra/contract/platform.json) `kafka_control_topic`                           | 1          | 1           |
-| `heartbeat` | [`platform.json`](../infra/contract/platform.json) `kafka_heartbeat_topic`                         | 1          | 1           |
-| `dlq`       | [`core/default-config.yaml`](../core/default-config.yaml) (not in `platform.json`)                 | 3          | 1           |
+| Topic       | Name owner                                                                                         | Created by | Partitions | Replication |
+|-------------|----------------------------------------------------------------------------------------------------|------------|------------|-------------|
+| `data`      | [`platform.json`](../infra/contract/platform.json) `kafka_data_topic`                              | Core       | 4          | 1           |
+| `control`   | [`platform.json`](../infra/contract/platform.json) `kafka_control_topic`                           | Core       | 1          | 1           |
+| `heartbeat` | [`platform.json`](../infra/contract/platform.json) `kafka_heartbeat_topic`                         | Core       | 1          | 1           |
+| `event`     | [`platform.json`](../infra/contract/platform.json) `kafka_event_topic`                             | Kafka boot | 1          | 1           |
+| `dlq`       | [`core/default-config.yaml`](../core/default-config.yaml) (not in `platform.json`)                 | Core       | 3          | 1           |
 
-Partition counts live with Core config because Core is the topic creator. This also means that sending to Kafka is effectively blocked until Core has created the topics.
+Partition counts for Core-created topics live with Core config. Device and control produce wait until Core has created
+those topics. `event` is available as soon as Kafka boot finishes.
 
 Shared rules:
 
@@ -143,3 +147,9 @@ Unknown keys are ignored. Parse failures (missing key, missing `CHDRV` body, non
 - Key: `CORE` for the Core heartbeat
 - Body: optional status
 - Relay reads the last retained record on status. Detection: [Race provisioning](flow-race_provisioning.md).
+
+### `event`
+
+- Key: operator-supplied Kafka key (uppercase compact keys preferred, same as other topics)
+- Avro: no. Body is opaque bytes. Core does not read this topic.
+- Producer: Relay operator HTTP. Size and HTTP contract: [Relay](component-relay.md).

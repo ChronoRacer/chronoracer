@@ -21,6 +21,7 @@ gcp:
   kafka_private_bootstrap: kafka.europe-west1-b.c.chronoracer.internal:9092
   kafka_control_topic: control
   kafka_heartbeat_topic: heartbeat
+  kafka_event_topic: event
   kafka_public_port: 9094
 service:
   heartbeat_freshness_seconds: 50

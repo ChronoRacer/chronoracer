@@ -8,11 +8,11 @@ from typing import Any
 from .auth import OktaAuthenticator, okta_user, pubsub_push
 from .config import load_config
 from .gcp.builds import DevBuildTrigger, CloudBuildTrigger
-from .kafka import DevShutdownPublisher, KafkaShutdownPublisher, KafkaHeartbeatReader
+from .kafka import DevEventPublisher, DevShutdownPublisher, KafkaEventPublisher, KafkaHeartbeatReader, KafkaShutdownPublisher
 from .gcp.repository import FirestoreRaceRepository, InMemoryRaceRepository
 from .gcp.storage import DevObjectStore, GCSObjectStore
 from .models import BuildFinished
-from .service import GCP_LABEL_COMPACT_STRING_PATTERN, RelayService
+from .service import GCP_LABEL_COMPACT_STRING_PATTERN, MAX_OPERATOR_PAYLOAD_BYTES, PayloadTooLargeError, RelayService
 
 
 class StartRequest(BaseModel):
@@ -35,15 +35,17 @@ def create_app() -> FastAPI:
             config.gcp.project_id, config.gcp.cloud_build_trigger_id, config.gcp.cloud_build_location,
         )
         shutdown = KafkaShutdownPublisher(config.gcp.kafka_private_bootstrap, config.gcp.kafka_control_topic)
+        events = KafkaEventPublisher(config.gcp.kafka_private_bootstrap, config.gcp.kafka_event_topic)
         heartbeat = KafkaHeartbeatReader(config.gcp.kafka_private_bootstrap, topic=config.gcp.kafka_heartbeat_topic)
     else:
-        repository, object_store, builds, shutdown, heartbeat = InMemoryRaceRepository(), DevObjectStore(), DevBuildTrigger(), DevShutdownPublisher(
-            config.gcp.kafka_control_topic), None
+        repository, object_store, builds, shutdown, events, heartbeat = InMemoryRaceRepository(), DevObjectStore(), DevBuildTrigger(), DevShutdownPublisher(
+            config.gcp.kafka_control_topic), DevEventPublisher(config.gcp.kafka_event_topic), None
     app.state.service = RelayService(
         repository, object_store, builds, shutdown, heartbeat,
         config.service.heartbeat_freshness_seconds,
         config.service.build_bind_window_seconds,
         config.gcp.kafka_public_port,
+        events,
     )
 
     @app.get("/healthz", include_in_schema=False)
@@ -62,6 +64,28 @@ def create_app() -> FastAPI:
         }
         try:
             return await app.state.service.start(request.race_id, core_config, user.get('sub', 'unknown'))
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PayloadTooLargeError as exc:
+            raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)) from exc
+
+    @app.post("/race/event", status_code=status.HTTP_204_NO_CONTENT)
+    async def race_event(request: Request, key: str = Query(..., min_length=1), _: dict = Depends(okta_user)):
+        content_length = request.headers.get('content-length')
+        if content_length is not None:
+            try:
+                declared = int(content_length)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail='invalid Content-Length') from exc
+            if declared > MAX_OPERATOR_PAYLOAD_BYTES:
+                raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                                    detail='event payload exceeds 100KiB')
+        body = await request.body()
+        if len(body) > MAX_OPERATOR_PAYLOAD_BYTES:
+            raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                                detail='event payload exceeds 100KiB')
+        try:
+            await app.state.service.publish_event(key, body)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 

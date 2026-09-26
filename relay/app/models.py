@@ -44,6 +44,7 @@ class Race(BaseModel):
     kafka_public_ip: str | None = Field(None, alias='kafkaPublicIp')
     kafka_hostname: str | None = Field(None, alias='kafkaHostname')
     kafka_port: int | None = Field(None, alias='kafkaPort')
+    telemetry_url: str | None = Field(None, alias='telemetryUrl')
     applied_at: datetime | None = Field(None, alias='appliedAt')
     stopped_at: datetime | None = Field(None, alias='stoppedAt')
     destroyed_at: datetime | None = Field(None, alias='destroyedAt')
