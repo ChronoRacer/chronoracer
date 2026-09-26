@@ -93,8 +93,8 @@ impl SensorDataBatcher {
 
                         if buffer.len() >= self.flush_max_combined_batch_size {
                             let to_flush = std::mem::replace(&mut buffer, get_buffer());
-                            if let Err(e) = self.batch_tx.send(to_flush).await {
-                                error!("Failed to flush data buffer, batch_type={wiring_type:?}: {e}");
+                            if let Err(error) = self.batch_tx.send(to_flush).await {
+                                error!(%error, "Failed to flush data buffer, batch_type={wiring_type:?}");
                                 if self.batch_tx.is_closed() {
                                     warn!("Batch data buffer is closed. Closing ingestion loop, batch_type={wiring_type:?}");
                                     downstream_closed = true;
@@ -113,8 +113,8 @@ impl SensorDataBatcher {
                 _ = interval.tick() => {
                     if !buffer.is_empty() {
                         let to_flush = std::mem::replace(&mut buffer, get_buffer());
-                        if let Err(e) = self.batch_tx.send(to_flush).await {
-                            error!("Failed to flush data buffer, batch_type={wiring_type:?}: {e}");
+                        if let Err(error) = self.batch_tx.send(to_flush).await {
+                            error!(%error, "Failed to flush data buffer, batch_type={wiring_type:?}");
                             if self.batch_tx.is_closed() {
                                 warn!("Batch data buffer is closed. Closing ingestion loop, batch_type={wiring_type:?}");
                                 break;

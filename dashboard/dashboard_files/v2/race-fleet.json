@@ -777,7 +777,7 @@
                           "resource.label.instance_id"
                         ],
                         "perSeriesAligner": "ALIGN_RATE",
-                        "preprocessor": "rate",
+                        "preprocessor": "none",
                         "projectName": "$project",
                         "view": "FULL"
                       }
@@ -855,7 +855,7 @@
                           "resource.label.instance_id"
                         ],
                         "perSeriesAligner": "ALIGN_RATE",
-                        "preprocessor": "rate",
+                        "preprocessor": "none",
                         "projectName": "$project",
                         "view": "FULL"
                       }
@@ -935,7 +935,7 @@
                           "metric.label.outcome"
                         ],
                         "perSeriesAligner": "ALIGN_RATE",
-                        "preprocessor": "rate",
+                        "preprocessor": "none",
                         "projectName": "$project",
                         "view": "FULL"
                       }
@@ -972,7 +972,53 @@
                 },
                 "unit": "ops"
               },
-              "overrides": []
+              "overrides": [
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "ok"
+                  },
+                  "properties": [
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "green",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "error"
+                  },
+                  "properties": [
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "red",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "partial"
+                  },
+                  "properties": [
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "yellow",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                }
+              ]
             },
             "options": {}
           },

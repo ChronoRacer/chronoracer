@@ -115,13 +115,14 @@ isolation before production use.
 
 Core publishes three cumulative custom metrics for [Dashboard](component-dashboard.md) ingest panels. Names:
 
-| Metric | Meaning |
-|--------|---------|
-| `custom.googleapis.com/chronoracer/influx_write_lines` | Lines Influx accepted |
-| `custom.googleapis.com/chronoracer/influx_write_bytes` | Bytes in fully successful writes |
+| Metric                                                    | Meaning                                                    |
+|-----------------------------------------------------------|------------------------------------------------------------|
+| `custom.googleapis.com/chronoracer/influx_write_lines`    | Lines Influx accepted                                      |
+| `custom.googleapis.com/chronoracer/influx_write_bytes`    | Bytes in fully successful writes                           |
 | `custom.googleapis.com/chronoracer/influx_write_requests` | Write calls, label `outcome` = `ok`, `partial`, or `error` |
 
-Counters increment once per flush. A background task sends one `CreateTimeSeries` every 60 seconds while `gcp.enabled` is true. Partial writes count accepted lines and the `partial` outcome, and do not add bytes. Publish failure, or missing GCE metadata, is logged and does not stop ingest.
+Counters increment once per flush. A background task sends one `CreateTimeSeries` every 60 seconds while `gcp.enabled` is true. Partial writes count accepted lines and the `partial` outcome, and do not add bytes. Publish failure is logged and does not stop ingest.
+Missing GCE metadata can either disable metric sending or fallback to sending sentinel labels for time series, decided by configuration property `gcp.allow_unknown_gce_metrics`. 
 
 ## Startup
 

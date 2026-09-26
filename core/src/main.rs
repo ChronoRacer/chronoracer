@@ -167,6 +167,7 @@ fn run() -> Result<()> {
                     project_id,
                     max_retries,
                     write_metrics,
+                    config.gcp.allow_unknown_gce_metrics,
                 )
                 .await;
             });
@@ -215,8 +216,8 @@ async fn run_tasks(
                             break;
                         }
                     }
-                    Some(Err(e)) => {
-                        error!("Control task failed: {:?}", e);
+                    Some(Err(error)) => {
+                        error!(?error, "Control task failed");
                         control_tasks.abort_all();
                         monitor.execute_shutdown_sequence().await;
                         break;

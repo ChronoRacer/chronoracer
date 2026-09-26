@@ -8,7 +8,7 @@ use google_cloud_monitoring_v3::model::{Point, TimeInterval, TimeSeries, TypedVa
 use google_cloud_wkt::{Timestamp, TimestampError};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 pub const WRITE_LINES: &str = "custom.googleapis.com/chronoracer/influx_write_lines";
 pub const WRITE_BYTES: &str = "custom.googleapis.com/chronoracer/influx_write_bytes";
@@ -17,7 +17,12 @@ pub const WRITE_REQUESTS: &str = "custom.googleapis.com/chronoracer/influx_write
 const PUBLISH_INTERVAL: Duration = Duration::from_secs(60);
 const METADATA_TIMEOUT: Duration = Duration::from_secs(2);
 const METADATA_ROOT: &str = "http://metadata.google.internal/computeMetadata/v1/instance";
+/// Must be in the correct format, not necessarily correct values
+const UNKNOWN_GCE_IDENTITY_INSTANCE_ID: &str = "1111111111111111111";
+const UNKNOWN_GCE_IDENTITY_ZONE: &str = "europe-west1-b";
 
+
+#[derive(Debug)]
 struct GceIdentity {
     instance_id: String,
     zone: String,
@@ -31,12 +36,23 @@ pub async fn publish_write_metrics(
     project_id: String,
     max_retries: u16,
     metrics: Arc<WriteMetrics>,
+    allow_unknown_gce_metrics: bool,
 ) {
     let identity = match gce_identity().await {
         Ok(identity) => identity,
         Err(error) => {
-            error!(%error, "Cloud Monitoring publisher skipped; GCE identity unavailable");
-            return;
+            error!(%error, "GCE identity unavailable");
+            if allow_unknown_gce_metrics {
+                let identity = GceIdentity {
+                    instance_id: UNKNOWN_GCE_IDENTITY_INSTANCE_ID.to_string(),
+                    zone: UNKNOWN_GCE_IDENTITY_ZONE.to_string(),
+                };
+                warn!("Using unknown GCE identity for metrics: {identity:?}");
+                identity
+            } else {
+                error!("Cloud Monitoring publisher skipped");
+                return;
+            }
         }
     };
     let client = match MetricService::builder()
@@ -66,15 +82,21 @@ pub async fn publish_write_metrics(
             error!("Skipping Cloud Monitoring sample; system clock is before the unix epoch");
             continue;
         };
-        let series = write_time_series(&project_id, &identity, &started, &end, &metrics.snapshot());
-        if let Err(error) = client
+        let snapshot = metrics.snapshot();
+        let series = write_time_series(&project_id, &identity, &started, &end, &snapshot);
+        match client
             .create_time_series()
             .set_name(&name)
             .set_time_series(series)
             .send()
             .await
         {
-            warn!(%error, "Cloud Monitoring write failed");
+            Ok(_) => {
+                info!("{snapshot:?}");
+            }
+            Err(error) => {
+                warn!(%error, "GCM write failed");
+            }
         }
     }
 }

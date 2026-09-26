@@ -78,6 +78,7 @@ gcp:
   max_gcs_concurrent_uploads: 3
   project_id: "chronoracer"
   pubsub_topic_id: "export-done"
+  allow_unknown_gce_metrics: true
 telemetry:
   port: 9470
   max_queue_points: 16384

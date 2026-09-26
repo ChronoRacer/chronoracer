@@ -210,6 +210,7 @@ mod tests {
             export_bucket: "bucket".to_string(),
             max_retries: 1,
             max_gcs_concurrent_uploads: 1,
+            allow_unknown_gce_metrics: false,
         };
         let mut kafka_config = KafkaConfig::mock_config();
         kafka_config.brokers = vec!["broker-a:9092".to_string(), "broker-b:9092".to_string()];

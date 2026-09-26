@@ -135,21 +135,20 @@ impl InfluxDbFlusher {
                             wiring_type
                         );
                     }
-                    Err(influxdb3_client::error::Error::PartialWrite(e)) => {
-                        let failed_lines = u64::try_from(e.line_errors.len()).unwrap_or(u64::MAX);
+                    Err(influxdb3_client::error::Error::PartialWrite(error)) => {
+                        let failed_lines = u64::try_from(error.line_errors.len()).unwrap_or(u64::MAX);
                         write_metrics.record_partial(lines, failed_lines);
-                        error!(
-                            "Database write partially failed. failed_lines={}, Error: {e}, flush_type={wiring_type:?}",
-                            e.line_errors.len()
+                        error!(%error,
+                            "Database write partially failed. failed_lines={}, flush_type={wiring_type:?}",
+                            failed_lines
                         );
-                        // TODO: is logging this needed? Sample of first 5 failed lines
-                        for line_error in e.line_errors.iter().take(5) {
+                        for line_error in error.line_errors.iter().take(5) {
                             warn!("Line {}: {}", line_error.line, line_error.message);
                         }
                     }
-                    Err(e) => {
+                    Err(error) => {
                         write_metrics.record_error();
-                        error!("Database write failed: {e}, flush_type={wiring_type:?}");
+                        error!(%error, "Database write failed, flush_type={wiring_type:?}");
                     }
                 }
                 batch.clear();

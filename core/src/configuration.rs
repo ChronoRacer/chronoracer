@@ -232,6 +232,7 @@ pub struct GcpConfig {
     pub export_bucket: String,
     pub max_retries: u16,
     pub max_gcs_concurrent_uploads: u16,
+    pub allow_unknown_gce_metrics: bool,
 }
 
 impl GcpConfig {
@@ -243,6 +244,7 @@ impl GcpConfig {
             max_gcs_concurrent_uploads: 3,
             project_id: "1234".to_string(),
             pubsub_topic_id: "todo".to_string(),
+            allow_unknown_gce_metrics: false,
         }
     }
 }

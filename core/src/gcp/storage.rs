@@ -60,7 +60,7 @@ impl<'a> GcsStorageManager<'a> {
                 Ok(bucket_name) => info!("Uploaded file: {}", bucket_name),
                 Err(e) => {
                     failed_uploads += 1;
-                    error!("Error uploading file: {}", e);
+                    error!(%e, "Error uploading file");
                 }
             }
         }

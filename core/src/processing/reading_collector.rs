@@ -90,8 +90,8 @@ impl ReadingCollector {
                                 let failed_msg =
                                     PartialMessageWithError::new(partial_message, &err);
                                 // This should be okay: the channel has high capacity and invalid messages should be rare
-                                if let Err(e) = failure_tx.blocking_send(failed_msg) {
-                                    error!("Failed to send to dlq: {e}");
+                                if let Err(error) = failure_tx.blocking_send(failed_msg) {
+                                    error!(%error, "Failed to send to dlq");
                                 }
                                 None
                             }
@@ -101,8 +101,8 @@ impl ReadingCollector {
 
                 if !processed.is_empty() {
                     preview.offer(&processed);
-                    if let Err(e) = success_tx.blocking_send(processed) {
-                        error!("Failed to send processed batch downstream: {e}");
+                    if let Err(error) = success_tx.blocking_send(processed) {
+                        error!(%error, "Failed to send processed batch downstream");
                     }
                 }
             });
