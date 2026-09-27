@@ -6,12 +6,8 @@ Global prerequisites:
 
 - available in `europe-west1`
 - no commitment obligations or discounts
-- the race stack uses one Kafka VM and one Core VM; their responsibilities are described in [Kafka](component-kafka.md)
-  and [Core](component-core.md)
 
 ## Decision
-
-Use these machine types as the Terraform defaults:
 
 | VM              | Machine type    | vCPU | Memory | Boot disk                   |
 |-----------------|-----------------|-----:|-------:|-----------------------------|
@@ -19,8 +15,6 @@ Use these machine types as the Terraform defaults:
 | Core + InfluxDB | `c4d-highcpu-4` |    4 |   7 GB | `hyperdisk balanced`, 20 GB | 
 
 Terraform variables in [`infra/race/variables.tf`](../infra/race/variables.tf) are the implementation of this decision.
-These types must not be changed while a race is running; the race lifecycle and instance pinning rules are owned
-by [Terraform](component-terraform.md).
 
 ## Core + InfluxDB VM
 
@@ -32,35 +26,6 @@ by [Terraform](component-terraform.md).
   work compete on one physical core.
 - The VM must provide enough memory for both processes, InfluxDB cache, the operating system, and short bursts beyond
   the measured run.
-
-### Evidence
-
-The local load test sent 500,000 sensor-data batches in about 260 seconds
-(see [load test](../core/dev-only/dev-load-test/README.md)). Core and InfluxDB were placed in a slice configured by
-[`install-core-vm-service.sh`](../core/dev-only/install-core-vm-service.sh) with a 400% CPU quota, a 16 GB maximum, and a
-15 GB high watermark. The local Kafka container was limited to 2 CPUs and 8 GB.
-
-The measurements were:
-
-| Measurement                                         |                              Result |
-|-----------------------------------------------------|------------------------------------:|
-| Whole Core slice peak CPU                           |   around 25% CPU in `systemd-cgtop` |
-| Whole Core slice peak memory                        |                              700 MB |
-| `app-core.service` CPU time / service lifetime      | 2 min 9.881 sec / 11 min 12.413 sec |
-| `app-core.service` peak memory                      |                            123.6 MB |
-| `influxdb-core.service` CPU time / service lifetime |       5.852 sec / 14 min 33.875 sec |
-| `influxdb-core.service` peak memory                 |                            454.4 MB |
-
-The service lifetimes exceeded the 260-second sending period, so their total CPU times are not a load-window average.
-Kafka stayed below 100% of its 2-CPU container limit. The test ran on a faster local Intel Core i7-14700K with DDR5 RAM
-through WSL, and Kafka traffic used localhost, so these results establish a useful capacity baseline but do not prove
-GCP latency or throughput.
-
-Core thread config:
-
-- `rayon_threads`: 4
-- `tokio_workers`: 2
-- `tokio_blocking`: 1
 
 ### Rationale
 
@@ -77,6 +42,8 @@ large, so we can save by going for `highcpu` variant instead of the standard one
 This would be a bit less than `5.50$/30h` with `20GB` boot disk for `c4d-highcpu-4`, which is quite a good deal. Sadly
 we cannot go for spot VM here - otherwise it would be three times cheaper.
 
+The only drawback of C4 is that for CPU native Core compilation, a dedicated builder VM is needed.
+
 [In pricing calculator](https://cloud.google.com/products/calculator?dl=CjhDaVF3WVRSbU9XSTVNeTAyTTJRNUxUUXdOR1F0WWprellpMHdZbUV4TkRRM1kySmlNekFRQVE9PRAIGiRDQUQ5MTA4MC0zOUVDLTQ2NTYtQjg3OC05QTUxQjY0MzA2Rjg&_gl=1*hmvx65*_up*MQ..&gclid=CjwKCAjwqc_UBhBKEiwAWbl25q5jMtOk9eAmBdh9cuBnOYDnJZJLyO9afG3l6jbu6ZQ56lfLfq_q6BoCYFAQAvD_BwE&gclsrc=aw.ds)
 
 ## Kafka VM
@@ -84,13 +51,64 @@ we cannot go for spot VM here - otherwise it would be three times cheaper.
 Kafka used less than one of the two CPUs available in the local test. `n4-standard-2` therefore should be enough.
 That would be around `3.30$/30h` with `20GB` balanced hyperdisk boot disk.
 
-If needed, we can go for a highmem variant, which would bump to `4.30$/30h`, so not that much difference.
+If needed, we can go for a highmem variant, which would bump to `4.30$/30h`, so not that much difference. N2 series has
+better
+JVM performance than E2 series and for the predicted instance lifespan, cost difference is negligible.
 
-For some reason, the N4 version is cheaper than the E2 version in the pricing calculator for Frankfurt (historical;
-current region is `europe-west1`).
+## Evidence from load testing
 
-## [!IMPORTANT] These values might change after load testing on real GCP infrastructure
+Core thread config:
 
-The accepted defaults predate Core's telemetry stream and Ops Agent on both VMs. Before production use, repeat the
-GCP load test with Telemetry connected and deliberately slow. Acceptance requires no ingest throughput regression or
-unbounded Core memory growth; preview loss is acceptable and must appear as stream gaps.
+- `rayon_threads`: 4
+- `tokio_workers`: 3
+- `tokio_blocking`: 1
+
+500,000 sensor-data batches (1-15 readings each, 7 sensors, 120 seconds declared time)
+from [load testing script](../core/dev-only/dev-load-test/README.md).
+
+#### Local load test
+
+Testing done on Core version `0.0.1`.
+
+No Okta, Core and InfluxDB were placed in a slice configured by
+[`install-core-vm-service.sh`](../core/dev-only/install-core-vm-service.sh) with a 400% CPU quota, a 16 GB maximum, and
+a 15 GB high watermark. The local Kafka container was limited to 2 CPUs and 8 GB. Actual message sending time was around
+260 seconds.
+
+The measurements were:
+
+| Measurement                                         |                              Result |
+|-----------------------------------------------------|------------------------------------:|
+| Whole Core slice peak CPU                           |   around 25% CPU in `systemd-cgtop` |
+| Whole Core slice peak memory                        |                              700 MB |
+| `app-core.service` CPU time / service lifetime      | 2 min 9.881 sec / 11 min 12.413 sec |
+| `app-core.service` peak memory                      |                            123.6 MB |
+| `influxdb-core.service` CPU time / service lifetime |       5.852 sec / 14 min 33.875 sec |
+| `influxdb-core.service` peak memory                 |                            454.4 MB |
+
+The service lifetimes exceeded the 260-second sending period, so their total CPU times are not a load-window average.
+Kafka stayed below 100% of its 2-CPU container limit. The test ran on a faster local Intel Core i7-14700K with DDR5 RAM
+through WSL, and Kafka traffic used localhost without Okta (and TLS), so these results establish a useful capacity
+baseline but do not prove
+GCP latency or throughput.
+
+#### GCP load test
+
+Testing done on Core version `0.0.2`.
+
+Same settings, actual message sending time was around 290 seconds. The Telemetry module was constantly consuming
+sensor data stream and metric pushing was enabled on Core. Kafka traffic, of course, with TLS and Okta.
+
+| Measurement                     |                          Result (approximate) |
+|---------------------------------|----------------------------------------------:|
+| Whole Core + InfluxDB VM CPU    |                                      14% peak |
+| Whole Core + InfluxDB VM memory | 46% peak (844.9M memory peak for Core itself) |
+| Whole Core + InfluxDB VM disk   |                                      28% peak |
+| Whole Kafka VM CPU              |                                      50% peak |
+| Whole Kafka VM memory           |                               around 30% peak |
+| Whole Kafka VM disk             |                               around 27% peak |
+
+Disk performance itself was not measured but can be derived from disk type and disk size. Network performance was not
+measured either.
+
+Overall really good results.
