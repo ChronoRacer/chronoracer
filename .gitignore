@@ -11,3 +11,4 @@ crash.log
 /infra/always-on/ingest.chronoracer.live/
 /infra/packer/build/*.back
 **/__pycache__/
+/infra/packer/build/core*

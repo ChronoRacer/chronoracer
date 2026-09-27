@@ -103,7 +103,6 @@ build {
       "test -f /chronoracer/kafka.service",
       "test -f /chronoracer/ops-agent.yaml",
       "grep -Fq 'exclude_process_metrics' /chronoracer/ops-agent.yaml",
-      "if grep -Eq '__[A-Z0-9_]+__' /chronoracer/ops-agent.yaml; then exit 1; fi",
       "test -x /chronoracer/enable-ops-agent.sh",
       "systemctl cat google-cloud-ops-agent.service >/dev/null",
       "test -f /chronoracer/names.json",

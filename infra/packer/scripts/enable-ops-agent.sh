@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copy overlay Ops Agent config and start the unit. Called from VM entrypoints.
-# Overlay yaml must already be complete (Core: render-ops-agent.sh first).
+# Overlay yaml must already be complete
 set -euo pipefail
 umask 077
 
