@@ -10,6 +10,7 @@ Files inside this directory are configuration files or templates for Redpanda CL
 - Purpose: export chosen Kafka topics into parquet files
 - Why: handling the export, parsing and compression flow manually is error-prone and tedious  
 
-`export.gcs.yaml`: GCS version will upload to the GCS bucket specified in the template.
+`export.gcs.yaml`: GCS version will upload to the GCS bucket specified in the template (data is batched and saved to multiple files 
+to avoid GCP rate limiting of 1 operation per second per object in bucket)
 
 `export.local.yaml`: Local version will copy to a directory on the machine that invoked the export flow.

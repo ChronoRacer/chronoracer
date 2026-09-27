@@ -9,10 +9,12 @@ input:
         start_from_oldest: true
         batching:
           count: 10000
-          period: "2s"
+          period: "10s"
 
 pipeline:
   processors:
+    - group_by_value:
+          value: '${! meta("kafka_topic") }'
     - mapping: |
         root.topic = meta("kafka_topic")
         root.partition = meta("kafka_partition").number()
@@ -47,4 +49,5 @@ pipeline:
 output:
   gcp_cloud_storage:
     bucket: __EXPORT_BUCKET__
-    path: '__BUCKET_DIR_PATH__/${! meta("kafka_topic") }.parquet'
+    path: '__BUCKET_DIR_PATH__/${! meta("kafka_topic") }/part-${! meta("kafka_partition").string().pad_zeros(4) }-${! meta("kafka_offset").string().pad_zeros(16) }-${! timestamp_unix_nano() }.parquet'
+    max_in_flight: 4
