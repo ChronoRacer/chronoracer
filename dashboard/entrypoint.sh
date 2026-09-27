@@ -79,4 +79,10 @@ for v2dash in "$v2dir"/*.json; do
     fi
 done
 
+curl -s -f -X PUT \
+  -u "$ADMIN_AUTH" \
+  -H "Content-Type: application/json" \
+  -d '{"homeDashboardUID": "race-fleet"}' \
+  "http://localhost:3000/api/org/preferences"
+
 wait $GRAFANA_PID

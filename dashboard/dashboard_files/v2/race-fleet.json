@@ -339,7 +339,7 @@
                           "resource.label.instance_id"
                         ],
                         "perSeriesAligner": "ALIGN_RATE",
-                        "preprocessor": "rate",
+                        "preprocessor": "none",
                         "projectName": "$project",
                         "view": "FULL"
                       }
