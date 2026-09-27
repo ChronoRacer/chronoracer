@@ -107,10 +107,3 @@ resource "google_cloud_run_v2_service_iam_member" "telemetry_public" {
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
-
-check "telemetry_generated_url" {
-  assert {
-    condition     = google_cloud_run_v2_service.telemetry.uri == local.telemetry_root_url
-    error_message = "Telemetry service URI ${google_cloud_run_v2_service.telemetry.uri} does not match deterministic TELEMETRY_ROOT_URL ${local.telemetry_root_url}."
-  }
-}

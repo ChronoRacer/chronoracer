@@ -131,11 +131,12 @@ Residual (GCP constraints, not project Editor):
   Kafka firewall from `names.json`.
 - Controller DNS is a custom role (record sets + changes + zone get/list). Not `roles/dns.admin`. No
   `dns.managedZones.delete`. Bound at project (one zone in MVP).
-- Controller `secretmanager.viewer` on the TLS **secret resource** (metadata for the race data source). Not
-  `secretAccessor`. Kafka VM is the only accessor of the payload.
+- Controller `secretmanager.viewer` on the TLS and browser OAuth **secret resources** (metadata for race Terraform
+  data sources). Kafka VM is the only TLS accessor; Dashboard and Telemetry are the browser OAuth
+  payload accessors.
 - Controller `roles/iam.serviceAccountViewer` so SA data sources fail if Kafka/Core SAs are missing.
-- Controller Cloud Run create/list/`operations.get` is project-scoped (create conditions are unreliable, same as
-  firewall). Get/update/delete/`setIamPolicy` are bound under an IAM condition on the canonical Telemetry service
+- Controller Cloud Run get/create/list/`operations.get` is project-scoped (create conditions are unreliable, same as
+  firewall). Update/delete/`setIamPolicy` are bound under an IAM condition on the canonical Telemetry service
   resource name. Controller can act as the Telemetry service account. Do not grant general IAM administration.
 - State bucket: controller `objectAdmin` only under `race/`; `legacyBucketReader` on the bucket (Terraform init lists
   objects; GET of `base/` stays denied).

@@ -14,6 +14,11 @@ curl -X GET https://relay.chronoracer.live/race/status -H "Authorization: Bearer
 curl -X POST https://relay.chronoracer.live/race/stop \
   -H "Authorization: Bearer $OKTA_ACCESS_TOKEN"
 
+# Force destroy
+
+curl -X POST https://relay.chronoracer.live/race/force-destroy \
+    -H "Authorization: Bearer $OKTA_ACCESS_TOKEN"
+
 # History
 
 raceId=$(jq -r '.raceId' race_start_request.json)
