@@ -4,6 +4,7 @@ use crate::messaging::partial_message::PartialMessageWithError;
 use crate::persistence::persistence_entrypoint::SensorDataBatch;
 use crate::processing::avro::TryFromAvro;
 use crate::processing::sensor_data_message::{SensorDataMessage, UnwoundSensorDataMessage};
+use crate::telemetry::PreviewHub;
 use apache_avro::reader::datum::GenericDatumReader;
 use ouroboros::self_referencing;
 use std::sync::Arc;
@@ -25,6 +26,7 @@ pub struct ReadingCollector {
     sensor_data_reader: Arc<SensorDataReader>,
     rayon_pool: Arc<rayon::ThreadPool>,
     processing_slots: Arc<Semaphore>,
+    preview: PreviewHub,
 }
 
 impl ReadingCollector {
@@ -35,6 +37,7 @@ impl ReadingCollector {
         processed_data_tx: tokio::sync::mpsc::Sender<SensorDataBatch>,
         sensor_data_schema: apache_avro::Schema,
         rayon_pool: Arc<rayon::ThreadPool>,
+        preview: PreviewHub,
     ) -> Self {
         let sensor_data_reader = SensorDataReaderBuilder {
             schema: Arc::new(sensor_data_schema),
@@ -44,7 +47,7 @@ impl ReadingCollector {
                     .expect("sensor data reader should build")
             },
         }
-            .build();
+        .build();
 
         Self {
             flush_rx,
@@ -53,6 +56,7 @@ impl ReadingCollector {
             sensor_data_reader: Arc::new(sensor_data_reader),
             processing_slots: Arc::new(Semaphore::new(rayon_pool.current_num_threads())),
             rayon_pool,
+            preview,
         }
     }
 
@@ -67,6 +71,7 @@ impl ReadingCollector {
             let reader = Arc::clone(&self.sensor_data_reader);
             let success_tx = Arc::clone(&self.processed_data_tx);
             let failure_tx = Arc::clone(&self.dlq_tx);
+            let preview = self.preview.clone();
             self.rayon_pool.spawn(move || {
                 let _processing_slot = processing_slot;
                 // TODO: Maybe this might be improved so no semaphore is needed. Do not spawn without bound or it will overflow and crash
@@ -80,13 +85,13 @@ impl ReadingCollector {
                             )
                         });
                         match result {
-                            Ok(msg) => Some(UnwoundSensorDataMessage::from(msg)),
+                            Ok(msg) => Some(Arc::new(UnwoundSensorDataMessage::from(msg))),
                             Err(err) => {
                                 let failed_msg =
                                     PartialMessageWithError::new(partial_message, &err);
                                 // This should be okay: the channel has high capacity and invalid messages should be rare
-                                if let Err(e) = failure_tx.blocking_send(failed_msg) {
-                                    error!("Failed to send to dlq: {e}");
+                                if let Err(error) = failure_tx.blocking_send(failed_msg) {
+                                    error!(%error, "Failed to send to dlq");
                                 }
                                 None
                             }
@@ -94,10 +99,11 @@ impl ReadingCollector {
                     })
                     .collect();
 
-                if !processed.is_empty()
-                    && let Err(e) = success_tx.blocking_send(processed)
-                {
-                    error!("Failed to send processed batch downstream: {e}");
+                if !processed.is_empty() {
+                    preview.offer(&processed);
+                    if let Err(error) = success_tx.blocking_send(processed) {
+                        error!(%error, "Failed to send processed batch downstream");
+                    }
                 }
             });
         }
@@ -111,8 +117,11 @@ mod tests {
     use crate::messaging::partial_message::PartialMessage;
     use crate::persistence::persistence_entrypoint::SensorDataBatch;
     use crate::processing::avro::{AvroSchema, SchemaRegistry};
+    use crate::runtime_configuration::RetainReadTimeValue;
+    use crate::telemetry::PreviewHub;
     use apache_avro::types::Value;
     use apache_avro::writer::datum::GenericDatumWriter;
+    use compact_str::CompactString;
     use std::time::Duration;
     use tokio::sync::mpsc;
     use tokio::time::timeout;
@@ -122,6 +131,13 @@ mod tests {
             .num_threads(1)
             .build()
             .expect("Failed to build Rayon pool")
+    }
+
+    fn idle_preview() -> PreviewHub {
+        let driver = Box::leak(Box::new(RetainReadTimeValue::new(CompactString::from(
+            "driver",
+        ))));
+        PreviewHub::new(driver, 16, Duration::from_millis(250))
     }
 
     fn load_avro_schema() -> apache_avro::Schema {
@@ -152,7 +168,9 @@ mod tests {
         let writer = GenericDatumWriter::builder(schema)
             .build()
             .expect("sensor data reader should build");
-        writer.write_value_to_vec(record).expect("Failed to serialize to raw datum")
+        writer
+            .write_value_to_vec(record)
+            .expect("Failed to serialize to raw datum")
     }
 
     #[tokio::test]
@@ -163,12 +181,15 @@ mod tests {
         let (dlq_tx, mut dlq_rx) = mpsc::channel::<PartialMessageWithError>(10);
         let (processed_tx, mut processed_rx) = mpsc::channel::<SensorDataBatch>(10);
 
+        let preview = idle_preview();
+        let _generation = preview.begin_stream().0;
         let mut collector = ReadingCollector::new(
             flush_rx,
             Arc::from(dlq_tx),
             processed_tx,
             schema.clone(),
             build_pool().into(),
+            preview.clone(),
         );
 
         let ingest_handle = tokio::spawn(async move {
@@ -207,9 +228,11 @@ mod tests {
         let processed_batch = processed_msg.unwrap();
         assert_eq!(processed_batch.len(), 1);
         let content = &processed_batch[0];
-        assert_eq!(content.sensor_id, sensor_id);
+        assert_eq!(content.sensor_id.as_ref(), sensor_id);
         assert!(!content.readings.is_empty());
         assert_eq!(content.readings[0].value, first_reading_value);
+        preview.pull_ingress();
+        assert_eq!(preview.queued_points(), content.readings.len());
 
         drop(flush_tx);
         let _ = ingest_handle.await;
@@ -229,6 +252,7 @@ mod tests {
             processed_tx,
             schema,
             build_pool().into(),
+            idle_preview(),
         );
 
         let ingest_handle = tokio::spawn(async move {

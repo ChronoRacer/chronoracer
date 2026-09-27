@@ -60,7 +60,7 @@ impl<'a> GcsStorageManager<'a> {
                 Ok(bucket_name) => info!("Uploaded file: {}", bucket_name),
                 Err(e) => {
                     failed_uploads += 1;
-                    error!("Error uploading file: {}", e);
+                    error!(%e, "Error uploading file");
                 }
             }
         }
@@ -89,8 +89,8 @@ impl<'a> GcsStorageManager<'a> {
                 .set_if_generation_match(0)
                 .send_unbuffered(),
         )
-            .await
-            .map(|o| o.name)
-            .map_err(Into::into)
+        .await
+        .map(|o| o.name)
+        .map_err(Into::into)
     }
 }

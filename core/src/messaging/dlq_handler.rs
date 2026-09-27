@@ -62,8 +62,8 @@ impl<'a, P: KafkaProducer> DLQHandler<'a, P> {
         while let Some(message) = self.dlq_rx.recv().await {
             match self.send_to_dlq(message).await {
                 Ok(_) => info!("Redirected message to DLQ"),
-                Err((kafka_err, _)) => {
-                    error!("Failed to write to DLQ: {kafka_err}");
+                Err((error, _)) => {
+                    error!(%error, "Failed to write to DLQ");
                 }
             }
         }

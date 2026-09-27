@@ -142,7 +142,7 @@ push_docker() {
   fi
   if [[ "${IMAGES}" == "all" || "${IMAGES}" == "telemetry" ]]; then
     echo "Building ${TELEMETRY_URI}"
-    docker build --platform linux/amd64 -f "${REPO_ROOT}/telemetry/Dockerfile" -t "${TELEMETRY_URI}" "${REPO_ROOT}/telemetry"
+    docker build --platform linux/amd64 -f "${REPO_ROOT}/telemetry/Dockerfile" -t "${TELEMETRY_URI}" "${REPO_ROOT}"
     if [[ "${NO_PUSH}" -eq 1 ]]; then
       echo "Skipping push for $TELEMETRY_URI"
     else

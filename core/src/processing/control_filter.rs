@@ -54,11 +54,11 @@ impl ControlFilter {
                     Ok(message) => inner.relay_control_event(message),
                     Err(error) => {
                         let message = error.message;
-                        if let Err(e) = inner
+                        if let Err(error) = inner
                             .dlq_tx
                             .blocking_send(PartialMessageWithError::new(message, &error.kind))
                         {
-                            error!("Failed to send to dlq: {e}");
+                            error!(%error, "Failed to send to dlq");
                         }
                     }
                 },

@@ -9,5 +9,5 @@ datasources:
     editable: false
     jsonData:
       authenticationType: gce
-      defaultProject: ${GCP_PROJECT_ID}
+      defaultProject: chronoracer
       universeDomain: googleapis.com

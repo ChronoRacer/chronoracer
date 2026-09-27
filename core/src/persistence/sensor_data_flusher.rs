@@ -1,5 +1,6 @@
 use crate::configuration::PersistenceConfig;
 use crate::persistence::sensor_data_batcher::{SIMPLE_POINT_PROTOCOL_MAX_LENGTH, SimplePoint};
+use crate::persistence::write_metrics::WriteMetrics;
 use compact_str::CompactString;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -13,6 +14,7 @@ pub struct InfluxDbFlusher {
     normal_batcher_wiring: Option<BatcherWiring>,
     semaphore: Arc<Semaphore>,
     max_inflight_requests: usize,
+    write_metrics: Arc<WriteMetrics>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -34,6 +36,7 @@ impl InfluxDbFlusher {
         fast_batcher_wiring: BatcherWiring,
         batcher_wiring: BatcherWiring,
         client: Arc<influxdb3_client::Client>,
+        write_metrics: Arc<WriteMetrics>,
     ) -> Self {
         Self {
             client,
@@ -42,6 +45,7 @@ impl InfluxDbFlusher {
             normal_batcher_wiring: Some(batcher_wiring),
             semaphore: Arc::new(Semaphore::new(persistence.max_inflight_db_writes as usize)),
             max_inflight_requests: persistence.max_inflight_db_writes as usize,
+            write_metrics,
         }
     }
 
@@ -54,12 +58,14 @@ impl InfluxDbFlusher {
         let client_fast = Arc::clone(&self.client);
         let race_id_fast = Arc::clone(&self.race_id);
         let semaphore_fast = Arc::clone(&self.semaphore);
+        let metrics_fast = Arc::clone(&self.write_metrics);
         let fast_handle = tokio::spawn(Self::ingest_internal(
             fast_wiring,
             client_fast,
             race_id_fast,
             semaphore_fast,
             max_inflight,
+            metrics_fast,
         ));
 
         let Some(normal_wiring) = self.normal_batcher_wiring.take() else {
@@ -69,12 +75,14 @@ impl InfluxDbFlusher {
         let client_normal = Arc::clone(&self.client);
         let race_id_normal = Arc::clone(&self.race_id);
         let semaphore_normal = Arc::clone(&self.semaphore);
+        let metrics_normal = Arc::clone(&self.write_metrics);
         let normal_handle = tokio::spawn(Self::ingest_internal(
             normal_wiring,
             client_normal,
             race_id_normal,
             semaphore_normal,
             max_inflight,
+            metrics_normal,
         ));
         let (_, _) = tokio::join!(fast_handle, normal_handle);
     }
@@ -85,6 +93,7 @@ impl InfluxDbFlusher {
         race_id: Arc<str>,
         semaphore: Arc<Semaphore>,
         max_inflight_requests: usize,
+        write_metrics: Arc<WriteMetrics>,
     ) {
         let (mut batch_rx, pool_tx, wiring_type) = wiring;
         info!("Starting data flush ingestion loop, flush_type={wiring_type:?}");
@@ -100,6 +109,7 @@ impl InfluxDbFlusher {
             let db = Arc::clone(&client);
             let pool_tx = pool_tx.clone();
             let race_id = Arc::clone(&race_id);
+            let write_metrics = Arc::clone(&write_metrics);
 
             write_tasks.push_back(tokio::spawn(async move {
                 let _permit = permit;
@@ -110,30 +120,35 @@ impl InfluxDbFlusher {
                     line_protocol.push_str(&point.to_line_protocol(&race_id));
                     line_protocol.push('\n');
                 }
+                let lines = u64::try_from(batch.len()).unwrap_or(u64::MAX);
+                let bytes = u64::try_from(line_protocol.len()).unwrap_or(u64::MAX);
                 match db
                     .write(line_protocol)
                     .max_inflight(max_inflight_requests)
                     .await
                 {
                     Ok(()) => {
+                        write_metrics.record_success(lines, bytes);
                         info!(
                             "Flushed data points: batch_size={}, flush_type={:?}",
                             batch.len(),
                             wiring_type
                         );
                     }
-                    Err(influxdb3_client::error::Error::PartialWrite(e)) => {
-                        error!(
-                            "Database write partially failed. failed_lines={}, Error: {e}, flush_type={wiring_type:?}",
-                            e.line_errors.len()
+                    Err(influxdb3_client::error::Error::PartialWrite(error)) => {
+                        let failed_lines = u64::try_from(error.line_errors.len()).unwrap_or(u64::MAX);
+                        write_metrics.record_partial(lines, failed_lines);
+                        error!(%error,
+                            "Database write partially failed. failed_lines={}, flush_type={wiring_type:?}",
+                            failed_lines
                         );
-                        // TODO: is logging this needed?
-                        for line_error in &e.line_errors {
-                            error!("Line {}: {}", line_error.line, line_error.message);
+                        for line_error in error.line_errors.iter().take(5) {
+                            warn!("Line {}: {}", line_error.line, line_error.message);
                         }
                     }
-                    Err(e) => {
-                        error!("Database write failed: {e}, flush_type={wiring_type:?}");
+                    Err(error) => {
+                        write_metrics.record_error();
+                        error!(%error, "Database write failed, flush_type={wiring_type:?}");
                     }
                 }
                 batch.clear();

@@ -122,9 +122,9 @@ impl BatchMessageSink {
                                 break;
                             }
                         }
-                        Some(Err(kafka_error)) => {
+                        Some(Err(error)) => {
                             // This branch is taken when the broker dies. Reconnects automatically
-                            error!("Kafka error occurred while polling: {kafka_error}");
+                            error!(%error, "Kafka error occurred while polling");
                         }
                         None => {
                             error!("Kafka stream ended unexpectedly.");
@@ -218,18 +218,18 @@ impl InstantMessageSink {
         while let Some(message_result) = message_stream.next().await {
             match message_result {
                 Ok(borrowed_message) => {
-                    if let Err(e) = self
+                    if let Err(error) = self
                         .message_tx
                         .send(PartialMessage::from(borrowed_message))
                         .await
                     {
-                        error!("Control ingestion pipeline broken downstream: {e}");
+                        error!(%error, "Control ingestion pipeline broken downstream");
                         break;
                     }
                 }
-                Err(kafka_error) => {
+                Err(error) => {
                     // This branch is taken when the broker dies. Reconnects automatically
-                    error!("Kafka error occurred while polling: {kafka_error}");
+                    error!(%error, "Kafka error occurred while polling");
                 }
             }
         }

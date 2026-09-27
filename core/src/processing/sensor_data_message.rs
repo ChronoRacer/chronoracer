@@ -3,6 +3,7 @@ use anyhow::{Result, anyhow};
 use apache_avro::reader::datum::GenericDatumReader;
 use serde::Deserialize;
 use std::io::Cursor;
+use std::sync::Arc;
 
 #[derive(Deserialize, Debug)]
 pub struct RelativeSensorReading {
@@ -34,14 +35,14 @@ pub struct SensorDataMessage {
 
 #[derive(Debug)]
 pub struct UnwoundSensorDataMessage {
-    pub sensor_id: String,
+    pub sensor_id: Arc<str>,
     pub readings: Box<[AbsoluteSensorReading]>,
 }
 
 impl From<SensorDataMessage> for UnwoundSensorDataMessage {
     fn from(message: SensorDataMessage) -> Self {
         Self {
-            sensor_id: message.sensor_id,
+            sensor_id: Arc::from(message.sensor_id),
             readings: message
                 .readings
                 .into_iter()
@@ -102,7 +103,9 @@ mod tests {
         let writer = GenericDatumWriter::builder(schema)
             .build()
             .expect("sensor data reader should build");
-        writer.write_value_to_vec(value).expect("Failed to serialize to raw datum")
+        writer
+            .write_value_to_vec(value)
+            .expect("Failed to serialize to raw datum")
     }
 
     #[test]
@@ -145,7 +148,7 @@ mod tests {
             unwound_message.readings,
             expected_unwound_readings.into_boxed_slice()
         );
-        assert_eq!(unwound_message.sensor_id, sensor_id);
+        assert_eq!(unwound_message.sensor_id.as_ref(), sensor_id);
     }
 
     #[test]
@@ -217,7 +220,7 @@ mod tests {
 
         let unwound = UnwoundSensorDataMessage::from(message);
 
-        assert_eq!(unwound.sensor_id, "empty-sensor");
+        assert_eq!(unwound.sensor_id.as_ref(), "empty-sensor");
         assert!(unwound.readings.is_empty());
     }
 

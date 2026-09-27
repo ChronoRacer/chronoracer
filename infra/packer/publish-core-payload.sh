@@ -53,6 +53,7 @@ echo "Publishing Core payload to ${DEST}"
 
 gcloud storage cp "${BIN}" "${DEST}/core"
 gcloud storage cp "${SCHEMA_SRC}" "${DEST}/avro/sensor_data.avsc"
+"${SCRIPT_DIR}/publish-core-influxdb-plugins.sh" "$RELEASE_ID"
 
 jq -n --arg prefix "${RELEASE}" '{prefix: $prefix}' >"${MANIFEST}"
 gcloud storage cp "${MANIFEST}" "gs://${BUCKET}/core/current.json"

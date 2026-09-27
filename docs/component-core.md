@@ -54,7 +54,7 @@ subnet firewall is the authorization boundary. Until that firewall exists, VPC c
 no public address.
 
 The copy happens after Avro unwind (validation and absolute timestamps) and before the batch is sent into persistence.
-It does not happen in the batcher or the flusher. The 2 second and 4 second flush intervals delay only the Influx write.
+It does not happen in the batcher or the flusher. The flush intervals delay only the Influx write.
 
 The driver on a preview point is the driver at that copy. Persistence stamps the driver later, when the batcher builds
 the database point. A driver change while the message waits behind a slow flush can make those two drivers differ. The
@@ -64,9 +64,8 @@ With no `Watch` call, the parse path checks one atomic and returns. It does not 
 drops. Disconnect discards the unsent queue. A new `Watch` does not report how many points were missed while idle.
 
 While a call is active, the queue is a FIFO. It drops the oldest unsent points once they are older than
-`telemetry.max_queue_age_ms` (250) or the queue holds more than `telemetry.max_queue_points` (16384). A client that
-keeps up receives every point, in queue order. One active `Watch`. A new call cancels the previous one, drops its
-queue, and starts the sequence again. `stream_id` stays constant for the Core process, so a restart is a new id.
+`telemetry.max_queue_age_ms` or the queue holds more than `telemetry.max_queue_points`. A client that
+keeps up receives every point, in queue order. `stream_id` stays constant for the Core process, so a restart is a new id.
 
 Each point has the same logical fields as the persisted Influx point:
 
@@ -78,8 +77,14 @@ Each point has the same logical fields as the persisted Influx point:
 | `driver_id`       | `string`      | Driver read at the unwind copy, not the later persistence stamp         |
 
 “Accepted” means Core produced a logical point. It does not promise the later database write succeeds. Kafka delivery
-is at-least-once, processing batches run concurrently, and source timestamps are authoritative; Telemetry must accept
-duplicate points and timestamps that are not in arrival order.
+is at-least-once, processing batches run concurrently, and source timestamps are authoritative;
+
+
+### [IMPORTANT!] Telemetry stream contraints
+
+The current setup supports only one active client. A new `Watch` call will evict the existing client.
+
+Client must accept duplicate points and timestamps that are not in arrival order (should happen rarely if ever).
 
 ### Events
 
@@ -110,13 +115,14 @@ isolation before production use.
 
 Core publishes three cumulative custom metrics for [Dashboard](component-dashboard.md) ingest panels. Names:
 
-| Metric | Meaning |
-|--------|---------|
-| `custom.googleapis.com/chronoracer/influx_write_lines` | Lines Influx accepted |
-| `custom.googleapis.com/chronoracer/influx_write_bytes` | Bytes in fully successful writes |
+| Metric                                                    | Meaning                                                    |
+|-----------------------------------------------------------|------------------------------------------------------------|
+| `custom.googleapis.com/chronoracer/influx_write_lines`    | Lines Influx accepted                                      |
+| `custom.googleapis.com/chronoracer/influx_write_bytes`    | Bytes in fully successful writes                           |
 | `custom.googleapis.com/chronoracer/influx_write_requests` | Write calls, label `outcome` = `ok`, `partial`, or `error` |
 
-Counters increment once per flush. A background task sends one `CreateTimeSeries` every 60 seconds while `gcp.enabled` is true. Partial writes count accepted lines and the `partial` outcome, and do not add bytes. Publish failure, or missing GCE metadata, is logged and does not stop ingest.
+Counters increment once per flush. A background task sends one `CreateTimeSeries` every 60 seconds while `gcp.enabled` is true. Partial writes count accepted lines and the `partial` outcome, and do not add bytes. Publish failure is logged and does not stop ingest.
+Missing GCE metadata can either disable metric sending or fallback to sending sentinel labels for time series, decided by configuration property `gcp.allow_unknown_gce_metrics`. 
 
 ## Startup
 
@@ -125,7 +131,7 @@ payload: [Compute images](component-images.md).
 
 ## Layers
 
-Core can be divided into 4 layers.
+Core can be divided into 5 layers.
 
 #### Layer 1 - messaging
 
@@ -160,7 +166,16 @@ Export path used during shutdown.
 - GCS writer
 - Google Pub/Sub publisher
 
-## Data ingestion flow
+#### Layer 5 - telemetry serving
+
+Live telemetry stream of clean data, GCM metric push of database write rates.
+
+- gRPC streaming server
+- Preview queue
+- metrics publisher
+
+
+## Data ingestion and serving flow
 
 ```mermaid
 flowchart TB
@@ -171,8 +186,8 @@ flowchart TB
     end
 
     subgraph process["Processing layer"]
-        extract["Deserialize from Avro"]
-        unwind["Unwind message"]
+        extract["Avro deserialization"]
+        unwind["Message unwinding"]
     end
 
     subgraph persistence["Persistence layer"]
@@ -181,17 +196,25 @@ flowchart TB
         batcherNormal["Normal batcher"]
         flusher[("Flusher")]
     end
+    
+    subgraph telemetry["Telemetry layer"]
+        tel_queue["Preview queue"]
+        tel_stream["Streaming server"]
+        metrics["GCM metrics publisher"]
+    end
 
     dataSink -->|message batches| extract
     extract -->|processed batches| unwind
-    extract --> dlqPublisher
-    unwind --> dlqPublisher
+    extract --> |invalid messages| dlqPublisher
+    unwind --> |invalid messages| dlqPublisher
     unwind -->|processed batches| splitter
+    unwind -->|processed batches| tel_queue
+    tel_queue --> |stream into| tel_stream
     splitter -->|fast batches| batcherFast
     splitter -->|normal batches| batcherNormal
     batcherFast --> flusher
     batcherNormal --> flusher
-
+    flusher -->|write metrics|metrics
 ```
 
 ### Core heartbeat
@@ -217,7 +240,7 @@ flowchart TB
         configurePersistence["Adjust configuration"]
     end
 
-    kafkaControl --> filterControl
+    kafkaControl -->|control events| filterControl
     filterControl --> configureProcess
     filterControl --> configurePersistence
 
@@ -227,31 +250,39 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph kafka["Messaging layer"]
-        kafkaControl["Control event listener"]
-    end
+  subgraph kafka["Messaging layer"]
+    kafkaControl["Control event listener"]
+  end
 
-    subgraph process["Processing layer"]
-        filterControl["Control event filter"]
-    end
+  subgraph process["Processing layer"]
+    filterControl["Control event filter"]
+  end
 
-    subgraph shutdown["Shutdown layer"]
-        dataStop["Stop data ingestion"]
-        pipelineDrain["Wait until data pipeline drained"]
-        exportKafka[("Export Kafka (via Redpanda)")]
-        exportDb["Export database"]
-        gcsWriter[("Upload exports to GCS")]
-        notify["Broadcast export done"]
-    end
+  subgraph shutdown["Shutdown layer"]
+    dataStop["Stop data ingestion"]
+    pipelineDrain["Wait until data pipeline drained"]
+    exportKafka[("Export Kafka (via Redpanda)")]
+    exportDb["Export database"]
+    gcsWriter[("Upload exports to GCS")]
+    notify["Broadcast export done"]
+  end
 
-    kafkaControl --> filterControl
-    filterControl --> dataStop
-    dataStop --> pipelineDrain
-    pipelineDrain --> exportKafka
-    pipelineDrain --> exportDb
-    exportDb --> gcsWriter
-    exportKafka --> notify
-    gcsWriter --> notify
+  subgraph telemetry["Telemetry layer"]
+    tel_stream["Streaming server"]
+  end
+  
+  shutdownCore["Terminate Core"]
+
+  kafkaControl -->|SHUTDOWN control event| filterControl
+  filterControl -->tel_stream
+  filterControl --> dataStop
+  dataStop --> pipelineDrain
+  pipelineDrain --> exportKafka
+  pipelineDrain --> exportDb
+  exportDb --> gcsWriter
+  exportKafka --> notify
+  gcsWriter --> notify
+  notify --> shutdownCore
 ```
 
 Successful shutdown sequence means sending the export-done event to Google Pub/Sub. Failure means not sending the event
@@ -259,8 +290,7 @@ and thus forcing either operator to invoke the force-destroy flow after optional
 
 If a tracked data-pipeline task terminates while Core is running, without the shutdown cancellation having started, Core
 logs the failure and exits with a failure status without starting the export flow. The service manager is responsible
-for
-restarting Core; no export-done event is sent for this failure path.
+for restarting Core; no export-done event is sent for this failure path.
 
 Race stop sequence around this: [Race destruction](flow-race_destruction.md). Export
 prefix: [GCS](component-gcs_buckets.md).

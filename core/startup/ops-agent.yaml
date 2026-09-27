@@ -1,5 +1,5 @@
 # Whole-VM host metrics only. The process scraper walks /proc and is omitted.
-# CPU and memory panels read these host series. Ingest counters are written by Core.
+# CPU and memory panels read these host series.
 logging:
   service:
     pipelines:

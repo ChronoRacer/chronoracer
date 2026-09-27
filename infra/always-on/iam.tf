@@ -176,6 +176,13 @@ resource "google_secret_manager_secret_iam_member" "controller_tls_meta" {
   member    = "serviceAccount:${google_service_account.controller.email}"
 }
 
+resource "google_secret_manager_secret_iam_member" "controller_okta_oauth_meta" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.okta_oauth.secret_id
+  role      = "roles/secretmanager.viewer"
+  member    = "serviceAccount:${google_service_account.controller.email}"
+}
+
 resource "google_project_iam_member" "relay_firestore" {
   project = var.project_id
   role    = "roles/datastore.user"

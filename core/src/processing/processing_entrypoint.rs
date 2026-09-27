@@ -5,6 +5,7 @@ use crate::processing::avro::{AvroSchema, SchemaRegistry};
 use crate::processing::control_filter::ControlFilter;
 use crate::processing::reading_collector::ReadingCollector;
 use crate::runtime_configuration::RetainReadTimeValue;
+use crate::telemetry::PreviewHub;
 use anyhow::Result;
 use compact_str::CompactString;
 use std::sync::Arc;
@@ -24,6 +25,7 @@ impl ProcessingLayerEntrypoint {
         chdrv_handler: &'static RetainReadTimeValue<CompactString>,
         shutdown_handler_tx: oneshot::Sender<()>,
         rayon_pool: Arc<rayon::ThreadPool>,
+        preview: PreviewHub,
     ) -> Result<Self> {
         let (processed_data_tx, processed_data_rx) =
             tokio::sync::mpsc::channel::<SensorDataBatch>(rayon_pool.current_num_threads());
@@ -36,6 +38,7 @@ impl ProcessingLayerEntrypoint {
             processed_data_tx,
             sensor_data_schema,
             Arc::clone(&rayon_pool),
+            preview,
         );
         let control_filter = ControlFilter::new(
             control_rx,

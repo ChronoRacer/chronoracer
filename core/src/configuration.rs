@@ -232,6 +232,7 @@ pub struct GcpConfig {
     pub export_bucket: String,
     pub max_retries: u16,
     pub max_gcs_concurrent_uploads: u16,
+    pub allow_unknown_gce_metrics: bool,
 }
 
 impl GcpConfig {
@@ -243,6 +244,24 @@ impl GcpConfig {
             max_gcs_concurrent_uploads: 3,
             project_id: "1234".to_string(),
             pubsub_topic_id: "todo".to_string(),
+            allow_unknown_gce_metrics: false,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TelemetryConfig {
+    pub port: u16,
+    pub max_queue_points: usize,
+    pub max_queue_age_ms: u32,
+}
+
+impl TelemetryConfig {
+    pub fn mock_config() -> Self {
+        Self {
+            port: 9470,
+            max_queue_points: 16_384,
+            max_queue_age_ms: 250,
         }
     }
 }
@@ -255,6 +274,7 @@ pub struct CoreConfig {
     pub race: RaceConfig,
     pub runtime: RuntimeConfig,
     pub gcp: GcpConfig,
+    pub telemetry: TelemetryConfig,
 }
 
 impl CoreConfig {
@@ -286,6 +306,7 @@ impl CoreConfig {
             race: RaceConfig::mock_config(),
             runtime: RuntimeConfig::mock_config(),
             gcp: GcpConfig::mock_config(),
+            telemetry: TelemetryConfig::mock_config(),
         }
     }
 }
@@ -329,6 +350,9 @@ mod tests {
                 assert_eq!(loaded.kafka.brokers.len(), 1);
                 assert_eq!(loaded.kafka.brokers[0], "localhost:9092".to_string());
                 assert_eq!(loaded.kafka.dlq_config.publish_timeout_sec, 5);
+                assert_eq!(loaded.telemetry.port, 9470);
+                assert_eq!(loaded.telemetry.max_queue_points, 16_384);
+                assert_eq!(loaded.telemetry.max_queue_age_ms, 250);
             }
             Err(e) => {
                 panic!("{}", e);

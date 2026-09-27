@@ -98,11 +98,12 @@ resource "google_project_iam_custom_role" "controller_run_create" {
   project     = var.project_id
   role_id     = "chronoracerControllerRunCreate"
   title       = "Chronoracer controller Cloud Run create"
-  description = "Create/list Cloud Run services. Conditions on create are unreliable; race module must only create the telemetry service."
+  description = "Create Cloud Run services. Conditions do not work well here."
 
   permissions = [
     "run.locations.get",
     "run.operations.get",
+    "run.services.get",
     "run.services.create",
     "run.services.list",
   ]

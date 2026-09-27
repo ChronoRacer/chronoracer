@@ -6,8 +6,10 @@
 #   CORE_BUILD_ZONE     builder zone (default: europe-west1-b)
 #   CORE_BUILD_NETWORK  builder network (default: default)
 #
+# Note: build may take a long time - compilation itself is around a few minutes. If something crashes, SSH into VM and fix manually and delete builder later.
+#
 # Usage: build-core-binary.sh release-id
-# TODO: this script is overall not really good. VM image not worth it, maybe VM can be upscaled to finish faster.
+# TODO: this script is overall not really good. VM image not worth it for builder, maybe VM can be upscaled to finish faster.
 set -euo pipefail
 
 [[ -n "${1:-}" ]] || {
@@ -29,6 +31,18 @@ download_dest="build/core-${RELEASE_ID}"
   exit 1
 }
 
+version_file="${REPO_ROOT}/core/version.txt"
+[[ -f "$version_file" ]] || {
+  echo "Version file $version_file does not exists" >&2
+  exit 1
+}
+
+version=$(cat "$version_file" | head -n 1)
+
+if [[ $version != $RELEASE_ID ]]; then
+  echo "Version file version $version does not match release ID $RELEASE_ID - if rebuilding disable this check manually" >&2
+  exit 1
+fi
 
 cleanup() {
     local exit_code=$?
@@ -63,7 +77,7 @@ need jq
 echo "Creating source code bundle"
 tar -czvf "$core_bundle" \
   -C "${REPO_ROOT}" \
-  core/src core/Cargo.lock core/Cargo.toml core/.cargo
+  core/src core/Cargo.lock core/Cargo.toml core/.cargo core/build.rs core/proto/telemetry_v1.proto
 
 MACHINE_TYPE="c4d-highcpu-2"
 echo "Creating disposable Spot builder ${INSTANCE} (${ZONE}, ${MACHINE_TYPE})"

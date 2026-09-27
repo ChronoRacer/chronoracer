@@ -25,8 +25,6 @@ Core serves **one gRPC server-streaming RPC** over plaintext HTTP/2 (h2c).
 - One active `Watch`. `max_concurrent_streams` is 2 so a replacement call can start before the previous one is cancelled.
 - HTTP/2 keepalive interval is 15 seconds.
 
-This replaces the WebSocket transport named in [ADR - Dashboard and live telemetry](adr-dashboard.md).
-
 ## Why gRPC server streaming
 
 Server streaming is the RPC shape for this hop: the client opens the call, Core sends many messages, and the client

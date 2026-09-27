@@ -9,7 +9,8 @@ Problem: operators need two different views during a race:
 
 The previous Dashboard design mixed both concerns by polling InfluxDB from Grafana. Polling persisted batches cannot
 provide a reliable near-real-time preview, gives Grafana an admin-scoped database token, and lets UI queries compete
-with ingest on the Core VM.
+with ingest on the Core VM. Additionally, a small Grafana instance could not handle the polling load of InfluxDB at 5 a
+second refresh rate.
 
 Current component shapes: [Dashboard](component-dashboard.md) and [Telemetry](component-telemetry.md).
 
@@ -26,11 +27,12 @@ Current component shapes: [Dashboard](component-dashboard.md) and [Telemetry](co
 
 ## Why split the components
 
-Fleet metrics and race values have different lifecycles, sources, and failure meaning.
+Fleet metrics and race values have different lifecycles, sources, and failure meaning. Also, Grafana cannot provide live
+preview of the data - InfluxDB polling was tested and breaks under load.
 
 Dashboard survives races and answers whether VMs, Influx ingest, and Telemetry infrastructure are healthy.
 Cloud Monitoring retains this operational data independently of the race VMs. Grafana remains useful because it
-provides provisioned operational dashboards and Auth0 login without custom UI code.
+provides provisioned operational dashboards.
 
 Telemetry exists only while a race exists and answers what accepted values are arriving now. It may keep ephemeral
 preview state but owns no durable record. This isolates preview-specific load and behavior from the always-on
@@ -88,7 +90,8 @@ Grafana's datasource labels its attached-identity mode as “GCE Default Service
 Google Application Default Credentials, and Cloud Run supplies ADC from the attached service account through the
 metadata server. Official Grafana documentation names Compute Engine, not Cloud Run, so a deployment proof is required
 before implementation is accepted: provision the datasource without a JSON key, query native Cloud Monitoring, one Ops
-Agent host metric, and one Core custom metric, and verify cold-start behavior. Long-lived service-account JSON keys are not an accepted
+Agent host metric, and one Core custom metric, and verify cold-start behavior. Long-lived service-account JSON keys are
+not an accepted
 fallback; failure of the proof requires a new runtime/authentication decision.
 
 ## Security and failure boundaries

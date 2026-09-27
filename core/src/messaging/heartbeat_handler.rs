@@ -46,8 +46,8 @@ impl HeartbeatHandler {
                 Ok(_) => {
                     info!("Alive");
                 }
-                Err((err, _)) => {
-                    error!("Failed to send heartbeat: {:?}", err);
+                Err((error, _)) => {
+                    error!(%error, "Failed to send heartbeat");
                 }
             }
         }

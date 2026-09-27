@@ -29,10 +29,6 @@ Bake inventory: [Compute images](../../docs/component-images.md). Race metadata 
       trigger `database_export`. Data dir `/var/lib/influxdb3` is `700`. Influx binds localhost only;
       access model: [InfluxDB](../../docs/component-influxdb.md#access-model).
 
-    - [`render-ops-agent.sh`](render-ops-agent.sh): copy [`ops-agent.yaml.tmpl`](ops-agent.yaml.tmpl) to
-      `/chronoracer/ops-agent.yaml`. The template has no substitutions. It keeps whole-VM host metrics and excludes
-      process metrics.
-
 3. [`enable-ops-agent.sh`](../../infra/packer/scripts/enable-ops-agent.sh) copies that complete config and starts the
    unit with the host receiver. Monitoring contract: [Dashboard](../../docs/component-dashboard.md#data-path).
    Ingest counters: [Core](../../docs/component-core.md#cloud-monitoring-write-counters).
@@ -47,8 +43,7 @@ Bake inventory: [Compute images](../../docs/component-images.md). Race metadata 
 root@core:/chronoracer# ls  
 admin-token.json          core-config.yaml     fetch-influx-token.sh  influxdb3.env      names.json  
 avro                      core.env             fetch-payload.sh       influxdb3.service  ops-agent.yaml  
-chronoracer-core.service  default-config.yaml  gce-metadata.sh        influxdb-plugins   ops-agent.yaml.tmpl  
-core                      enable-ops-agent.sh  influxdb-plugin-venv   merge_config.py    platform.json  
-entrypoint.sh             render-config.sh     render-ops-agent.sh    redpanda  
-start-influx.sh  
+chronoracer-core.service  default-config.yaml  gce-metadata.sh        influxdb-plugins   core
+enable-ops-agent.sh       influxdb-plugin-venv merge_config.py        platform.json      start-influx.sh   
+entrypoint.sh             render-config.sh     redpanda   
 ```

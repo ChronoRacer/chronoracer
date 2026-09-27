@@ -1,6 +1,7 @@
 runtime:
   rayon_threads: 4
-  tokio_workers: 2
+  tokio_workers: 3
+  # tokio_blocking is nearly unused, we can overlap with workers
   tokio_blocking: 1
   heartbeat_interval_s: 30
   data_pipeline_drain_timeout_s: 180
@@ -77,3 +78,8 @@ gcp:
   max_gcs_concurrent_uploads: 3
   project_id: "chronoracer"
   pubsub_topic_id: "export-done"
+  allow_unknown_gce_metrics: true
+telemetry:
+  port: 9470
+  max_queue_points: 16384
+  max_queue_age_ms: 250

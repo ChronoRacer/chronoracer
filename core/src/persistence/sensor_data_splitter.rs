@@ -32,7 +32,7 @@ impl SensorDataSplitter {
         while let Some(data_batch) = self.data_rx.recv().await {
             let (fast_batch, normal_batch): (Vec<_>, Vec<_>) = data_batch
                 .into_iter()
-                .partition(|data| self.fast_flush_sensor_ids.contains(&data.sensor_id));
+                .partition(|data| self.fast_flush_sensor_ids.contains(data.sensor_id.as_ref()));
 
             if !fast_batch.is_empty()
                 && self.fast_tx.send(fast_batch).await.is_err()
@@ -58,16 +58,17 @@ mod tests {
     use super::*;
     use crate::configuration::DatabaseExportConfig;
     use crate::processing::sensor_data_message::{AbsoluteSensorReading, UnwoundSensorDataMessage};
+    use std::sync::Arc;
     use tokio::sync::mpsc;
 
-    fn create_message(sensor_id: &str) -> UnwoundSensorDataMessage {
-        UnwoundSensorDataMessage {
-            sensor_id: sensor_id.to_string(),
+    fn create_message(sensor_id: &str) -> Arc<UnwoundSensorDataMessage> {
+        Arc::new(UnwoundSensorDataMessage {
+            sensor_id: Arc::from(sensor_id),
             readings: Box::new([AbsoluteSensorReading {
                 value: 10.0,
                 timestamp: 1_000_000_000,
             }]),
-        }
+        })
     }
 
     #[tokio::test]
@@ -109,15 +110,15 @@ mod tests {
         // Verify fast channel received correct messages
         let fast_batch = fast_rx.recv().await.unwrap();
         assert_eq!(fast_batch.len(), 2);
-        assert_eq!(fast_batch[0].sensor_id, "sensor_fast_1");
-        assert_eq!(fast_batch[1].sensor_id, "sensor_fast_2");
+        assert_eq!(fast_batch[0].sensor_id.as_ref(), "sensor_fast_1");
+        assert_eq!(fast_batch[1].sensor_id.as_ref(), "sensor_fast_2");
         assert!(fast_rx.try_recv().is_err());
 
         // Verify normal channel received correct messages
         let normal_batch = normal_rx.recv().await.unwrap();
         assert_eq!(normal_batch.len(), 2);
-        assert_eq!(normal_batch[0].sensor_id, "sensor_normal_1");
-        assert_eq!(normal_batch[1].sensor_id, "sensor_normal_2");
+        assert_eq!(normal_batch[0].sensor_id.as_ref(), "sensor_normal_1");
+        assert_eq!(normal_batch[1].sensor_id.as_ref(), "sensor_normal_2");
         assert!(normal_rx.try_recv().is_err());
     }
 
@@ -143,8 +144,8 @@ mod tests {
 
         let normal_batch = normal_rx.recv().await.unwrap();
         assert_eq!(normal_batch.len(), 2);
-        assert_eq!(normal_batch[0].sensor_id, "sensor_1");
-        assert_eq!(normal_batch[1].sensor_id, "sensor_2");
+        assert_eq!(normal_batch[0].sensor_id.as_ref(), "sensor_1");
+        assert_eq!(normal_batch[1].sensor_id.as_ref(), "sensor_2");
     }
 
     #[tokio::test]

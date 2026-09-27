@@ -79,7 +79,8 @@ OKTA_ACCESS_TOKEN="$(curl --request POST \
     \"client_secret\":\"$OKTA_CLIENT_SECRET\",
     \"audience\":\"https://api.chronoracer.com\",
     \"grant_type\":\"client_credentials\"
-  }" | jq -r '.access_token')"
+  }" | jq -r '.access_token // empty')"
+[[ -z "$OKTA_ACCESS_TOKEN" ]] && echo "ERROR: OKTA_ACCESS_TOKEN is empty - something went wrong"
 ```
 
 Dashboard mint (same API): https://manage.auth0.com/dashboard/eu/chronoracer/apis/6a8af66a9af427fbc46ef664/test
