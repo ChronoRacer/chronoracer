@@ -24,10 +24,15 @@ Structure:
 |---  /core-config.yaml
 |---  /export
       |--- /db
-            |--- /{sensorId}.parquet (for each sensor in race)
+            |--- /{table}.parquet (one file per exported Influx table; the table is the sensor measurement)
       |--- /kafka
-            |--- /{topicName}.parquet (for each exported topic)
+            |--- /{topic}
+                  |--- /part-….parquet (many objects per topic)
 ```
+
+Under `{raceId}/`, `export/db` and `export/kafka` are `persistence.export.nested_path_in_bucket` and
+`kafka.export.nested_path_in_bucket` in [`core/default-config.yaml`](../core/default-config.yaml). The Kafka object
+name is the Redpanda template: [`export.gcs.yaml`](../core/redpanda/export.gcs.yaml).
 
 ## State bucket
 

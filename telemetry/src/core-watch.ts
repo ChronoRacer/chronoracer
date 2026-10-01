@@ -29,15 +29,41 @@ function logError(context: string, err: unknown): void {
   console.error(JSON.stringify(payload));
 }
 
+/** Identifies this service to Core. Another Watch with the same id replaces this one. */
+export const CLIENT_ID = "telemetry";
+
+/** Sensors to watch, or `undefined` for all sensors. Core owns the limits. */
+export type SensorSelection = string[] | undefined;
+
+/** `TELEMETRY_SENSORS`: unset or `*` selects all sensors, otherwise a comma-separated list. */
+export function parseSensorSelection(raw: string | undefined): SensorSelection {
+  if (raw === undefined || raw.trim() === "*") {
+    return undefined;
+  }
+  const sensors = raw
+    .split(",")
+    .map((sensor) => sensor.trim())
+    .filter((sensor) => sensor !== "");
+  if (sensors.length === 0) {
+    throw new Error(`TELEMETRY_SENSORS has no sensor ids: "${raw}" (use * for all sensors)`);
+  }
+  return sensors;
+}
+
 export type CoreWatchOptions = {
   coreTelemetryUrl: string;
   raceId: string | undefined;
+  sensors: SensorSelection;
   stats: StreamStats;
   abortSignal: AbortSignal;
 };
 
 export async function runCoreWatchLoop(options: CoreWatchOptions): Promise<void> {
-  const { coreTelemetryUrl, raceId, stats, abortSignal } = options;
+  const { coreTelemetryUrl, raceId, sensors, stats, abortSignal } = options;
+  const request =
+    sensors === undefined
+      ? { clientId: CLIENT_ID, all: {} }
+      : { clientId: CLIENT_ID, sensors: { sensorIds: sensors } };
   const address = coreTelemetryGrpcAddress(coreTelemetryUrl);
   let backoffMs = MIN_BACKOFF_MS;
 
@@ -49,7 +75,7 @@ export async function runCoreWatchLoop(options: CoreWatchOptions): Promise<void>
       process.stdout.write(`telemetry connecting Watch to ${address}\n`);
       backoffMs = MIN_BACKOFF_MS;
 
-      for await (const event of client.watch({}, { signal: abortSignal })) {
+      for await (const event of client.watch(request, { signal: abortSignal })) {
         if (event.hello !== undefined) {
           const hello = event.hello;
           stats.recordHello();
@@ -60,6 +86,7 @@ export async function runCoreWatchLoop(options: CoreWatchOptions): Promise<void>
               raceId: hello.raceId,
               streamId: hello.streamId,
               nextSequence: u64Json(hello.nextSequence),
+              selectedSensorCount: hello.selectedSensorCount,
             }),
           );
           if (raceId !== undefined && hello.raceId !== raceId) {

@@ -16,12 +16,11 @@ strip = true
 
 [dependencies]
 mimalloc = { version = "0.1.52", default-features = false }
-tokio = { version = "1.53.1", features = ["sync", "rt", "rt-multi-thread", "macros", "net", "time"] }
+tokio = { version = "1.53.1", features = ["sync", "rt", "rt-multi-thread", "macros", "net", "time", "signal"] }
 tokio-util = { version = "0.7.19", features = ["rt"] }
 # TODO: if using any new compression codec, add it to rdkafka features and packages in build-core-binary.sh (snappy, lz4 are bundled by default)
 rdkafka = { version = "0.39.0", features = ["cmake-build", "tokio"] }
 serde = { version = "1.0.229", features = ["derive"] }
-apache-avro = "0.22.0"
 config = { version = "0.15.26", features = ["yaml"] }
 futures-util = "0.3.34"
 rayon = { version = "1.12.0" }
@@ -43,11 +42,14 @@ google-cloud-monitoring-v3 = { version = "1.13.0" }
 google-cloud-api = { version = "1.7.0" }
 google-cloud-wkt = { version = "1.8.0" }
 anyhow = { version = "1.0.104" }
-ouroboros = "0.18.5"
 tonic = { version = "0.14.6", features = ["transport"] }
 prost = "0.14.4"
 tokio-stream = "0.1.19"
 tonic-prost = "0.14.6"
+
+[dev-dependencies]
+# Oracle for the hand-written sensor data decoder (differential tests).
+apache-avro = "0.22.0"
 
 [build-dependencies]
 protoc-bin-vendored = "3.2.0"

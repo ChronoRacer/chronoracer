@@ -4,7 +4,10 @@ runtime:
   # tokio_blocking is nearly unused, we can overlap with workers
   tokio_blocking: 1
   heartbeat_interval_s: 30
+  heartbeat_write_failure_threshold_s: 60
   data_pipeline_drain_timeout_s: 180
+  write_metrics_final_timeout_s: 15
+  offset_final_commit_timeout_s: 15
   notify_shutdown_on_failed_db_export: false
   notify_shutdown_on_failed_kafka_export: true
 race:
@@ -22,6 +25,7 @@ kafka:
     queued_max_messages_kbytes: 262144
     socket_receive_buffer_bytes: 1048576
     auto_commit_interval_ms: 5000
+    offset_lag_log_interval_s: 60
   sensor_data_topic:
     name: "data"
     num_partitions: 4
@@ -37,6 +41,7 @@ kafka:
       replication_factor: 1
     dlq_unknown_key: "unknown"
     publish_timeout_sec: 5
+    max_inflight_sends: 256
   heartbeat_topic:
     name: "heartbeat"
     num_partitions: 1
@@ -48,6 +53,7 @@ kafka:
     nested_path_in_bucket: "export/kafka"
     local_path: "/export/kafka"
     max_retries: 2
+    attempt_timeout_s: 300
 processing:
   message_channel_buffer_size: 64
   message_batch_size: 1000
@@ -66,16 +72,22 @@ persistence:
   flush_max_combined_batch_size: 7000
   flush_interval_ms: 4000
   max_inflight_db_writes: 7
+  write_retry_initial_backoff_ms: 200
+  write_retry_max_backoff_ms: 10000
   export:
     compression_level: 6
     compression_type: ZSTD
     vm_export_dir: "/export/db"
+    nested_path_in_bucket: "export/db"
     max_retries: 3
+    attempt_timeout_s: 600
 gcp:
   enabled: false
   export_bucket: "chronoracer-race"
   max_retries: 2
   max_gcs_concurrent_uploads: 3
+  upload_timeout_s: 180
+  pubsub_publish_timeout_s: 30
   project_id: "chronoracer"
   pubsub_topic_id: "export-done"
   allow_unknown_gce_metrics: true
@@ -83,3 +95,4 @@ telemetry:
   port: 9470
   max_queue_points: 16384
   max_queue_age_ms: 250
+  max_subscribers: 4

@@ -7,7 +7,19 @@ service Telemetry {
   rpc Watch(WatchRequest) returns (stream StreamEvent);
 }
 
-message WatchRequest {}
+message WatchRequest {
+  string client_id = 1;
+  oneof selection {
+    AllSensors all = 2;
+    SensorList sensors = 3;
+  }
+}
+
+message AllSensors {}
+
+message SensorList {
+  repeated string sensor_ids = 1;
+}
 
 message StreamEvent {
   oneof payload {
@@ -22,6 +34,8 @@ message Hello {
   string race_id = 2;
   string stream_id = 3;
   uint64 next_sequence = 4;
+  // Distinct sensors accepted for this call. 0 when the call selected all sensors.
+  uint32 selected_sensor_count = 5;
 }
 
 message PointBatch {

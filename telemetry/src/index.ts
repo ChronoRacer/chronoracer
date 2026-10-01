@@ -1,5 +1,5 @@
 import { startHealthServer } from "./health.js";
-import { runCoreWatchLoop } from "./core-watch.js";
+import { parseSensorSelection, runCoreWatchLoop } from "./core-watch.js";
 import { StreamStats } from "./stats.js";
 
 function requiredEnv(name: string): string {
@@ -17,6 +17,7 @@ if (!Number.isInteger(port) || port <= 0) {
 
 const coreTelemetryUrl = requiredEnv("CORE_TELEMETRY_URL");
 const raceId = process.env.RACE_ID?.trim() || undefined;
+const sensors = parseSensorSelection(process.env.TELEMETRY_SENSORS);
 
 startHealthServer(port);
 
@@ -34,6 +35,7 @@ process.on("SIGTERM", () => {
 void runCoreWatchLoop({
   coreTelemetryUrl,
   raceId,
+  sensors,
   stats,
   abortSignal: abort.signal,
 }).catch((err) => {

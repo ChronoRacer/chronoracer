@@ -2,8 +2,9 @@
 
 Status: accepted
 
-Problem: Telemetry pulls a binary Protobuf preview from Core across the private race VPC. Application data moves only
-from Core to Telemetry. Core has no public address, so this hop does not need TLS. The consumer can be slow or absent.
+Problem: internal consumers (Telemetry and any other) pull a binary Protobuf preview from Core across the private
+race VPC. Application data moves only from Core to the consumer, apart from the request that selects it. Core has no
+public address, so this hop does not need TLS. A consumer can be slow or absent.
 Core must be able to drop preview data without a second, hand-rolled framing layer, and without a duplex API that can
 later carry commands into the ingest process.
 
@@ -16,13 +17,16 @@ outbound, stays in [ADR - Dashboard and live telemetry](adr-dashboard.md).
 Core serves **one gRPC server-streaming RPC** over plaintext HTTP/2 (h2c).
 
 - Package `chronoracer.telemetry.v1`, service `Telemetry`, rpc `Watch(WatchRequest) returns (stream StreamEvent)`.
-- `WatchRequest` is empty. One gRPC message is one `StreamEvent` (`hello`, `point_batch`, or `gap`), not one sensor point.
+- `WatchRequest` names the caller and selects sensors; fields are in the proto and the rules are owned by
+  [Core](component-core.md#clients-and-sensor-selection). It is the only application data toward Core, and it is fixed at
+  call start. One gRPC message is one `StreamEvent` (`hello`, `point_batch`, or `gap`), not one sensor point.
 - No TLS. The client target is an `http://` URL (h2c prior knowledge).
 - No message compression.
 - HTTP/2 stream window and connection window are each 256 KiB.
 - A `point_batch` holds at most 1024 points, small enough to fit in that window. The sender may emit a smaller batch
   when the queue has less. It does not wait to fill 1024.
-- One active `Watch`. `max_concurrent_streams` is 2 so a replacement call can start before the previous one is cancelled.
+- Several concurrent `Watch` calls, one per `client_id`, capped by Core configuration. `max_concurrent_streams` is 2 per
+  connection so a replacement call can start before the previous one is cancelled.
 - HTTP/2 keepalive interval is 15 seconds.
 
 ## Why gRPC server streaming
@@ -47,7 +51,7 @@ the Core VM next to Influx. The private hop is not bandwidth-bound.
 ## Rejected
 
 **WebSocket.** It runs without TLS and already has binary frames, ping/pong, and a subprotocol for version. The socket
-is full duplex. This hop never sends application data toward Core. Ignoring client data frames would be a policy on
+is full duplex. After the request, this hop never sends application data toward Core. Ignoring client data frames would be a policy on
 top of a protocol that still allows them. The dashboard ADR chose WebSocket so Core would not invent framing. gRPC
 provides that framing as a one-way RPC.
 

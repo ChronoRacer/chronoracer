@@ -612,7 +612,6 @@ dependencies = [
  "google-cloud-wkt",
  "influxdb3-client",
  "mimalloc",
- "ouroboros",
  "prost",
  "protoc-bin-vendored",
  "rayon",

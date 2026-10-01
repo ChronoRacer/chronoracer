@@ -15,6 +15,7 @@ RUN pnpm run build
 
 FROM node:26-alpine AS runtime
 ENV NODE_ENV=production
+ENV TELEMETRY_SENSORS=*
 RUN npm install -g corepack && corepack enable
 WORKDIR /app/telemetry
 

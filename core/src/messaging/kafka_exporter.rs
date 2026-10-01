@@ -3,25 +3,27 @@ use crate::gcp::gcp_utils::to_bucket_path;
 use anyhow::{Result, anyhow};
 use compact_str::CompactString;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tokio::process::Command;
+use tokio::time::timeout;
 use tracing::{error, info, warn};
 
-pub struct KafkaExporter<'a> {
-    race_id: &'a CompactString,
-    gcp_config: &'a GcpConfig,
-    kafka_config: &'a KafkaConfig,
+pub struct KafkaExporter {
+    race_id: &'static CompactString,
+    gcp_config: &'static GcpConfig,
+    kafka_config: &'static KafkaConfig,
     rendered_template_path: PathBuf,
 }
 
-impl<'a> KafkaExporter<'a> {
+impl KafkaExporter {
     const RENDERED_TEMPLATE_FILE: &'static str = "export.yaml";
     const REDPANDA_CLI: &'static str = "rpk";
 
     pub fn new(
-        race_id: &'a CompactString,
-        gcp_config: &'a GcpConfig,
-        kafka_config: &'a KafkaConfig,
+        race_id: &'static CompactString,
+        gcp_config: &'static GcpConfig,
+        kafka_config: &'static KafkaConfig,
     ) -> Result<Self> {
         Self::ensure_redpanda_available()?;
 
@@ -133,50 +135,71 @@ impl<'a> KafkaExporter<'a> {
 
     async fn execute_redpanda_with_retry(&self) -> Result<()> {
         let max_retries = self.kafka_config.export.max_retries;
+        let attempt_timeout =
+            Duration::from_secs(u64::from(self.kafka_config.export.attempt_timeout_s.get()));
         let mut backoff = Duration::from_secs(1);
 
         for attempt in 1..=(max_retries + 1) {
-            let output = Command::new(Self::REDPANDA_CLI)
-                .args(["connect", "run"])
-                .arg(&self.rendered_template_path)
-                .output()
-                .await?;
+            match self.run_redpanda_once(attempt_timeout).await {
+                Ok(()) => {
+                    info!("Redpanda export process successful");
+                    return Ok(());
+                }
+                Err(error) => {
+                    if attempt > max_retries {
+                        error!("Process failed permanently: {error}");
+                        return Err(anyhow!(
+                            "Process failed after {attempt} attempts. Reason: {error}"
+                        ));
+                    }
 
-            info!("STDOUT:\n{}", String::from_utf8_lossy(&output.stdout));
-            if !output.stderr.is_empty() {
-                warn!("STDERR:\n{}", String::from_utf8_lossy(&output.stderr));
+                    warn!(
+                        "Process failed (attempt {}/{}). Retrying in {:?}... {}",
+                        attempt,
+                        max_retries + 1,
+                        backoff,
+                        error
+                    );
+
+                    tokio::time::sleep(backoff).await;
+                    backoff *= 2;
+                }
             }
-
-            if output.status.success() {
-                info!("Redpanda export process successful");
-                return Ok(());
-            }
-
-            let status_msg = output.status.code().map_or_else(
-                || "Process killed by signal".to_string(),
-                |c| format!("Exit code {c}"),
-            );
-
-            if attempt > max_retries {
-                error!("Process failed permanently. Last status: {}", status_msg);
-                return Err(anyhow!(
-                    "Process failed after {attempt} attempts. Reason: {status_msg}"
-                ));
-            }
-
-            warn!(
-                "Process failed (attempt {}/{}). Retrying in {:?}... {}",
-                attempt,
-                max_retries + 1,
-                backoff,
-                status_msg
-            );
-
-            tokio::time::sleep(backoff).await;
-            backoff *= 2;
         }
 
         Err(anyhow!("Retry count overflowed"))
+    }
+
+    async fn run_redpanda_once(&self, attempt_timeout: Duration) -> Result<()> {
+        let mut child = Command::new(Self::REDPANDA_CLI)
+            .args(["connect", "run"])
+            .arg(&self.rendered_template_path)
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|error| anyhow!("Failed to spawn {}: {error}", Self::REDPANDA_CLI))?;
+
+        match timeout(attempt_timeout, child.wait()).await {
+            Ok(Ok(status)) if status.success() => Ok(()),
+            Ok(Ok(status)) => {
+                let status_msg = status.code().map_or_else(
+                    || "Process killed by signal".to_string(),
+                    |c| format!("Exit code {c}"),
+                );
+                Err(anyhow!("{status_msg}"))
+            }
+            Ok(Err(error)) => Err(anyhow!("Failed waiting for {}: {error}", Self::REDPANDA_CLI)),
+            Err(_) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                Err(anyhow!(
+                    "{} timed out after {:?}",
+                    Self::REDPANDA_CLI,
+                    attempt_timeout
+                ))
+            }
+        }
     }
 }
 
@@ -184,6 +207,7 @@ impl<'a> KafkaExporter<'a> {
 mod tests {
     use super::*;
     use crate::configuration::{GcpConfig, KafkaConfig};
+    use std::num::NonZeroU16;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -202,25 +226,29 @@ mod tests {
         )
             .expect("template should be written");
 
-        let race_id = CompactString::from("race-123");
-        let gcp_config = GcpConfig {
+        let race_id: &'static CompactString =
+            Box::leak(Box::new(CompactString::from("race-123")));
+        let gcp_config: &'static GcpConfig = Box::leak(Box::new(GcpConfig {
             enabled: true,
             project_id: "project".to_string(),
             pubsub_topic_id: "topic".to_string(),
             export_bucket: "bucket".to_string(),
             max_retries: 1,
-            max_gcs_concurrent_uploads: 1,
+            max_gcs_concurrent_uploads: NonZeroU16::new(1).unwrap(),
+            upload_timeout_s: NonZeroU16::new(180).unwrap(),
+            pubsub_publish_timeout_s: NonZeroU16::new(30).unwrap(),
             allow_unknown_gce_metrics: false,
-        };
+        }));
         let mut kafka_config = KafkaConfig::mock_config();
         kafka_config.brokers = vec!["broker-a:9092".to_string(), "broker-b:9092".to_string()];
         kafka_config.export.export_topics = vec!["data".to_string(), "dlq".to_string()];
         kafka_config.export.nested_path_in_bucket = "/exports/".to_string();
         kafka_config.export.local_path = PathBuf::from("exports");
+        let kafka_config: &'static KafkaConfig = Box::leak(Box::new(kafka_config));
         let exporter = KafkaExporter {
-            race_id: &race_id,
-            gcp_config: &gcp_config,
-            kafka_config: &kafka_config,
+            race_id,
+            gcp_config,
+            kafka_config,
             rendered_template_path: rendered_path.clone(),
         };
 

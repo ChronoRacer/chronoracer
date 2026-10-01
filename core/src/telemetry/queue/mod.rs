@@ -1,14 +1,18 @@
 use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use crate::runtime_configuration::RetainReadTimeValue;
+use arc_swap::ArcSwap;
 use compact_str::CompactString;
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
 
 pub(crate) const MAX_POINTS_PER_BATCH: usize = 1024;
+
+/// First sequence every `Watch` call assigns. Each call has its own sequence space.
+pub(crate) const FIRST_SEQUENCE: u64 = 1;
 
 /// One `offer` is one slot. The point budget admits data; a full channel is only the fallback
 /// when the telemetry task is not draining.
@@ -18,15 +22,75 @@ const HANDOFF_SLOTS: usize = 256;
 /// replacement batch that eviction will keep.
 const INFLIGHT_BUFFERS: usize = 2;
 
+/// Points of one sensor that a batch could not hand off.
+type Miss = (Arc<str>, u64);
+
+/// Which sensors a subscriber receives.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Filter {
+    All,
+    Sensors(HashSet<CompactString>),
+}
+
+impl Filter {
+    /// Build a list filter. Duplicates collapse.
+    pub(crate) fn sensors<I, S>(ids: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<CompactString>,
+    {
+        Self::Sensors(ids.into_iter().map(Into::into).collect())
+    }
+
+    fn wants(&self, sensor_id: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Sensors(set) => set.contains(sensor_id),
+        }
+    }
+
+    /// Distinct selected sensors. Zero for `All`.
+    pub(crate) fn selected_count(&self) -> usize {
+        match self {
+            Self::All => 0,
+            Self::Sensors(set) => set.len(),
+        }
+    }
+}
+
+/// Union of every subscriber's filter. `offer` skips messages nobody wants.
+enum Interest {
+    Nobody,
+    Watching(Filter),
+}
+
+impl Interest {
+    fn union(subscribers: &[Arc<Subscriber>]) -> Self {
+        if subscribers.is_empty() {
+            return Self::Nobody;
+        }
+        let mut union = HashSet::new();
+        for subscriber in subscribers {
+            match &subscriber.filter {
+                Filter::All => return Self::Watching(Filter::All),
+                Filter::Sensors(set) => union.extend(set.iter().cloned()),
+            }
+        }
+        Self::Watching(Filter::Sensors(union))
+    }
+}
+
 struct Incoming {
     messages: Vec<Arc<UnwoundSensorDataMessage>>,
     driver_id: Arc<CompactString>,
     enqueued_at: Instant,
-    generation: u64,
+    /// Epoch read before the interest, so a subscriber joining later can tell whether this batch
+    /// was already filtered against its sensors.
+    epoch: u64,
     /// Points reserved in `inflight` for `messages`.
     points: usize,
-    /// Points from this batch that did not fit the point budget.
-    missed: u64,
+    /// Points from this batch that did not fit the point budget, by sensor.
+    missed: Vec<Miss>,
 }
 
 struct Queued {
@@ -66,8 +130,6 @@ pub(crate) enum Drain {
 }
 
 struct State {
-    generation: u64,
-    active: bool,
     /// Next sequence to assign. A miss advances this and stores no point slot.
     next_sequence: u64,
     /// Next sequence `try_drain` has not returned.
@@ -79,10 +141,104 @@ struct State {
     slots: VecDeque<Queued>,
 }
 
-/// Sync handoff from the parse threads into the serving queue.
+impl State {
+    const fn new() -> Self {
+        Self {
+            next_sequence: FIRST_SEQUENCE,
+            next_unread: FIRST_SEQUENCE,
+            points: 0,
+            slots: VecDeque::new(),
+        }
+    }
+}
+
+/// One `Watch` call: its filter, its own queue, its own sequence space.
 ///
-/// `offer` never locks the serving queue and never waits. With no caller it returns after one
-/// atomic load. Sequencing, age, and the point cap run in `pull_ingress`, on the telemetry task.
+/// Queued points are `Arc` references to messages shared with every other subscriber and with
+/// persistence. A subscriber costs one slot per message, not a copy of the points.
+pub(crate) struct Subscriber {
+    client_id: String,
+    filter: Filter,
+    /// Epoch this subscriber joined at. Handoff batches and misses from earlier epochs were
+    /// filtered without its sensors and are not its data.
+    join_epoch: u64,
+    replaced: AtomicBool,
+    notify: Notify,
+    state: Mutex<State>,
+}
+
+impl Subscriber {
+    pub(crate) fn notify(&self) -> &Notify {
+        &self.notify
+    }
+
+    pub(crate) fn client_id(&self) -> &str {
+        &self.client_id
+    }
+
+    pub(crate) fn selected_sensor_count(&self) -> usize {
+        self.filter.selected_count()
+    }
+
+    fn lock(&self) -> MutexGuard<'_, State> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Mark replaced, drop the unsent queue, and wake the stream so it ends.
+    fn retire(&self) {
+        self.replaced.store(true, Ordering::Release);
+        {
+            let mut state = self.lock();
+            state.points = 0;
+            state.slots.clear();
+        }
+        self.notify.notify_waiters();
+    }
+
+    /// Sequence this subscriber's share of a pull. Returns whether its queue changed.
+    fn ingest(
+        &self,
+        incoming: &[Incoming],
+        misses: &[(u64, Arc<str>, u64)],
+        max_points: usize,
+        max_age: Duration,
+    ) -> bool {
+        let mut state = self.lock();
+        let points_before = state.points;
+        let mut changed = false;
+        for item in incoming {
+            if item.epoch >= self.join_epoch {
+                changed |= sequence_batch(&mut state, item, &self.filter);
+            }
+        }
+        // Full-channel refusals have no slot. They follow every batch this pull sequenced.
+        let refused = misses
+            .iter()
+            .filter(|(epoch, sensor, _)| *epoch >= self.join_epoch && self.filter.wants(sensor))
+            .fold(0u64, |total, (_, _, count)| total.saturating_add(*count));
+        if refused > 0 {
+            state.next_sequence = state.next_sequence.saturating_add(refused);
+            changed = true;
+        }
+        evict(&mut state, max_points, max_age);
+        debug_assert_consistent(&state);
+        changed || state.points != points_before
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SubscribeError {
+    /// Every subscriber slot is held by another `client_id`.
+    Full,
+}
+
+/// Sync handoff from the parse threads into per-subscriber serving queues.
+///
+/// `offer` never locks a serving queue and never waits. With no subscriber it returns after
+/// reading the interest. Sequencing, filtering, age, and the point cap run in `pull_ingress`, on
+/// the telemetry task.
 #[derive(Clone)]
 pub struct PreviewHub {
     inner: Arc<Inner>,
@@ -91,19 +247,24 @@ pub struct PreviewHub {
 struct Inner {
     driver: &'static RetainReadTimeValue<CompactString>,
     max_points: usize,
-    /// Admit budget for batches not yet sequenced. Above this, `offer` records a tail gap.
+    /// Admit budget for batches not yet sequenced. Above this, `offer` records a miss.
     max_inflight: usize,
     max_age: Duration,
-    connected: AtomicBool,
-    /// Mirrors `State::generation` so `offer` can tag a batch without the queue lock.
-    generation: AtomicU64,
+    max_subscribers: usize,
+    /// Bumped when a subscriber joins. Stored after `interest`, read before it.
+    epoch: AtomicU64,
+    /// Union of subscriber filters, read by `offer` without a lock.
+    interest: ArcSwap<Interest>,
     inflight: AtomicUsize,
-    /// Drops that did not fit in a handoff slot. The success path of `offer` does not lock this.
-    missed: Mutex<Missed>,
+    /// Drops that did not fit in a handoff slot, by `(epoch, sensor)`. The success path of
+    /// `offer` does not lock this.
+    missed: Mutex<HashMap<(u64, Arc<str>), u64>>,
+    /// Wakes the pump when `offer` hands over a batch.
     notify: Arc<Notify>,
     tx: SyncSender<Incoming>,
     rx: Mutex<Receiver<Incoming>>,
-    state: Mutex<State>,
+    /// Lock order: `rx`, then `registry`, then a subscriber's state.
+    registry: Mutex<Vec<Arc<Subscriber>>>,
     stream_id: String,
 }
 
@@ -113,6 +274,7 @@ impl PreviewHub {
         driver: &'static RetainReadTimeValue<CompactString>,
         max_points: usize,
         max_age: Duration,
+        max_subscribers: usize,
     ) -> Self {
         let (tx, rx) = std::sync::mpsc::sync_channel(HANDOFF_SLOTS);
         Self {
@@ -121,24 +283,15 @@ impl PreviewHub {
                 max_points,
                 max_inflight: inflight_budget(max_points),
                 max_age,
-                connected: AtomicBool::new(false),
-                generation: AtomicU64::new(0),
+                max_subscribers,
+                epoch: AtomicU64::new(0),
+                interest: ArcSwap::from_pointee(Interest::Nobody),
                 inflight: AtomicUsize::new(0),
-                missed: Mutex::new(Missed {
-                    generation: 0,
-                    count: 0,
-                }),
+                missed: Mutex::new(HashMap::new()),
                 notify: Arc::new(Notify::new()),
                 tx,
                 rx: Mutex::new(rx),
-                state: Mutex::new(State {
-                    generation: 0,
-                    active: false,
-                    next_sequence: 1,
-                    next_unread: 1,
-                    points: 0,
-                    slots: VecDeque::new(),
-                }),
+                registry: Mutex::new(Vec::new()),
                 stream_id: new_stream_id(),
             }),
         }
@@ -149,6 +302,7 @@ impl PreviewHub {
         &self.inner.stream_id
     }
 
+    /// Wakes the pump. Subscribers wait on their own notify.
     #[must_use]
     pub fn notifier(&self) -> Arc<Notify> {
         Arc::clone(&self.inner.notify)
@@ -159,48 +313,56 @@ impl PreviewHub {
         self.inner.max_age
     }
 
-    /// Points sequenced and not yet drained. Test and diagnostics only.
+    /// Points sequenced and not yet drained, summed over subscribers. Test and diagnostics only.
     #[must_use]
     pub fn queued_points(&self) -> usize {
-        self.lock().points
+        self.registry_lock()
+            .iter()
+            .map(|subscriber| subscriber.lock().points)
+            .sum()
     }
 
     /// Hand the batch to the telemetry task.
     ///
     /// One `try_send` for the whole batch. Returns as soon as that send accepts or refuses.
-    /// Does not lock the serving queue. A point-budget miss travels with the batch. A full
-    /// channel adds the same points to the miss cell. Either becomes a gap on the next
-    /// `pull_ingress`.
+    /// Does not lock a serving queue. Messages no subscriber wants are skipped before they
+    /// take budget. A point-budget miss travels with the batch. A full channel adds the same
+    /// points to the miss cell. Either becomes a gap on the next `pull_ingress`.
     pub fn offer(&self, batch: &[Arc<UnwoundSensorDataMessage>]) {
-        if !self.inner.connected.load(Ordering::Acquire) {
+        // Epoch first: a batch tagged with an epoch was filtered by an interest at least that new.
+        let epoch = self.inner.epoch.load(Ordering::Acquire);
+        let interest = self.inner.interest.load();
+        let Interest::Watching(union) = &**interest else {
             return;
-        }
-        let generation = self.inner.generation.load(Ordering::Acquire);
+        };
         let driver_id = self.inner.driver.get();
         let enqueued_at = Instant::now();
-        let mut messages = Vec::with_capacity(batch.len());
+        let mut messages = Vec::new();
         let mut parked = 0usize;
-        let mut missed = 0u64;
+        let mut missed: Vec<Miss> = Vec::new();
         for message in batch {
             let points = message.readings.len();
-            if points == 0 {
+            if points == 0 || !union.wants(&message.sensor_id) {
                 continue;
             }
             if self.try_reserve(points) {
+                if messages.is_empty() {
+                    messages.reserve(batch.len());
+                }
                 parked += points;
                 messages.push(Arc::clone(message));
             } else {
-                missed = missed.saturating_add(as_u64(points));
+                missed.push((Arc::clone(&message.sensor_id), as_u64(points)));
             }
         }
-        if parked == 0 && missed == 0 {
+        if messages.is_empty() && missed.is_empty() {
             return;
         }
         let incoming = Incoming {
             messages,
             driver_id,
             enqueued_at,
-            generation,
+            epoch,
             points: parked,
             missed,
         };
@@ -208,92 +370,113 @@ impl PreviewHub {
             self.inner.tx.try_send(incoming)
         {
             self.release_inflight(incoming.points);
-            self.note_miss(
-                generation,
-                as_u64(incoming.points).saturating_add(incoming.missed),
-            );
+            let refused = incoming
+                .messages
+                .iter()
+                .map(|message| (Arc::clone(&message.sensor_id), as_u64(message.readings.len())))
+                .chain(incoming.missed);
+            self.note_misses(epoch, refused);
         }
         self.inner.notify.notify_waiters();
     }
 
-    /// Start a `Watch`. Drops any previous queue and resets sequence to 1.
-    pub(crate) fn begin_stream(&self) -> (u64, u64) {
-        let generation = {
-            let mut state = self.lock();
-            let generation = state.generation.wrapping_add(1).max(1);
-            state.generation = generation;
-            state.active = true;
-            state.next_sequence = 1;
-            state.next_unread = 1;
-            state.points = 0;
-            state.slots.clear();
-            self.inner.generation.store(generation, Ordering::Release);
-            generation
-        };
-        self.inner.connected.store(true, Ordering::Release);
-        self.pull_ingress();
-        self.inner.notify.notify_waiters();
-        (generation, 1)
-    }
-
-    pub(crate) fn end_stream(&self, generation: u64) {
+    /// Start a `Watch`. A `client_id` already subscribed is replaced and its stream ends. A new
+    /// `client_id` needs a free slot. The returned subscriber sees only batches offered after
+    /// this call.
+    pub(crate) fn subscribe(
+        &self,
+        client_id: &str,
+        filter: Filter,
+    ) -> Result<Arc<Subscriber>, SubscribeError> {
+        let mut registry = self.registry_lock();
+        if let Some(position) = registry
+            .iter()
+            .position(|subscriber| subscriber.client_id == client_id)
         {
-            let mut state = self.lock();
-            if state.generation != generation {
-                return;
-            }
-            state.active = false;
-            state.points = 0;
-            state.slots.clear();
-            self.inner.connected.store(false, Ordering::Release);
+            registry.remove(position).retire();
+        } else if registry.len() >= self.inner.max_subscribers {
+            return Err(SubscribeError::Full);
         }
+        let join_epoch = self.inner.epoch.load(Ordering::Acquire).wrapping_add(1).max(1);
+        let subscriber = Arc::new(Subscriber {
+            client_id: client_id.to_owned(),
+            filter,
+            join_epoch,
+            replaced: AtomicBool::new(false),
+            notify: Notify::new(),
+            state: Mutex::new(State::new()),
+        });
+        registry.push(Arc::clone(&subscriber));
+        // Interest before epoch: an offer that reads the new epoch also reads this interest.
+        self.inner
+            .interest
+            .store(Arc::new(Interest::union(&registry)));
+        self.inner.epoch.store(join_epoch, Ordering::Release);
+        drop(registry);
         self.inner.notify.notify_waiters();
+        Ok(subscriber)
     }
 
-    /// Sequence handoff batches and drop oldest points that are past age or the point cap.
+    /// End a `Watch`. A subscriber that was already replaced is not in the registry, so a late
+    /// call from the replaced stream leaves the replacement alone.
+    pub(crate) fn unsubscribe(&self, subscriber: &Arc<Subscriber>) {
+        {
+            let mut registry = self.registry_lock();
+            let Some(position) = registry
+                .iter()
+                .position(|candidate| Arc::ptr_eq(candidate, subscriber))
+            else {
+                return;
+            };
+            registry.remove(position);
+            self.inner
+                .interest
+                .store(Arc::new(Interest::union(&registry)));
+        }
+        let mut state = subscriber.lock();
+        state.points = 0;
+        state.slots.clear();
+    }
+
+    /// Sequence handoff batches into each subscriber and drop its oldest points that are past
+    /// age or the point cap.
     ///
-    /// Pump and `Watch` both call this. The state mutex serializes them. `offer` never calls it.
-    /// Returns whether a waiter should be woken.
+    /// Pump and every `Watch` call this. One caller drains the handoff and distributes it, so
+    /// subscribers see batches in offer order. A caller that finds the handoff busy returns
+    /// `false`: the busy one notifies whoever changed. `offer` never calls it. Returns whether
+    /// any subscriber changed.
     pub(crate) fn pull_ingress(&self) -> bool {
-        let incoming = {
-            let rx = self.rx_lock();
-            let mut incoming = Vec::new();
-            while let Ok(item) = rx.try_recv() {
-                incoming.push(item);
-            }
-            incoming
+        let Some(rx) = self.try_rx_lock() else {
+            return false;
         };
+        let mut incoming = Vec::new();
+        while let Ok(item) = rx.try_recv() {
+            incoming.push(item);
+        }
         for item in &incoming {
             self.release_inflight(item.points);
         }
-
-        let mut state = self.lock();
-        let mut changed = false;
-        if state.active {
-            for item in incoming {
-                changed |= sequence_batch(&mut state, item);
+        let misses = self.take_misses();
+        let registry = self.registry_lock();
+        let mut any = false;
+        for subscriber in registry.iter() {
+            if subscriber.ingest(&incoming, &misses, self.inner.max_points, self.inner.max_age) {
+                subscriber.notify.notify_waiters();
+                any = true;
             }
-            let missed = self.take_misses(state.generation);
-            if missed > 0 {
-                // Full-channel refusals have no slot. They follow every batch this pull sequenced.
-                state.next_sequence = state.next_sequence.saturating_add(missed);
-                changed = true;
-            }
-        } else {
-            let _ = self.take_misses(state.generation);
         }
-        let points_before = state.points;
-        evict(&mut state, self.inner.max_points, self.inner.max_age);
-        debug_assert_consistent(&state);
-        changed || state.points != points_before
+        drop(registry);
+        drop(rx);
+        any
     }
 
-    pub(crate) fn try_drain(&self, generation: u64, batch_limit: usize) -> Drain {
+    pub(crate) fn try_drain(&self, subscriber: &Subscriber, batch_limit: usize) -> Drain {
         self.pull_ingress();
-        let mut state = self.lock();
-        if state.generation != generation || !state.active {
+        if subscriber.replaced.load(Ordering::Acquire) {
             return Drain::Replaced;
         }
+        let mut state = subscriber.lock();
+        evict(&mut state, self.inner.max_points, self.inner.max_age);
         pop_empty(&mut state);
         let unread_until = front_bound(&state);
         let gap = take_gap(&mut state.next_unread, unread_until);
@@ -344,71 +527,55 @@ impl PreviewHub {
         if points == 0 {
             return;
         }
-        let mut current = self.inner.inflight.load(Ordering::Acquire);
-        loop {
-            let next = current.saturating_sub(points);
-            match self.inner.inflight.compare_exchange_weak(
-                current,
-                next,
-                Ordering::Release,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    debug_assert!(current >= points, "inflight underflow");
-                    return;
-                }
-                Err(observed) => current = observed,
+        // Underflow is a bug (a release without a matching reserve), not a runtime case.
+        let previous = self.inner.inflight.fetch_sub(points, Ordering::Release);
+        debug_assert!(previous >= points, "inflight underflow");
+    }
+
+    /// One lock per refused batch. The map holds one entry per `(epoch, sensor)` until the next
+    /// pull takes it.
+    fn note_misses(&self, epoch: u64, refused: impl Iterator<Item = Miss>) {
+        let mut missed = self.miss_lock();
+        for (sensor, points) in refused {
+            if points == 0 {
+                continue;
             }
+            let count = missed.entry((epoch, sensor)).or_insert(0);
+            *count = count.saturating_add(points);
         }
     }
 
-    fn note_miss(&self, generation: u64, points: u64) {
-        if points == 0 {
-            return;
-        }
+    fn take_misses(&self) -> Vec<(u64, Arc<str>, u64)> {
         let mut missed = self.miss_lock();
-        if missed.generation == generation {
-            missed.count = missed.count.saturating_add(points);
-        } else if missed.generation < generation {
-            missed.generation = generation;
-            missed.count = points;
+        if missed.is_empty() {
+            return Vec::new();
         }
+        missed
+            .drain()
+            .map(|((epoch, sensor), count)| (epoch, sensor, count))
+            .collect()
     }
 
-    /// Take misses for `generation`. A newer generation's count stays. An older generation's
-    /// count is dropped.
-    fn take_misses(&self, generation: u64) -> u64 {
-        let mut missed = self.miss_lock();
-        if missed.count == 0 || missed.generation > generation {
-            return 0;
-        }
-        let count = std::mem::take(&mut missed.count);
-        if missed.generation == generation {
-            count
-        } else {
-            0
-        }
-    }
-
-    fn miss_lock(&self) -> MutexGuard<'_, Missed> {
+    fn miss_lock(&self) -> MutexGuard<'_, HashMap<(u64, Arc<str>), u64>> {
         self.inner
             .missed
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn lock(&self) -> MutexGuard<'_, State> {
+    fn registry_lock(&self) -> MutexGuard<'_, Vec<Arc<Subscriber>>> {
         self.inner
-            .state
+            .registry
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn rx_lock(&self) -> MutexGuard<'_, Receiver<Incoming>> {
-        self.inner
-            .rx
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    fn try_rx_lock(&self) -> Option<MutexGuard<'_, Receiver<Incoming>>> {
+        match self.inner.rx.try_lock() {
+            Ok(guard) => Some(guard),
+            Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
+            Err(TryLockError::WouldBlock) => None,
+        }
     }
 }
 
@@ -432,21 +599,18 @@ const fn admitted_inflight(current: usize, points: usize, max: usize) -> Option<
     }
 }
 
-fn sequence_batch(state: &mut State, item: Incoming) -> bool {
-    if item.generation != state.generation {
-        return false;
-    }
+fn sequence_batch(state: &mut State, item: &Incoming, filter: &Filter) -> bool {
     let mut changed = false;
-    for message in item.messages {
+    for message in &item.messages {
         let points = message.readings.len();
-        if points == 0 {
+        if points == 0 || !filter.wants(&message.sensor_id) {
             continue;
         }
         let first_sequence = state.next_sequence;
         state.next_sequence = state.next_sequence.saturating_add(as_u64(points));
         state.points = state.points.saturating_add(points);
         state.slots.push_back(Queued {
-            message,
+            message: Arc::clone(message),
             driver_id: Arc::clone(&item.driver_id),
             enqueued_at: item.enqueued_at,
             first_sequence,
@@ -454,9 +618,14 @@ fn sequence_batch(state: &mut State, item: Incoming) -> bool {
         });
         changed = true;
     }
-    if item.missed > 0 {
-        // Budget misses stay behind this batch, ahead of later channel items.
-        state.next_sequence = state.next_sequence.saturating_add(item.missed);
+    // Budget misses stay behind this batch, ahead of later channel items.
+    let missed = item
+        .missed
+        .iter()
+        .filter(|(sensor, _)| filter.wants(sensor))
+        .fold(0u64, |total, (_, count)| total.saturating_add(*count));
+    if missed > 0 {
+        state.next_sequence = state.next_sequence.saturating_add(missed);
         changed = true;
     }
     changed
@@ -599,11 +768,6 @@ fn take_front_points(state: &mut State, n: usize) -> Option<Chunk> {
     })
 }
 
-struct Missed {
-    generation: u64,
-    count: u64,
-}
-
 fn as_u64(n: usize) -> u64 {
     u64::try_from(n).unwrap_or(u64::MAX)
 }
@@ -622,9 +786,6 @@ fn debug_assert_consistent(_state: &State) {}
 #[cfg(debug_assertions)]
 #[inline]
 fn debug_assert_consistent(state: &State) {
-    if !cfg!(debug_assertions) {
-        return;
-    }
     debug_assert!(state.next_unread <= state.next_sequence);
     let mut covered_end = state.next_unread;
     let mut summed = 0usize;

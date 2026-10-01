@@ -65,6 +65,9 @@ Race Terraform attaches those resources to the Cloud Run service. The port is ow
 [`platform.json`](../infra/contract/platform.json). No application credential or TLS is used on this private hop; the
 dedicated subnet and firewall are the authorization boundary, matching the private Kafka listener model.
 
+Telemetry calls `Watch` as `client_id` `telemetry` and selects sensors with `TELEMETRY_SENSORS`. Selection rules, limits,
+and what happens on a second call with the same id are owned by [Core](component-core.md#clients-and-sensor-selection).
+
 Telemetry retries the private Core connection while the race service exists. Core may not be listening when Cloud Run
 starts, and either process may restart. Disconnect and reconnect never affect Core ingestion. Stream ordering,
 versioning, payload fields, and loss semantics are owned by [Core](component-core.md#telemetry-stream).
@@ -94,6 +97,9 @@ Environment-specific values are injected by race Terraform:
 | `OAUTH_CLIENT_ID`     | [`platform.json`](../infra/contract/platform.json) | Shared Auth0 application                |
 | `OAUTH_CLIENT_SECRET` | Shared browser OAuth secret (Secret Manager)       | Authorization-code token exchange       |
 | `OAUTH_ISSUER`        | [`platform.json`](../infra/contract/platform.json) | Auth0 authorization and token endpoints |
+
+`TELEMETRY_SENSORS` is the exception: the stub image sets it (`*`, all sensors) and Terraform does not inject it. It
+is unset or `*` for all sensors, otherwise a comma-separated sensor id list.
 
 Resource names and ports remain owned by contract files. Cloud Run wiring belongs to
 [Terraform](component-terraform.md); Auth0 values and callbacks belong to

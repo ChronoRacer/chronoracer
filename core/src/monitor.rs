@@ -1,8 +1,9 @@
 use crate::configuration::CoreConfig;
 use crate::gcp;
-use crate::gcp::pubsub::GcsPubSubManager;
-use crate::gcp::storage::Bucket;
+use crate::gcp::pubsub::PubSubManager;
 use crate::messaging::kafka_exporter::KafkaExporter;
+use crate::messaging::offset_ledger::OffsetLedger;
+use crate::messaging::partial_message::SourceOffset;
 use crate::persistence::database_exporter::InfluxDbExporter;
 use anyhow::Result;
 use gcp::storage;
@@ -25,32 +26,33 @@ impl Drop for DataTaskTerminationNotifier {
     }
 }
 
-pub struct Monitor<'a> {
+pub struct Monitor {
     data_cancel_token: CancellationToken,
     data_tracker: TaskTracker,
     config: &'static CoreConfig,
     database_exporter: InfluxDbExporter,
-    kafka_exporter: KafkaExporter<'a>,
-    gcs_storage_manager: Option<GcsStorageManager<'a>>,
-    gcp_pubsub_manager: Option<GcsPubSubManager<'a>>,
-    notify_shutdown_on_failed_db_export: bool,
-    notify_shutdown_on_failed_kafka_export: bool,
+    kafka_exporter: KafkaExporter,
+    gcs_storage_manager: Option<GcsStorageManager>,
+    pubsub_manager: Option<PubSubManager>,
+    sensor_offsets: OffsetLedger,
+    control_offsets: OffsetLedger,
     data_task_termination_sender: UnboundedSender<()>,
     data_task_termination_receiver: Option<UnboundedReceiver<()>>,
 }
 
-impl<'a> Monitor<'a> {
+impl Monitor {
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         data_cancel_token: CancellationToken,
         data_task_tracker: TaskTracker,
         config: &'static CoreConfig,
         database_exporter: InfluxDbExporter,
-        kafka_exporter: KafkaExporter<'a>,
-        gcs_storage_manager: Option<GcsStorageManager<'a>>,
-        gcp_pubsub_manager: Option<GcsPubSubManager<'a>>,
-        notify_shutdown_on_failed_db_export: bool,
-        notify_shutdown_on_failed_kafka_export: bool,
+        kafka_exporter: KafkaExporter,
+        gcs_storage_manager: Option<GcsStorageManager>,
+        pubsub_manager: Option<PubSubManager>,
+        sensor_offsets: OffsetLedger,
+        control_offsets: OffsetLedger,
     ) -> Self {
         let (data_task_termination_sender, data_task_termination_receiver) =
             tokio::sync::mpsc::unbounded_channel();
@@ -61,9 +63,9 @@ impl<'a> Monitor<'a> {
             database_exporter,
             kafka_exporter,
             gcs_storage_manager,
-            gcp_pubsub_manager,
-            notify_shutdown_on_failed_db_export,
-            notify_shutdown_on_failed_kafka_export,
+            pubsub_manager,
+            sensor_offsets,
+            control_offsets,
             data_task_termination_sender,
             data_task_termination_receiver: Some(data_task_termination_receiver),
         }
@@ -93,23 +95,60 @@ impl<'a> Monitor<'a> {
         self.data_tracker.close();
     }
 
-    pub async fn execute_shutdown_sequence(&self) {
+    pub fn data_pipeline_drain_timeout(&self) -> Duration {
+        Duration::from_secs(u64::from(self.config.runtime.data_pipeline_drain_timeout_s))
+    }
+
+    pub fn write_metrics_final_timeout(&self) -> Duration {
+        Duration::from_secs(u64::from(
+            self.config.runtime.write_metrics_final_timeout_s.get(),
+        ))
+    }
+
+    /// Synchronously commits what both consumers have stored, each bounded by
+    /// `runtime.offset_final_commit_timeout_s`. Call after the data pipeline and the DLQ are drained:
+    /// only then is everything the pipeline will ever settle stored. Failure is logged; what stays
+    /// uncommitted is replayed after a restart.
+    pub async fn commit_offsets(&self) {
+        let timeout = Duration::from_secs(u64::from(
+            self.config.runtime.offset_final_commit_timeout_s.get(),
+        ));
+        self.sensor_offsets.commit_final(timeout).await;
+        self.control_offsets.commit_final(timeout).await;
+    }
+
+    /// The race-end sequence is over (exports succeeded or not): settles the SHUTDOWN event, which
+    /// the control filter kept back, and commits it.
+    pub async fn commit_shutdown(&self, shutdown: SourceOffset) {
+        self.control_offsets
+            .settle_one(shutdown.partition, shutdown.offset);
+        self.control_offsets
+            .commit_final(Duration::from_secs(u64::from(
+                self.config.runtime.offset_final_commit_timeout_s.get(),
+            )))
+            .await;
+    }
+
+    /// Stops the data sink and waits for tracked data tasks to finish (bounded by drain timeout).
+    pub async fn drain_data_pipeline(&self) {
         info!("Stopping data pipeline ingestion");
         self.data_cancel_token.cancel();
         info!("Waiting for data pipeline drain");
         self.data_tracker.close();
 
-        let drain_timeout =
-            Duration::from_secs(u64::from(self.config.runtime.data_pipeline_drain_timeout_s));
-        match timeout(drain_timeout, self.data_tracker.wait()).await {
+        match timeout(self.data_pipeline_drain_timeout(), self.data_tracker.wait()).await {
             Ok(()) => {
                 info!("Data pipeline drained");
             }
             Err(_) => {
-                error!("Data pipeline drain timed out. Still proceeding with export.");
+                error!("Data pipeline drain timed out. Still proceeding.");
             }
         }
+    }
 
+    /// Kafka + Influx export, GCS upload, and optional export-done Pub/Sub. Call only after the
+    /// data pipeline and DLQ queue have been drained.
+    pub async fn execute_exports(&self) {
         let export_kafka = self.kafka_exporter.export_kafka();
 
         let export_database_future = self.database_exporter.export_database();
@@ -129,7 +168,13 @@ impl<'a> Monitor<'a> {
         let db_succeeded = match db_export {
             Ok(paths) => {
                 info!("Database export complete with {} files", paths.len());
-                match Self::upload_to_gcs(self.gcs_storage_manager.as_ref(), paths).await {
+                match Self::upload_to_gcs(
+                    self.gcs_storage_manager.as_ref(),
+                    paths,
+                    &self.config.persistence.export.nested_path_in_bucket,
+                )
+                .await
+                {
                     Ok(()) => true,
                     Err(error) => {
                         error!(?error, "Failed to upload to GCS");
@@ -145,14 +190,16 @@ impl<'a> Monitor<'a> {
 
         let kafka_notification = export_notification_allowed(
             kafka_succeeded,
-            self.notify_shutdown_on_failed_kafka_export,
+            self.config.runtime.notify_shutdown_on_failed_kafka_export,
         );
-        let db_notification =
-            export_notification_allowed(db_succeeded, self.notify_shutdown_on_failed_db_export);
+        let db_notification = export_notification_allowed(
+            db_succeeded,
+            self.config.runtime.notify_shutdown_on_failed_db_export,
+        );
 
         if kafka_notification && db_notification {
             info!("Sending shutdown notification...");
-            if let Err(error) = Self::notify_shutdown_complete(self.gcp_pubsub_manager.as_ref()).await {
+            if let Err(error) = Self::notify_shutdown_complete(self.pubsub_manager.as_ref()).await {
                 error!(?error, "Failed to send shutdown notification");
             }
         } else {
@@ -165,8 +212,9 @@ impl<'a> Monitor<'a> {
     }
 
     async fn upload_to_gcs(
-        gcs_storage_manager: Option<&GcsStorageManager<'a>>,
+        gcs_storage_manager: Option<&GcsStorageManager>,
         file_paths: Vec<PathBuf>,
+        nested_path_in_bucket: &str,
     ) -> Result<()> {
         if file_paths.is_empty() {
             warn!("GCS upload skipped - no files to upload");
@@ -175,19 +223,17 @@ impl<'a> Monitor<'a> {
         if let Some(gcs_storage_manager) = gcs_storage_manager {
             info!("Uploading database export to GCS");
             return gcs_storage_manager
-                .upload_files(file_paths, Bucket::ExportBucket)
+                .upload_files(file_paths, nested_path_in_bucket)
                 .await;
         }
         warn!("GCS upload skipped - storage manager not provided");
         Ok(())
     }
 
-    async fn notify_shutdown_complete(
-        gcp_pubsub_manager: Option<&GcsPubSubManager<'a>>,
-    ) -> Result<()> {
-        if let Some(gcp_pubsub_manager) = gcp_pubsub_manager {
+    async fn notify_shutdown_complete(pubsub_manager: Option<&PubSubManager>) -> Result<()> {
+        if let Some(pubsub_manager) = pubsub_manager {
             info!("Publishing shutdown notification");
-            return gcp_pubsub_manager.publish_export_done_message().await;
+            return pubsub_manager.publish_export_done_message().await;
         }
         warn!("Shutdown message publish skipped - pubsub manager not provided");
         Ok(())
@@ -204,14 +250,15 @@ mod tests {
 
     #[tokio::test]
     async fn upload_to_gcs_succeeds_when_storage_is_not_configured() {
-        let result = Monitor::upload_to_gcs(None, vec![PathBuf::from("export.parquet")]).await;
+        let result =
+            Monitor::upload_to_gcs(None, vec![PathBuf::from("export.parquet")], "export/db").await;
 
         assert!(result.is_ok());
     }
 
     #[tokio::test]
     async fn upload_to_gcs_succeeds_when_no_files() {
-        let result = Monitor::upload_to_gcs(None, vec![]).await;
+        let result = Monitor::upload_to_gcs(None, vec![], "export/db").await;
 
         assert!(result.is_ok());
     }

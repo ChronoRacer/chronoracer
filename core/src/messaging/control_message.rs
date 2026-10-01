@@ -5,6 +5,10 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::str::Utf8Error;
 
+/// Driver id limit in bytes. Same inline budget as sensor ids (`compact_str` / `String` layout).
+pub const MAX_DRIVER_ID_BYTES: usize = 24;
+const _: () = assert!(MAX_DRIVER_ID_BYTES == 24);
+
 pub enum CoreControlMessage {
     CHDRV(ChangeDriverMessage),
     SHUTDOWN,
@@ -35,6 +39,15 @@ pub enum MessageParseErrorKind {
     MissingKey,
     MissingPayload,
     InvalidPayload(Utf8Error),
+    InvalidDriverId(InvalidDriverId),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InvalidDriverId {
+    Empty,
+    TooLong,
+    ControlCharacter,
+    LineProtocolSpecial,
 }
 
 impl Error for MessageParseErrorKind {}
@@ -47,8 +60,45 @@ impl fmt::Display for MessageParseErrorKind {
             MessageParseErrorKind::InvalidPayload(decoding_error) => {
                 write!(f, "Failed to decode payload: {decoding_error}")
             }
+            MessageParseErrorKind::InvalidDriverId(reason) => {
+                write!(f, "Invalid driver id: {reason}")
+            }
         }
     }
+}
+
+impl fmt::Display for InvalidDriverId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            InvalidDriverId::Empty => write!(f, "empty"),
+            InvalidDriverId::TooLong => {
+                write!(f, "longer than {MAX_DRIVER_ID_BYTES} bytes")
+            }
+            InvalidDriverId::ControlCharacter => write!(f, "contains ASCII control character"),
+            InvalidDriverId::LineProtocolSpecial => {
+                write!(f, "contains line-protocol special character (, = space \\\\ \")")
+            }
+        }
+    }
+}
+
+/// Rejects values unsafe as InfluxDB line-protocol tag values (unescaped).
+pub fn validate_driver_id(driver_id: &str) -> Result<(), InvalidDriverId> {
+    if driver_id.is_empty() {
+        return Err(InvalidDriverId::Empty);
+    }
+    if driver_id.len() > MAX_DRIVER_ID_BYTES {
+        return Err(InvalidDriverId::TooLong);
+    }
+    for byte in driver_id.bytes() {
+        if byte < 0x20 || byte == 0x7f {
+            return Err(InvalidDriverId::ControlCharacter);
+        }
+        if matches!(byte, b',' | b'=' | b' ' | b'\\' | b'"') {
+            return Err(InvalidDriverId::LineProtocolSpecial);
+        }
+    }
+    Ok(())
 }
 
 impl TryFrom<PartialMessage> for CoreControlMessage {
@@ -71,9 +121,15 @@ impl TryFrom<PartialMessage> for CoreControlMessage {
                     });
                 };
                 match CompactString::from_utf8(payload_bytes) {
-                    Ok(driver_id) => Ok(CoreControlMessage::CHDRV(ChangeDriverMessage {
-                        new_driver_id: driver_id,
-                    })),
+                    Ok(driver_id) => match validate_driver_id(driver_id.as_str()) {
+                        Ok(()) => Ok(CoreControlMessage::CHDRV(ChangeDriverMessage {
+                            new_driver_id: driver_id,
+                        })),
+                        Err(reason) => Err(MessageParseError {
+                            message,
+                            kind: MessageParseErrorKind::InvalidDriverId(reason),
+                        }),
+                    },
                     Err(decoding_error) => Err(MessageParseError {
                         message,
                         kind: MessageParseErrorKind::InvalidPayload(decoding_error),
@@ -98,6 +154,7 @@ mod tests {
             offset: 7,
             partition: 2,
             payload: payload.map(Box::from),
+            origin: crate::messaging::partial_message::MessageOrigin::Control,
         }
     }
 
@@ -158,5 +215,77 @@ mod tests {
             .expect("unknown keys should be accepted");
 
         assert!(matches!(parsed, CoreControlMessage::UNKNOWN(value) if value == "X�"));
+    }
+
+    #[test]
+    fn validate_driver_id_accepts_safe_values() {
+        assert!(validate_driver_id("driver-7").is_ok());
+        assert!(validate_driver_id("a").is_ok());
+        assert!(validate_driver_id(&"x".repeat(MAX_DRIVER_ID_BYTES)).is_ok());
+    }
+
+    #[test]
+    fn validate_driver_id_rejects_empty() {
+        assert_eq!(validate_driver_id(""), Err(InvalidDriverId::Empty));
+        let err = CoreControlMessage::try_from(message(Some(b"CHDRV"), Some(b"")))
+            .err()
+            .expect("empty driver id");
+        assert!(matches!(
+            err.kind,
+            MessageParseErrorKind::InvalidDriverId(InvalidDriverId::Empty)
+        ));
+    }
+
+    #[test]
+    fn validate_driver_id_rejects_too_long() {
+        let long = "x".repeat(MAX_DRIVER_ID_BYTES + 1);
+        assert_eq!(
+            validate_driver_id(&long),
+            Err(InvalidDriverId::TooLong)
+        );
+        let err = CoreControlMessage::try_from(message(Some(b"CHDRV"), Some(long.as_bytes())))
+            .err()
+            .expect("oversized driver id");
+        assert!(matches!(
+            err.kind,
+            MessageParseErrorKind::InvalidDriverId(InvalidDriverId::TooLong)
+        ));
+    }
+
+    #[test]
+    fn validate_driver_id_rejects_control_characters() {
+        assert_eq!(
+            validate_driver_id("bad\ndriver"),
+            Err(InvalidDriverId::ControlCharacter)
+        );
+        assert_eq!(
+            validate_driver_id("bad\x7fdriver"),
+            Err(InvalidDriverId::ControlCharacter)
+        );
+        let err = CoreControlMessage::try_from(message(Some(b"CHDRV"), Some(b"bad\tdriver")))
+            .err()
+            .expect("control char driver id");
+        assert!(matches!(
+            err.kind,
+            MessageParseErrorKind::InvalidDriverId(InvalidDriverId::ControlCharacter)
+        ));
+    }
+
+    #[test]
+    fn validate_driver_id_rejects_line_protocol_specials() {
+        for bad in ["x,race=other", "has space", "eq=bad", "slash\\y", "quote\"d"] {
+            assert_eq!(
+                validate_driver_id(bad),
+                Err(InvalidDriverId::LineProtocolSpecial),
+                "expected reject for {bad:?}"
+            );
+        }
+        let err = CoreControlMessage::try_from(message(Some(b"CHDRV"), Some(b"x,race=other")))
+            .err()
+            .expect("line-protocol special");
+        assert!(matches!(
+            err.kind,
+            MessageParseErrorKind::InvalidDriverId(InvalidDriverId::LineProtocolSpecial)
+        ));
     }
 }

@@ -5,4 +5,6 @@ pub mod kafka_exporter;
 pub mod management;
 pub mod message_sink;
 pub mod messaging_entrypoint;
+pub mod offset_ledger;
+pub mod offset_tracker;
 pub mod partial_message;
