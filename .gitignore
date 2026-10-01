@@ -3,3 +3,16 @@
 **/node_modules
 **/dist
 .idea
+/core/target/
+*/venv/
+**/.terraform/
+crash.log
+/core/release/
+/core/redpanda/export.yaml
+/core/export/
+/core/influxdb-plugins/.venv/
+/infra/always-on/kafka-tls.pem
+/infra/always-on/ingest.chronoracer.live/
+/infra/packer/build/*.back
+**/__pycache__/*
+/infra/packer/build/core*
