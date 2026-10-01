@@ -5,6 +5,10 @@ Public URL: `https://relay.{dns zone}` (today `https://relay.chronoracer.live`).
 
 Code at: [Relay root](../relay)
 
+Operator HTTP client (arrow-key menu): [`curls/relay/cli.py`](../curls/relay/cli.py). Set `OKTA_ACCESS_TOKEN`
+([mint token](component-okta.md#operator-token-no-ui)); optional `RELAY_BASE_URL` (defaults to the public Relay URL
+above).
+
 Where: Cloud Run, public HTTPS. Image from Artifact Registry (`ar_relay_image` in [
 `names.json`](../infra/contract/names.json)). Publish: [Control-plane images](operator-control-plane-images.md).
 

@@ -72,14 +72,12 @@ Structure:
 /core/current.json
 /core/releases/{release}
       |--- core (binary)
-      |--- /avro/
-            |--- sensor_data.avsc
       |--- /influxdb-plugins
             |--- export_database.py
 ```
 
 The publish script uploads a complete release first, then replaces `core/current.json` as its final operation. Core reads
-the pointer once during boot and fetches all three payload parts from that immutable release. Old releases are retained;
+the pointer once during boot and fetches the binary and plugins from that immutable release. Old releases are retained;
 the image family retention policy is separate and is owned by [Compute images](component-images.md).
 
 Do not put this payload on `chronoracer-race` (Core YAML IAM stays `endsWith("/core-config.yaml")`).

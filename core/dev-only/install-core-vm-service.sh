@@ -8,7 +8,6 @@ CORE_EXE="$root_dir/bin/chronoracer-core"
 INFLUX_DB_EXE="$root_dir/bin/influxdb3-core/influxdb3"
 
 CORE_CONFIG_PATH=$(realpath "../default-config.yaml")
-AVRO_SCHEMA_PATH=$(realpath "../avro/sensor_data.avsc")
 INFLUX_DB_PLUGIN_DIR=$(realpath "../influxdb-plugins")
 TEMPLATES_PATH=$(realpath "../redpanda")
 
@@ -111,7 +110,6 @@ After=influxdb-core.service
 Slice=corevm.slice
 WorkingDirectory=$root_dir
 Environment="CORE_CONFIG_PATH=$CORE_CONFIG_PATH"
-Environment="AVRO_SENSOR_DATA_SCHEMA_PATH=$AVRO_SCHEMA_PATH"
 Type=exec
 ExecStart=$CORE_EXE
 Restart=on-failure

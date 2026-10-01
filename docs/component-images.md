@@ -17,15 +17,15 @@ Rebuild the family when Kafka, Java, agent config, overlay scripts, or contract 
 scraper), `rpk` and its pinned Redpanda Connect package (do not install manually with sudo or it will fail), `yq`,
 Google Cloud CLI, overlay scripts,
 `default-config.yaml`, Redpanda templates, contract JSON, and the build-time InfluxDB plugin environment. It does
-**not** bake the Core rust binary, Avro schema, or InfluxDB plugin source files.
+**not** bake the Core rust binary or InfluxDB plugin source files.
 
-Publish the binary, Avro schema, and plugins with
+Publish the binary and plugins with
 [`infra/packer/publish-core-payload.sh`](../infra/packer/publish-core-payload.sh) to the artifacts prefix in
 [GCS](component-gcs_buckets.md). Fetch at boot: [Core startup](../core/startup/README.md).
 
 The payload is published under an immutable `core/releases/.../` prefix. The single GCS object `core/current.json` is
 the release pointer; the next race reads that pointer without a new image. Publishing the pointer is the final step, so
-a VM cannot combine a binary from one release with a schema or plugin from another.
+a VM cannot combine a binary from one release with plugins from another.
 
 Do not download vendor packages from the public internet on the race Core VM (no Cloud NAT). Packer builders use the
 **default VPC** and an ephemeral public IP so apt and tarball fetches work. Do not build on the race VPC.
@@ -54,7 +54,7 @@ export PKR_VAR_project_id="$(gcloud config get-value project)"
 # Build and download Core binary on a native CPU builder
 ./infra/packer/build-core-binary.sh
 
-# Publish the Core VM release (Core binary, Avro schemas, InfluxDB plugins) 
+# Publish the Core VM release (Core binary, InfluxDB plugins)
 ./infra/packer/publish-core-payload.sh /path/to/chronoracer-core
 ```
 
@@ -87,9 +87,9 @@ build-time `/chronoracer/influxdb-plugin-venv`
 (see [InfluxDB plugin environment](component-influxdb.md#plugin-python-environment)). Packer installs Debian
 `python3-yaml` (for `merge_config.py`). `need()` after payload: `influxdb3`, `python3` + PyYAML,
 `jq`, `yq`, `gcloud`, `rpk`, the pinned Redpanda Connect package, and `curl`. The package is installed during the image
-build so `rpk connect run` does not download on the race VM. Binary arrives as
-`/chronoracer/core`; the schema arrives as
-`/chronoracer/avro/sensor_data.avsc`.
+build so `rpk connect run` does not download on the race VM. Binary arrives as `/chronoracer/core`. The Avro sensor
+schema is compile-time only in the repo ([`core/avro/sensor_data.avsc`](../core/avro/sensor_data.avsc)); Core does not
+read it at runtime ([Core](component-core.md#data-pipeline-batch-contract)).
 
 Boot order on the VM: [Kafka startup](../kafka/startup/README.md), [Core startup](../core/startup/README.md).
 
