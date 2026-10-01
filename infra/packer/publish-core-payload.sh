@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Upload a built Core binary, Avro schema, and InfluxDB plugins
-# as one immutable release, then atomically publish its manifest at
-# gs://{artifacts}/core/current.json.
+# Upload a built Core binary and InfluxDB plugins as one immutable release,
+# then atomically publish its manifest at gs://{artifacts}/core/current.json.
 #
 # Usage: publish-core-payload.sh release-id
 set -euo pipefail
@@ -9,7 +8,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 NAMES_JSON="${REPO_ROOT}/infra/contract/names.json"
-SCHEMA_SRC="${REPO_ROOT}/core/avro/sensor_data.avsc"
 
 [[ -n "${1:-}" ]] || {
   echo "Release ID not provided" >&2
@@ -20,10 +18,6 @@ RELEASE_ID="$1"
 BIN="./build/core-${RELEASE_ID}"
 [[ -s "${BIN}" ]] || {
   echo "binary missing or empty: ${BIN}" >&2
-  exit 1
-}
-[[ -s "${SCHEMA_SRC}" ]] || {
-  echo "Avro schema missing or empty: ${SCHEMA_SRC}" >&2
   exit 1
 }
 
@@ -52,11 +46,10 @@ MANIFEST="${WORKDIR}/current.json"
 echo "Publishing Core payload to ${DEST}"
 
 gcloud storage cp "${BIN}" "${DEST}/core"
-gcloud storage cp "${SCHEMA_SRC}" "${DEST}/avro/sensor_data.avsc"
 "${SCRIPT_DIR}/publish-core-influxdb-plugins.sh" "$RELEASE_ID"
 
 jq -n --arg prefix "${RELEASE}" '{prefix: $prefix}' >"${MANIFEST}"
 gcloud storage cp "${MANIFEST}" "gs://${BUCKET}/core/current.json"
 
-echo "Published ${DEST}/core, ${DEST}/avro/sensor_data.avsc, and InfluxDB plugins"
+echo "Published ${DEST}/core and InfluxDB plugins"
 echo "Published release pointer gs://${BUCKET}/core/current.json"

@@ -10,6 +10,8 @@ WorkingDirectory=/chronoracer
 Environment=HOME=/root
 EnvironmentFile=/chronoracer/core.env
 ExecStart=/chronoracer/core
+# Needed for long export sequence
+TimeoutStopSec=900
 Restart=on-failure
 RestartSec=5
 

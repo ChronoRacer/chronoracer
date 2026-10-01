@@ -8,6 +8,7 @@ use google_cloud_monitoring_v3::model::{Point, TimeInterval, TimeSeries, TypedVa
 use google_cloud_wkt::{Timestamp, TimestampError};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 pub const WRITE_LINES: &str = "custom.googleapis.com/chronoracer/influx_write_lines";
@@ -28,7 +29,7 @@ struct GceIdentity {
     zone: String,
 }
 
-/// Publishes cumulative write counters until the task is aborted.
+/// Publishes cumulative write counters until `stop` is cancelled, then sends one final sample.
 /// Metadata or client setup failure is logged and the task ends. A later
 /// `CreateTimeSeries` failure is logged and the loop continues. Neither path
 /// stops ingest.
@@ -37,6 +38,7 @@ pub async fn publish_write_metrics(
     max_retries: u16,
     metrics: Arc<WriteMetrics>,
     allow_unknown_gce_metrics: bool,
+    stop: CancellationToken,
 ) {
     let identity = match gce_identity().await {
         Ok(identity) => identity,
@@ -77,26 +79,46 @@ pub async fn publish_write_metrics(
 
     let name = format!("projects/{project_id}");
     loop {
-        ticker.tick().await;
-        let Ok(end) = timestamp_now() else {
-            error!("Skipping Cloud Monitoring sample; system clock is before the unix epoch");
-            continue;
-        };
-        let snapshot = metrics.snapshot();
-        let series = write_time_series(&project_id, &identity, &started, &end, &snapshot);
-        match client
-            .create_time_series()
-            .set_name(&name)
-            .set_time_series(series)
-            .send()
-            .await
-        {
-            Ok(_) => {
-                info!("{snapshot:?}");
+        tokio::select! {
+            biased;
+            () = stop.cancelled() => {
+                publish_sample(&client, &name, &project_id, &identity, &started, &metrics).await;
+                info!("Final Cloud Monitoring write-metrics sample sent");
+                return;
             }
-            Err(error) => {
-                warn!(%error, "GCM write failed");
+            _ = ticker.tick() => {
+                publish_sample(&client, &name, &project_id, &identity, &started, &metrics).await;
             }
+        }
+    }
+}
+
+async fn publish_sample(
+    client: &MetricService,
+    name: &str,
+    project_id: &str,
+    identity: &GceIdentity,
+    started: &Timestamp,
+    metrics: &WriteMetrics,
+) {
+    let Ok(end) = timestamp_now() else {
+        error!("Skipping Cloud Monitoring sample; system clock is before the unix epoch");
+        return;
+    };
+    let snapshot = metrics.snapshot();
+    let series = write_time_series(project_id, identity, started, &end, &snapshot);
+    match client
+        .create_time_series()
+        .set_name(name)
+        .set_time_series(series)
+        .send()
+        .await
+    {
+        Ok(()) => {
+            info!("{snapshot:?}");
+        }
+        Err(error) => {
+            warn!(%error, "GCM write failed");
         }
     }
 }
@@ -198,6 +220,15 @@ fn write_time_series(
             snapshot.requests_error,
             Some("error"),
         ),
+        cumulative_series(
+            WRITE_REQUESTS,
+            "1",
+            &resource,
+            started,
+            end,
+            snapshot.requests_retry,
+            Some("retry"),
+        ),
     ]
 }
 
@@ -279,11 +310,12 @@ mod tests {
             requests_ok: 2,
             requests_partial: 1,
             requests_error: 4,
+            requests_retry: 7,
         };
         let series =
             write_time_series("chronoracer", &sample_identity(), &started, &end, &snapshot);
 
-        assert_eq!(series.len(), 5);
+        assert_eq!(series.len(), 6);
         assert_eq!(
             series[0]
                 .metric
@@ -314,7 +346,7 @@ mod tests {
                 (outcome, point_value(series).unwrap_or(-1))
             })
             .collect();
-        assert_eq!(outcomes, vec![("ok", 2), ("partial", 1), ("error", 4)]);
+        assert_eq!(outcomes, vec![("ok", 2), ("partial", 1), ("error", 4), ("retry", 7)]);
 
         let resource = series[0].resource.as_ref().expect("resource");
         assert_eq!(resource.r#type, "gce_instance");

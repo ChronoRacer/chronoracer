@@ -69,13 +69,15 @@ Core has no health API. Health is a heartbeat on the private Kafka heartbeat top
 ([Kafka topics](component-kafka.md)). Relay on status reads the last retained record. It does not start a consumer at
 latest and hope a beat arrives during the request.
 
-Heartbeat means: Core process is up, private Kafka is reachable, Influx is reachable. Relay does not probe Influx or the
+Heartbeat means: Core process is up, private Kafka is reachable, Influx is reachable (Core withholds the beat while
+writes fail: [Core heartbeat](component-core.md#core-heartbeat)). Relay does not probe Influx or the
 public listener. Kafka boot already refused to start without public TLS bind. If the heartbeat record can be read,
 private Kafka accepted a connection.
 
-- Phase `applied` and latest heartbeat age ≤ `service.heartbeat_freshness_seconds` (50 in
-  [`relay-config.yaml.tftpl`](../infra/always-on/relay-config.yaml.tftpl); Core publishes every
-  `runtime.heartbeat_interval_s` = 30s) → ready.
+- Phase `applied` and latest heartbeat age ≤ `service.heartbeat_freshness_seconds`
+  ([`relay-config.yaml.tftpl`](../infra/always-on/relay-config.yaml.tftpl)) → ready. That window is longer than
+  Core's publish interval, `runtime.heartbeat_interval_s` in
+  [`core/default-config.yaml`](../core/default-config.yaml).
 - Phase `applied`, no heartbeat record yet → not ready, not unhealthy.
 - Phase `applied`, heartbeat went stale, or Kafka read fails → unhealthy. Phase stays `applied`. `lastError` on read
   fail. Still return phase, `startedAt`. No auto-destroy.

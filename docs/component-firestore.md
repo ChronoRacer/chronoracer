@@ -56,7 +56,7 @@ Export paths: [GCS](component-gcs_buckets.md). Always-on IAM: [Terraform](compon
 
 ### `control/active`
 
-- `raceId` — string or empty. New races: operator-supplied, unique, GCP label-safe, 1–12 chars
+- `raceId` — string or empty. New races: operator-supplied, unique, GCP label-safe, 1–12 ASCII chars
   (`^[a-z0-9]([a-z0-9_-]{0,11})$`). Never reused after destroy.
 - `updatedAt`
 

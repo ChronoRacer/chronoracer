@@ -24,10 +24,10 @@ ZONE="${CORE_BUILD_ZONE:-europe-west1-b}"
 NETWORK="${CORE_BUILD_NETWORK:-default}"
 PROJECT_ID="${PKR_VAR_project_id:-$(gcloud config get-value project 2>/dev/null || true)}"
 core_bundle="core_bundle.tar.gz"
-download_dest="build/core-${RELEASE_ID}"
+DOWNLOAD_DEST="build/core-${RELEASE_ID}"
 
-[[ -f "$download_dest" ]] && {
-  echo "Release $RELEASE_ID already seems to be built at $download_dest" >&2
+[[ -f "$DOWNLOAD_DEST" ]] && {
+  echo "Release $RELEASE_ID already seems to be built at $DOWNLOAD_DEST" >&2
   exit 1
 }
 
@@ -55,6 +55,10 @@ cleanup() {
            --quiet >/dev/null 2>&1
     else
       echo "Build failed with error code ${exit_code}. VM and its disk might not deleted!!!"
+      echo "PROJECT_ID=${PROJECT_ID}"
+      echo "ZONE=${ZONE}"
+      echo "INSTANCE=${INSTANCE}"
+      echo "DOWNLOAD_DEST=${DOWNLOAD_DEST}"
     fi
 }
 
@@ -74,10 +78,11 @@ need jq
   exit 1
 }
 
+start=$(date +%s)
 echo "Creating source code bundle"
 tar -czvf "$core_bundle" \
   -C "${REPO_ROOT}" \
-  core/src core/Cargo.lock core/Cargo.toml core/.cargo core/build.rs core/proto/telemetry_v1.proto
+  core/src core/Cargo.lock core/Cargo.toml core/.cargo core/build.rs core/proto
 
 MACHINE_TYPE="c4d-highcpu-2"
 echo "Creating disposable Spot builder ${INSTANCE} (${ZONE}, ${MACHINE_TYPE})"
@@ -149,7 +154,10 @@ gcloud compute scp \
   --project="${PROJECT_ID}" \
   --zone="${ZONE}" \
   "${INSTANCE}:/tmp/chronoracer-core/core/target/x86_64-unknown-linux-gnu/release/chronoracer-core" \
-  "./$download_dest" \
+  "./$DOWNLOAD_DEST" \
   --quiet
 
-echo "Built Core release ${download_dest}"
+echo "Built Core release ${DOWNLOAD_DEST}"
+end=$(date +%s);
+diff=$((end - start));
+printf 'Time taken: %02dm %02ds' $((diff/60)) $((diff%60))

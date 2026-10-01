@@ -88,11 +88,12 @@ resource "google_project_iam_member" "controller_run" {
   role    = google_project_iam_custom_role.controller_run.id
   member  = "serviceAccount:${google_service_account.controller.email}"
 
-  condition {
-    title       = "telemetry-service-only"
-    description = "Canonical race Telemetry Cloud Run service."
-    expression  = "resource.name == \"projects/${var.project_id}/locations/${var.region}/services/${local.names.telemetry_service}\""
-  }
+  # TODO: this condition does not work (does not match the service)
+  # condition {
+  #   title       = "telemetry-service-only"
+  #   description = "Canonical race Telemetry Cloud Run service."
+  #   expression  = "resource.name == \"projects/${var.project_id}/locations/${var.region}/services/${local.names.telemetry_service}\""
+  # }
 }
 
 resource "google_service_account_iam_member" "controller_self" {

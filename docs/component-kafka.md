@@ -63,16 +63,28 @@ Shared rules:
 - Keys are uppercase. Compact keys preferred.
 - Compression is a producer setting, not a topic setting. Core and Relay produce `snappy`. Device producers may use
   `lz4` (when using a different compression type than `snappy` or `lz4` ensure Core binary supports the codec).
-- Delivery is at-least-once. No Kafka transactions.
+- Delivery is at-least-once. No Kafka transactions. Core's commit rules: [Core delivery](component-core.md#kafka-delivery).
+
+### Consumer groups
+
+`kafka.group_id` in [`core/default-config.yaml`](../core/default-config.yaml) is a prefix. Core consumes `data` as
+`<group_id>-data` and `control` as `<group_id>-control`, so the two positions are independent. Redpanda Connect exports
+with its own group, `<race_id>-export`, and never shares one with Core.
+
+A group with no committed offset starts at the earliest offset (`auto.offset.reset=earliest`). Core creates the topics
+before anything is produced, so a new group reads everything produced before it subscribed. Committed offsets survive
+a restart for the broker's offsets retention (1440 minutes by default, [`kafka/`](../kafka)). Changing `group_id`
+replays both topics from the start.
 
 ### `data`
 
-- Key: `{sensorId}` (`ID` column in `sensors.xlsx`)
+- Key: `{sensorId}` (`ID` column in `sensors.xlsx`). At most 12 ASCII characters.
 - Avro: yes. Canonical schema: [`core/avro/sensor_data.avsc`](../core/avro/sensor_data.avsc)
 
 Car computer evaluates immediate warnings, so a short send delay only slows the Telemetry preview. Analysis wants a window, so
 the producer may batch readings in one message. Each `delta` is nanoseconds from `timestamp` and must be at most 2
-seconds (`2000000000`). Core also batches internally: [Core](component-core.md#data-pipeline-batch-contract).
+seconds (`2000000000`). That cap is a producer rule: Core rejects a negative `delta` and does not check the 2 second
+limit ([Core](component-core.md#data-pipeline-batch-contract)).
 
 `sensor_id` is in the body as well as the key so a dump without the Kafka key still identifies the sensor.
 
@@ -131,21 +143,22 @@ seconds (`2000000000`). Core also batches internally: [Core](component-core.md#d
 
 | Key        | Body                                      | Effect                                                                                          |
 |------------|-------------------------------------------|-------------------------------------------------------------------------------------------------|
-| `CHDRV`    | UTF-8 driver ID, no Avro                  | Driver ID changes from acknowledgement. Small swap discrepancy is accepted.                     |
+| `CHDRV`    | UTF-8 driver ID, no Avro                  | Driver ID changes from acknowledgement. Small swap discrepancy is accepted. Invalid ids go to `dlq` and leave the current driver unchanged: [Core](component-core.md#control-event-handling). |
 | `SHUTDOWN` | empty                                     | Core drains Kafka and starts export. Relay publishes this after `close_ingest` succeeds.        |
 
-Unknown keys are ignored. Parse failures (missing key, missing `CHDRV` body, non-UTF-8) go to `dlq`.
+Unknown keys are ignored. Parse failures (missing key, missing `CHDRV` body, non-UTF-8, or a driver id Core rejects) go to `dlq`.
 
 ### `dlq`
 
 - Key: original message key, or Core `dlq_unknown_key` (`unknown`) if the original key is missing
 - Body: original message body
 - Headers written by Core: `o_partition`, `o_offset`, `o_error`
+- Under overload Core may discard a record instead of stalling ingest: [Core](component-core.md#data-pipeline-batch-contract)
 
 ### `heartbeat`
 
 - Key: `CORE` for the Core heartbeat
-- Body: optional status
+- Body: informational (Core sends the race id); consumers read only the record timestamp
 - Relay reads the last retained record on status. Detection: [Race provisioning](flow-race_provisioning.md).
 
 ### `event`

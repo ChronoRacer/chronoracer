@@ -1,27 +1,32 @@
 use crate::configuration::CoreConfig;
-use crate::messaging::dlq_handler::DLQHandler;
+use crate::messaging::dlq_handler::{
+    DLQHandler, InvalidMessageTx, InvalidSettler, invalid_message_channel,
+};
 use crate::messaging::heartbeat_handler::HeartbeatHandler;
 use crate::messaging::kafka_exporter::KafkaExporter;
 use crate::messaging::management::ensure_all_topics_exists;
 use crate::messaging::message_sink::{BatchMessageSink, BatchSinkRx, InstantMessageSink, SinkRx};
-use crate::messaging::partial_message::{PartialMessage, PartialMessageWithError};
+use crate::messaging::offset_ledger::OffsetLedger;
+use crate::messaging::partial_message::PartialMessage;
 use anyhow::{Context, Result, bail};
 use rdkafka::producer::FutureProducer;
 use std::sync::Arc;
 
-pub struct MessagingLayerEntrypoint<'a> {
+pub struct MessagingLayerEntrypoint {
     pub sensor_data_sink: BatchMessageSink,
+    pub sensor_offsets: OffsetLedger,
     pub sensor_sink_rx: BatchSinkRx,
-    pub dlq_handler: DLQHandler<'a>,
-    pub dlq_tx: tokio::sync::mpsc::Sender<PartialMessageWithError>,
+    pub dlq_handler: DLQHandler,
+    pub dlq_tx: InvalidMessageTx,
     pub control_sink: InstantMessageSink,
+    pub control_offsets: OffsetLedger,
     pub control_sink_rx: SinkRx,
     pub heartbeat_handler: HeartbeatHandler,
-    pub kafka_exporter: KafkaExporter<'a>,
+    pub kafka_exporter: KafkaExporter,
 }
 
-impl<'a> MessagingLayerEntrypoint<'a> {
-    pub async fn init(config: &'static CoreConfig) -> Result<MessagingLayerEntrypoint<'a>> {
+impl MessagingLayerEntrypoint {
+    pub async fn init(config: &'static CoreConfig) -> Result<MessagingLayerEntrypoint> {
         ensure_kafka_compilation_features()?;
 
         let kafka_exporter = KafkaExporter::new(&config.race.race_id, &config.gcp, &config.kafka)
@@ -32,25 +37,28 @@ impl<'a> MessagingLayerEntrypoint<'a> {
             .context("Failed to ensure Kafka topics exist")?;
 
         let (sensor_sink_tx, sensor_sink_rx) = tokio::sync::mpsc::channel::<Vec<PartialMessage>>(
-            config.processing.message_channel_buffer_size,
+            config.processing.message_channel_buffer_size.get(),
         );
         let sensor_data_sink = BatchMessageSink::new(
             &config.kafka,
             vec![&config.kafka.sensor_data_topic.name],
             sensor_sink_tx,
-            config.processing.message_batch_size,
-            config.processing.message_batch_flush_interval_ms,
+            config.processing.message_batch_size.get(),
+            config.processing.message_batch_flush_interval_ms.get(),
         )?;
         let (control_sink_tx, control_sink_rx) = tokio::sync::mpsc::channel::<PartialMessage>(
-            config.processing.message_channel_buffer_size,
+            config.processing.message_channel_buffer_size.get(),
         );
         let control_sink = InstantMessageSink::new(
             &config.kafka,
             vec![&config.kafka.control_event_topic.name],
             control_sink_tx,
         )?;
-        let (dlq_tx, dlq_rx) = tokio::sync::mpsc::channel::<PartialMessageWithError>(
-            config.processing.dlq_channel_buffer_size,
+        let sensor_offsets = sensor_data_sink.offsets();
+        let control_offsets = control_sink.offsets();
+        let (dlq_tx, dlq_rx) = invalid_message_channel(
+            config.processing.dlq_channel_buffer_size.get(),
+            InvalidSettler::new(sensor_offsets.clone(), control_offsets.clone()),
         );
 
         let producer: Arc<FutureProducer> = Arc::new(
@@ -65,10 +73,12 @@ impl<'a> MessagingLayerEntrypoint<'a> {
 
         Ok(Self {
             sensor_data_sink,
+            sensor_offsets,
             sensor_sink_rx,
             dlq_handler,
             dlq_tx,
             control_sink,
+            control_offsets,
             control_sink_rx,
             heartbeat_handler,
             kafka_exporter,

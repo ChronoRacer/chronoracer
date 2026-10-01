@@ -24,10 +24,15 @@ Structure:
 |---  /core-config.yaml
 |---  /export
       |--- /db
-            |--- /{sensorId}.parquet (for each sensor in race)
+            |--- /{table}.parquet (one file per exported Influx table; the table is the sensor measurement)
       |--- /kafka
-            |--- /{topicName}.parquet (for each exported topic)
+            |--- /{topic}
+                  |--- /part-….parquet (many objects per topic)
 ```
+
+Under `{raceId}/`, `export/db` and `export/kafka` are `persistence.export.nested_path_in_bucket` and
+`kafka.export.nested_path_in_bucket` in [`core/default-config.yaml`](../core/default-config.yaml). The Kafka object
+name is the Redpanda template: [`export.gcs.yaml`](../core/redpanda/export.gcs.yaml).
 
 ## State bucket
 
@@ -67,14 +72,12 @@ Structure:
 /core/current.json
 /core/releases/{release}
       |--- core (binary)
-      |--- /avro/
-            |--- sensor_data.avsc
       |--- /influxdb-plugins
             |--- export_database.py
 ```
 
 The publish script uploads a complete release first, then replaces `core/current.json` as its final operation. Core reads
-the pointer once during boot and fetches all three payload parts from that immutable release. Old releases are retained;
+the pointer once during boot and fetches the binary and plugins from that immutable release. Old releases are retained;
 the image family retention policy is separate and is owned by [Compute images](component-images.md).
 
 Do not put this payload on `chronoracer-race` (Core YAML IAM stays `endsWith("/core-config.yaml")`).

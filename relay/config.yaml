@@ -1,3 +1,4 @@
+# Any new field must be added to infra/always-on/relay-config.yaml.tftpl and secret reapplied
 server:
   host: 0.0.0.0
   port: 8080
@@ -11,7 +12,7 @@ gcp:
   project_id: chronoracer
   firestore_database: "(default)"
   export_bucket: chronoracer-race
-  cloud_build_trigger_id: race-controller
+  cloud_build_trigger_id: efe837e7-e984-4b43-a01b-fcc72439969a
   cloud_build_location: europe-west1
   build_finished_audience: chronoracer-relay-build-finished
   build_finished_service_account: build-finished-push@chronoracer.iam.gserviceaccount.com

@@ -32,9 +32,14 @@ pub struct InfluxDbExporter {
 
 impl InfluxDbExporter {
     pub fn new(client: Arc<Client>, export_config: &'static DatabaseExportConfig) -> Self {
+        let timeout = Duration::from_secs(u64::from(export_config.attempt_timeout_s.get()));
+        let http_client = reqwest::Client::builder()
+            .timeout(timeout)
+            .build()
+            .expect("reqwest client with timeout should build");
         Self {
             client,
-            http_client: reqwest::Client::new(),
+            http_client,
             database_export_config: export_config,
         }
     }
@@ -72,12 +77,14 @@ impl InfluxDbExporter {
                 Ok(response) => {
                     let status = response.status();
                     let body = response.text().await.unwrap_or_default();
-                    self.retry_or_fail(
-                        &mut attempts,
-                        &mut backoff,
-                        format!("HTTP {status}: {body}"),
-                    )
-                    .await?;
+                    let error = format!("HTTP {status}: {body}");
+                    if status.is_client_error() {
+                        return Err(anyhow!(
+                            "Database export trigger rejected with non-retryable status: {error}"
+                        ));
+                    }
+                    self.retry_or_fail(&mut attempts, &mut backoff, error)
+                        .await?;
                 }
                 Err(error) => {
                     self.retry_or_fail(&mut attempts, &mut backoff, error.to_string())
@@ -117,7 +124,6 @@ impl InfluxDbExporter {
     pub async fn export_database(&self) -> Result<Vec<PathBuf>> {
         let started_at = Instant::now();
         info!("Starting database export");
-        // TODO: this might timeout
         let response = self.invoke_export_trigger().await?;
 
         for failure in &response.failures {
@@ -126,6 +132,12 @@ impl InfluxDbExporter {
                 failure.table, failure.error
             );
         }
+
+        evaluate_export_plugin_response(
+            response.tables_found,
+            response.tables_exported,
+            &response.failures,
+        )?;
 
         let exported_files = response
             .files
@@ -145,5 +157,68 @@ impl InfluxDbExporter {
             started_at.elapsed()
         );
         Ok(exported_files)
+    }
+}
+
+/// Returns an error when the plugin reported table failures or an incomplete export count.
+fn evaluate_export_plugin_response(
+    tables_found: usize,
+    tables_exported: usize,
+    failures: &[ExportFailure],
+) -> Result<()> {
+    if !failures.is_empty() {
+        return Err(anyhow!(
+            "Database export plugin reported {} table failure(s)",
+            failures.len()
+        ));
+    }
+    if tables_exported < tables_found {
+        return Err(anyhow!(
+            "Database export incomplete: exported {tables_exported} of {tables_found} tables"
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn evaluate_accepts_complete_export_without_failures() {
+        assert!(evaluate_export_plugin_response(3, 3, &[]).is_ok());
+        assert!(evaluate_export_plugin_response(0, 0, &[]).is_ok());
+    }
+
+    #[test]
+    fn evaluate_rejects_non_empty_failures() {
+        let failures = [ExportFailure {
+            table: "sensor_a".to_string(),
+            error: "disk full".to_string(),
+        }];
+        let err = evaluate_export_plugin_response(2, 2, &failures)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("1 table failure"));
+    }
+
+    #[test]
+    fn evaluate_rejects_incomplete_table_count() {
+        let err = evaluate_export_plugin_response(5, 4, &[])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("exported 4 of 5"));
+    }
+
+    #[test]
+    fn evaluate_prefers_failure_list_over_count_mismatch() {
+        let failures = [ExportFailure {
+            table: "sensor_b".to_string(),
+            error: "timeout".to_string(),
+        }];
+        let err = evaluate_export_plugin_response(3, 1, &failures)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("table failure"));
     }
 }

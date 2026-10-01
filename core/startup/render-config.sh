@@ -134,7 +134,6 @@ python3 "${MERGE_PY}" \
   --output "${OUTPUT}"
 
 chmod 600 "${OUTPUT}"
-printf 'CORE_CONFIG_PATH=%s\nAVRO_SENSOR_DATA_SCHEMA_PATH=%s\n' \
-  "${OUTPUT}" "${CHRONORACER_DIR}/avro/sensor_data.avsc" >"${CORE_ENV}"
+printf 'CORE_CONFIG_PATH=%s\n' "${OUTPUT}" >"${CORE_ENV}"
 chmod 600 "$CORE_ENV"
 echo "Exported configuration to: ${OUTPUT}"

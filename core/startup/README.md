@@ -13,10 +13,10 @@ Bake inventory: [Compute images](../../docs/component-images.md). Race metadata 
       lifecycle: [Influx token runbook](../../docs/operator-influx-token.md).
 
     - [`fetch-payload.sh`](fetch-payload.sh): read `gs://{artifacts_bucket}/core/current.json`, then copy the Linux
-      binary `core`, Avro schema `avro/sensor_data.avsc`, and `influxdb-plugins/*.py` from its immutable release (Private
-      Google Access). Fail closed if missing. Binary mode `755`; schema mode `644`.
+      binary `core` and `influxdb-plugins/*.py` from its immutable release (Private Google Access). Fail closed if
+      missing. Binary mode `755`.
 
-    - [`render-config.sh`](render-config.sh): render final Core YAML from the GCE metadata server (instance attributes + project/zone), operator YAML from GCS, and defaults (platform overlay wins). `yq strenv` needs the token **exported**. Writes `/chronoracer/core-config.yaml` and `/chronoracer/core.env` at mode `600`; the env file includes `CORE_CONFIG_PATH` and `AVRO_SENSOR_DATA_SCHEMA_PATH`. Does not call the Compute API. The platform overlay pins `persistence.db_port`, `persistence.db_name`, and the private Core telemetry port from [`platform.json`](../../infra/contract/platform.json).
+    - [`render-config.sh`](render-config.sh): render final Core YAML from the GCE metadata server (instance attributes + project/zone), operator YAML from GCS, and defaults (platform overlay wins). `yq strenv` needs the token **exported**. Writes `/chronoracer/core-config.yaml` and `/chronoracer/core.env` at mode `600`; the env file includes `CORE_CONFIG_PATH`. Does not call the Compute API. The platform overlay pins `persistence.db_port`, `persistence.db_name`, and the private Core telemetry port from [`platform.json`](../../infra/contract/platform.json).
 
       Token is merged into Core YAML as `persistence.db_password` (platform overlay wins). Rendered Core YAML and the
       Core environment file are `600`. Core is the only token consumer; owner of its lifecycle:
@@ -33,7 +33,7 @@ Bake inventory: [Compute images](../../docs/component-images.md). Race metadata 
    unit with the host receiver. Monitoring contract: [Dashboard](../../docs/component-dashboard.md#data-path).
    Ingest counters: [Core](../../docs/component-core.md#cloud-monitoring-write-counters).
 
-4. `systemctl enable --now chronoracer-core`. Unit `UMask=0077`, `HOME=/root`, and `EnvironmentFile=/chronoracer/core.env` (`CORE_CONFIG_PATH=/chronoracer/core-config.yaml`, `AVRO_SENSOR_DATA_SCHEMA_PATH=/chronoracer/avro/sensor_data.avsc`). Redpanda Connect is installed in the image; the VM does not download it. Core opens a private plaintext gRPC `Watch` listener on the telemetry port; contract: [Core telemetry](../../docs/component-core.md#telemetry-stream).
+4. `systemctl enable --now chronoracer-core`. Unit `UMask=0077`, `HOME=/root`, `TimeoutStopSec=900`, and `EnvironmentFile=/chronoracer/core.env` (`CORE_CONFIG_PATH=/chronoracer/core-config.yaml`). Redpanda Connect is installed in the image; the VM does not download it. Core opens a private plaintext gRPC `Watch` listener on the telemetry port; contract: [Core telemetry](../../docs/component-core.md#telemetry-stream).
 
 5. Core app reads config from one YAML at `CORE_CONFIG_PATH`. Units run as root; secret files are `600` so only root can read them.
 
@@ -42,7 +42,7 @@ Bake inventory: [Compute images](../../docs/component-images.md). Race metadata 
 ```terminaloutput
 root@core:/chronoracer# ls  
 admin-token.json          core-config.yaml     fetch-influx-token.sh  influxdb3.env      names.json  
-avro                      core.env             fetch-payload.sh       influxdb3.service  ops-agent.yaml  
+core.env                  fetch-payload.sh     influxdb3.service      ops-agent.yaml  
 chronoracer-core.service  default-config.yaml  gce-metadata.sh        influxdb-plugins   core
 enable-ops-agent.sh       influxdb-plugin-venv merge_config.py        platform.json      start-influx.sh   
 entrypoint.sh             render-config.sh     redpanda   

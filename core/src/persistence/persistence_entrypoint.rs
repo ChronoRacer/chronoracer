@@ -1,6 +1,7 @@
 use crate::configuration::{CoreConfig, PersistenceConfig};
+use crate::messaging::offset_ledger::OffsetLedger;
 use crate::persistence::database_exporter::InfluxDbExporter;
-use crate::persistence::sensor_data_batcher::{SensorDataBatcher, SimplePoint};
+use crate::persistence::sensor_data_batcher::{PointBatch, SensorDataBatcher, SimplePoint};
 use crate::persistence::sensor_data_flusher::{BatcherWiring, BatcherWiringType, InfluxDbFlusher};
 use crate::persistence::sensor_data_splitter::SensorDataSplitter;
 use crate::persistence::write_metrics::WriteMetrics;
@@ -8,8 +9,7 @@ use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use crate::runtime_configuration::RetainReadTimeValue;
 use anyhow::{Context, Result, anyhow};
 use compact_str::CompactString;
-use influxdb3_client::{Client, WriteOptions};
-use std::cmp::max;
+use influxdb3_client::{Client, ClientConfig, RetryConfig, WriteOptions};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
@@ -31,14 +31,15 @@ impl PersistenceLayerEntryPoint {
         config: &'static CoreConfig,
         processed_data_rx: SensorDataRx,
         driver_id_holder: &'static RetainReadTimeValue<CompactString>,
+        offsets: OffsetLedger,
     ) -> Result<Self> {
         let persistence_config = &config.persistence;
         let db_client = Arc::new(Self::create_influxdb_client(persistence_config).await?);
 
-        let (fast_tx, fast_rx) =
-            tokio::sync::mpsc::channel((config.runtime.rayon_threads * 2) as usize);
-        let (normal_tx, normal_rx) =
-            tokio::sync::mpsc::channel((config.runtime.rayon_threads * 2) as usize);
+        let splitter_channel_capacity =
+            usize::from(config.runtime.rayon_threads.get()).saturating_mul(2);
+        let (fast_tx, fast_rx) = tokio::sync::mpsc::channel(splitter_channel_capacity);
+        let (normal_tx, normal_rx) = tokio::sync::mpsc::channel(splitter_channel_capacity);
 
         let splitter =
             SensorDataSplitter::new(processed_data_rx, fast_tx, normal_tx, persistence_config);
@@ -65,6 +66,7 @@ impl PersistenceLayerEntryPoint {
             normal_batcher_wiring,
             Arc::clone(&db_client),
             Arc::clone(&write_metrics),
+            offsets,
         );
 
         let exporter = InfluxDbExporter::new(db_client, &persistence_config.export);
@@ -80,34 +82,9 @@ impl PersistenceLayerEntryPoint {
     }
 
     async fn create_influxdb_client(persistence_config: &PersistenceConfig) -> Result<Client> {
-        let client = Client::new(
-            influxdb3_client::ClientConfig::builder()
-                .host(format!(
-                    "{}:{}",
-                    &persistence_config.db_host, &persistence_config.db_port
-                ))
-                .token(&persistence_config.db_password)
-                .database(&persistence_config.db_name)
-                .max_idle_connections((persistence_config.max_inflight_db_writes * 2) as usize)
-                .write_options(WriteOptions {
-                    precision: influxdb3_client::Precision::Nanosecond,
-                    default_tags: HashMap::new(),
-                    gzip_threshold: None, // `None` so it never compresses, no point when hosting on the same machine
-                    no_sync: false,
-                    accept_partial: true,
-                    use_v2_api: false,
-                    tag_order: vec![],
-                    batch_size: max(
-                        persistence_config.fast_flush_max_combined_batch_size,
-                        persistence_config.flush_max_combined_batch_size,
-                    ),
-                    max_inflight: persistence_config.max_inflight_db_writes as usize,
-                })
-                .build()
-                .map_err(|e| anyhow!("Invalid InfluxDB config: {e}"))?,
-        )
-        .await
-        .context("Failed to create InfluxDb client")?;
+        let client = Client::new(Self::influx_client_config(persistence_config)?)
+            .await
+            .context("Failed to create InfluxDb client")?;
 
         client
             .ping()
@@ -124,6 +101,39 @@ impl PersistenceLayerEntryPoint {
             .context("Failed to connect to InfluxDb")?
     }
 
+    /// The flusher owns write concurrency, batching and retries. The client is configured so it
+    /// never adds its own: each `write` is one request, sent once.
+    pub(crate) fn influx_client_config(
+        persistence_config: &PersistenceConfig,
+    ) -> Result<ClientConfig> {
+        ClientConfig::builder()
+            .host(format!(
+                "{}:{}",
+                persistence_config.db_host, persistence_config.db_port
+            ))
+            .token(&persistence_config.db_password)
+            .database(&persistence_config.db_name)
+            .max_idle_connections(
+                usize::from(persistence_config.max_inflight_db_writes.get()).saturating_mul(2),
+            )
+            .retry(RetryConfig::disabled())
+            .write_options(WriteOptions {
+                precision: influxdb3_client::Precision::Nanosecond,
+                default_tags: HashMap::new(),
+                gzip_threshold: None, // `None` so it never compresses, no point when hosting on the same machine
+                no_sync: false,
+                accept_partial: true,
+                use_v2_api: false,
+                tag_order: vec![],
+                // Both only apply to `Vec<Point>` input (splitting, concurrent sub-requests).
+                // Raw line protocol is always one request; these keep it that way.
+                batch_size: usize::MAX / 2,
+                max_inflight: 1,
+            })
+            .build()
+            .map_err(|e| anyhow!("Invalid InfluxDB config: {e}"))
+    }
+
     fn create_batcher(
         batcher_rx: SensorDataRx,
         driver_id_holder: &'static RetainReadTimeValue<CompactString>,
@@ -131,15 +141,15 @@ impl PersistenceLayerEntryPoint {
         batcher_wiring_type: BatcherWiringType,
     ) -> (SensorDataBatcher, BatcherWiring) {
         let (pool_tx, pool_rx) = tokio::sync::mpsc::channel::<Vec<SimplePoint>>(10);
-        let (batch_tx, batch_rx) = tokio::sync::mpsc::channel::<Vec<SimplePoint>>(10);
+        let (batch_tx, batch_rx) = tokio::sync::mpsc::channel::<PointBatch>(10);
         let (batch_size, flush_interval) = match batcher_wiring_type {
             BatcherWiringType::Normal => (
-                persistence_config.flush_max_combined_batch_size,
-                persistence_config.flush_interval_ms,
+                persistence_config.flush_max_combined_batch_size.get(),
+                persistence_config.flush_interval_ms.get(),
             ),
             BatcherWiringType::Fast => (
-                persistence_config.fast_flush_max_combined_batch_size,
-                persistence_config.fast_flush_interval_ms,
+                persistence_config.fast_flush_max_combined_batch_size.get(),
+                persistence_config.fast_flush_interval_ms.get(),
             ),
         };
 
@@ -152,6 +162,13 @@ impl PersistenceLayerEntryPoint {
             driver_id_holder,
             batcher_wiring_type,
         );
-        (batcher, (batch_rx, pool_tx, batcher_wiring_type))
+        (
+            batcher,
+            BatcherWiring {
+                batch_rx,
+                pool_tx,
+                wiring_type: batcher_wiring_type,
+            },
+        )
     }
 }
