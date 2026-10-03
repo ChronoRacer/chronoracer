@@ -206,7 +206,7 @@ Client must accept duplicate points and timestamps that are not in arrival order
 
 ### Events
 
-`StreamEvent` is one gRPC message:
+`WatchResponse` is one gRPC message:
 
 - `hello`: `protocol_version` is `1`, plus `race_id`, `stream_id`, `next_sequence`, and `selected_sensor_count`.
   `next_sequence` is the first sequence this call will assign (always 1). It is not a count of points emitted while

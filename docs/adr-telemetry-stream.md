@@ -16,10 +16,10 @@ outbound, stays in [ADR - Dashboard and live telemetry](adr-dashboard.md).
 
 Core serves **one gRPC server-streaming RPC** over plaintext HTTP/2 (h2c).
 
-- Package `chronoracer.telemetry.v1`, service `Telemetry`, rpc `Watch(WatchRequest) returns (stream StreamEvent)`.
+- Package `chronoracer.telemetry.v1`, service `TelemetryService`, rpc `Watch(WatchRequest) returns (stream WatchResponse)`.
 - `WatchRequest` names the caller and selects sensors; fields are in the proto and the rules are owned by
   [Core](component-core.md#clients-and-sensor-selection). It is the only application data toward Core, and it is fixed at
-  call start. One gRPC message is one `StreamEvent` (`hello`, `point_batch`, or `gap`), not one sensor point.
+  call start. One gRPC message is one `WatchResponse` (`hello`, `point_batch`, or `gap`), not one sensor point.
 - No TLS. The client target is an `http://` URL (h2c prior knowledge).
 - No message compression.
 - HTTP/2 stream window and connection window are each 256 KiB.
