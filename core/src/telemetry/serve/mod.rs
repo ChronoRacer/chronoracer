@@ -1,6 +1,6 @@
-use crate::telemetry::proto::stream_event::Payload;
-use crate::telemetry::proto::telemetry_server::{Telemetry, TelemetryServer};
-use crate::telemetry::proto::{Gap, Hello, Point, PointBatch, StreamEvent, WatchRequest};
+use crate::telemetry::proto::watch_response::Payload;
+use crate::telemetry::proto::telemetry_service_server::{TelemetryService, TelemetryServiceServer};
+use crate::telemetry::proto::{Gap, Hello, Point, PointBatch, WatchResponse, WatchRequest};
 use crate::telemetry::proto::watch_request::Selection;
 use crate::telemetry::queue::{
     Chunk, Drain, FIRST_SEQUENCE, Filter, GapSpan, MAX_POINTS_PER_BATCH, PreviewHub, SubscribeError,
@@ -56,7 +56,7 @@ struct StreamState {
     next_sequence: u64,
     selected_sensor_count: u32,
     hello_sent: bool,
-    pending: VecDeque<StreamEvent>,
+    pending: VecDeque<WatchResponse>,
     cancel: CancellationToken,
 }
 
@@ -145,7 +145,7 @@ async fn run_server(
         .max_concurrent_streams(MAX_CONCURRENT_STREAMS)
         .http2_keepalive_interval(Some(KEEPALIVE_INTERVAL))
         .http2_keepalive_timeout(Some(KEEPALIVE_TIMEOUT))
-        .add_service(TelemetryServer::new(service).max_decoding_message_size(MAX_REQUEST_BYTES))
+        .add_service(TelemetryServiceServer::new(service).max_decoding_message_size(MAX_REQUEST_BYTES))
         .serve_with_incoming_shutdown(incoming, cancel.clone().cancelled_owned())
         .await?;
     Ok(())
@@ -176,9 +176,9 @@ struct WatchService {
 }
 
 #[tonic::async_trait]
-impl Telemetry for WatchService {
+impl TelemetryService for WatchService {
     type WatchStream =
-        Pin<Box<dyn tokio_stream::Stream<Item = Result<StreamEvent, Status>> + Send>>;
+        Pin<Box<dyn tokio_stream::Stream<Item = Result<WatchResponse, Status>> + Send>>;
 
     async fn watch(
         &self,
@@ -260,7 +260,7 @@ fn parse_request(request: WatchRequest) -> Result<(String, Filter), Status> {
 }
 
 enum Step {
-    Event(StreamEvent),
+    Event(WatchResponse),
     Replaced,
     Stopped,
 }
@@ -272,7 +272,7 @@ enum Drive {
     End,
 }
 
-async fn poll_step(drive: Drive) -> Option<(Result<StreamEvent, Status>, Drive)> {
+async fn poll_step(drive: Drive) -> Option<(Result<WatchResponse, Status>, Drive)> {
     let Drive::Live(mut state) = drive else {
         return None;
     };
@@ -319,8 +319,8 @@ async fn wait_for_chunk(state: &mut StreamState) -> Step {
     }
 }
 
-fn hello_event(state: &StreamState) -> StreamEvent {
-    StreamEvent {
+fn hello_event(state: &StreamState) -> WatchResponse {
+    WatchResponse {
         payload: Some(Payload::Hello(Hello {
             protocol_version: PROTOCOL_VERSION,
             race_id: state.race_id.clone(),
@@ -331,8 +331,8 @@ fn hello_event(state: &StreamState) -> StreamEvent {
     }
 }
 
-fn push_gap(pending: &mut VecDeque<StreamEvent>, gap: GapSpan) {
-    pending.push_back(StreamEvent {
+fn push_gap(pending: &mut VecDeque<WatchResponse>, gap: GapSpan) {
+    pending.push_back(WatchResponse {
         payload: Some(Payload::Gap(Gap {
             first_sequence: gap.first_sequence,
             dropped_point_count: gap.dropped,
@@ -341,7 +341,7 @@ fn push_gap(pending: &mut VecDeque<StreamEvent>, gap: GapSpan) {
 }
 
 fn push_ready(
-    pending: &mut VecDeque<StreamEvent>,
+    pending: &mut VecDeque<WatchResponse>,
     gap: Option<GapSpan>,
     chunks: &[Chunk],
     tail: Option<GapSpan>,
@@ -357,7 +357,7 @@ fn push_ready(
     }
 }
 
-fn point_batch(chunks: &[Chunk]) -> Option<StreamEvent> {
+fn point_batch(chunks: &[Chunk]) -> Option<WatchResponse> {
     if chunks.is_empty() {
         return None;
     }
@@ -379,7 +379,7 @@ fn point_batch(chunks: &[Chunk]) -> Option<StreamEvent> {
     if points.is_empty() {
         return None;
     }
-    Some(StreamEvent {
+    Some(WatchResponse {
         payload: Some(Payload::PointBatch(PointBatch {
             first_sequence,
             points,
