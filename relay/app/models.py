@@ -14,10 +14,16 @@ class Phase(StrEnum):
     DESTROYED = 'destroyed'
 
 
-class TerraformAction(StrEnum): APPLY = 'apply'; CLOSE_INGEST = 'close_ingest'; DESTROY = 'destroy'
+class TerraformAction(StrEnum):
+    APPLY = 'apply'
+    CLOSE_INGEST = 'close_ingest'
+    DESTROY = 'destroy'
 
 
-class TerraformStatus(StrEnum): IN_FLIGHT = 'in_flight'; SUCCEEDED = 'succeeded'; FAILED = 'failed'
+class TerraformStatus(StrEnum):
+    IN_FLIGHT = 'in_flight'
+    SUCCEEDED = 'succeeded'
+    FAILED = 'failed'
 
 
 class TerraformRun(BaseModel):
@@ -29,7 +35,8 @@ class TerraformRun(BaseModel):
     status: TerraformStatus = TerraformStatus.IN_FLIGHT
 
     @property
-    def locked(self): return self.status == TerraformStatus.IN_FLIGHT
+    def locked(self) -> bool:
+        return self.status == TerraformStatus.IN_FLIGHT
 
 
 class Race(BaseModel):
@@ -78,8 +85,8 @@ class BuildFinished(BaseModel):
             raise ValueError('Cloud Build substitutions are incomplete')
 
         status = payload.get('status')
-        terminal_statuses = {'SUCCESS', 'FAILURE', 'INTERNAL_ERROR', 'TIMEOUT', 'CANCELLED'}
-        if status is not None and status not in terminal_statuses:
+        terminal_statuses = {'SUCCESS', 'FAILURE', 'INTERNAL_ERROR', 'TIMEOUT', 'CANCELLED', 'EXPIRED'}
+        if status is not None and (not isinstance(status, str) or status not in terminal_statuses):
             raise ValueError('Cloud Build event is not terminal')
         if status is None and not isinstance(payload.get('success'), bool):
             raise ValueError('Cloud Build event has no terminal status')

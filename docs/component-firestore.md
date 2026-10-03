@@ -14,7 +14,7 @@ Responsibility:
 
 ## Shape
 
-Three documents:
+Document locations:
 
 - `control/active` — pointer. `raceId` set or empty. Relay-only write. New start only when empty. Retry from `failed`
   keeps the same pointer.
@@ -38,9 +38,9 @@ No interaction with Firestore: Core, Kafka VM, devices, operators.
 
 ## Core config blob
 
-Relay uploads the operator YAML mapping as-is to `{raceId}/core-config.yaml` **before** the pointer transaction. It does
-not inject brokers, `raceId`, or GCP project fields. Firestore does not store the file. Orphan YAML without a pointer is
-acceptable.
+Relay uploads Core YAML to `{raceId}/core-config.yaml` **before** the pointer transaction. The input and
+`initialDriverId` injection are owned by [Relay start](component-relay.md#start-operator). Firestore does not store the
+file. Orphan YAML without a pointer is acceptable.
 
 Controller trusts the object exists and does not parse it. Overlay at boot: [Core startup](../core/startup/README.md).
 Core never uses Firestore.

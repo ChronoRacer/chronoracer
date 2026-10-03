@@ -10,9 +10,8 @@ from .auth import OktaUser
 from .gcp.builds import BuildTrigger
 from .gcp.repository import RaceRepository
 from .gcp.storage import ObjectStore
-from .kafka import EventPublisher, ShutdownPublisher
-from .models import BuildFinished, ExportDone, Phase, Race, TerraformAction, TerraformRun, \
-    TerraformStatus
+from .kafka import EventPublisher, HeartbeatReader, ShutdownPublisher
+from .models import BuildFinished, ExportDone, Phase, Race, TerraformAction, TerraformRun, TerraformStatus
 
 # GCP label-safe, Core cap 12 chars due to CompactString
 GCP_LABEL_COMPACT_STRING_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9_-]{0,11})$")
@@ -25,7 +24,8 @@ class PayloadTooLargeError(Exception):
 
 class RelayService:
     def __init__(self, repository: RaceRepository, object_store: ObjectStore | None = None,
-                 builds: BuildTrigger | None = None, shutdown: ShutdownPublisher | None = None, heartbeat=None,
+                 builds: BuildTrigger | None = None, shutdown: ShutdownPublisher | None = None,
+                 heartbeat: HeartbeatReader | None = None,
                  heartbeat_freshness_seconds: int = 50, build_bind_window_seconds: int = 600,
                  kafka_public_port: int = 9094, events: EventPublisher | None = None):
         self.repository = repository
@@ -34,7 +34,8 @@ class RelayService:
         self.heartbeat, self.heartbeat_freshness_seconds = heartbeat, heartbeat_freshness_seconds
         self.build_bind_window_seconds = build_bind_window_seconds
         self.kafka_public_port = kafka_public_port
-        # This lock is enough - cloud run instances capped at 1 in GCP
+        # Serialize lifecycle operations within this instance. Deployment caps
+        # are owned by infra/always-on/control_plane.tf.
         self._operation_lock = asyncio.Lock()
 
     async def start(self, race_id: str, config: dict[str, Any], started_by: OktaUser):
@@ -42,6 +43,8 @@ class RelayService:
             return await self._start(race_id, config, started_by)
 
     async def _start(self, race_id: str, config: dict[str, Any], started_by: OktaUser):
+        if not GCP_LABEL_COMPACT_STRING_PATTERN.fullmatch(race_id):
+            raise ValueError('raceId must be 1–12 label-safe characters')
         logger.info("Starting race requested by {}", started_by)
         await self._reconcile()
         pointer = await self.repository.active()
@@ -49,8 +52,8 @@ class RelayService:
             if race_id != pointer.race_id:
                 raise ValueError('raceId does not match the active race')
             race = await self._active()
-            if race.phase != Phase.FAILED or self._locked(race): raise ValueError(
-                'race cannot be started in its current state')
+            if race.phase != Phase.FAILED or self._locked(race):
+                raise ValueError('race cannot be started in its current state')
             race.phase = Phase.STARTING
             self._stamp(race, TerraformAction.APPLY)
             await self.repository.save_race(race, {'phase', 'terraform_run', 'last_error'})
@@ -74,7 +77,7 @@ class RelayService:
 
     async def status(self):
         async with self._operation_lock:
-            await self._reconcile()
+            await self._reconcile(republish_shutdown=True)
             pointer = await self.repository.active()
             if not pointer.race_id:
                 logger.debug("Status requested with no active race")
@@ -123,13 +126,16 @@ class RelayService:
     async def publish_event(self, key: str, value: bytes):
         if not key:
             raise ValueError('kafka key is required')
-        race = await self._active()
-        if race.phase != Phase.APPLIED:
-            raise ValueError('race cannot accept events in its current state')
-        if not self.events:
-            raise RuntimeError('event publisher is not configured')
-        logger.info("Publishing operator event for race {} key {}", race.race_id, key)
-        await self.events.publish(key, value)
+        if len(value) > MAX_OPERATOR_PAYLOAD_BYTES:
+            raise PayloadTooLargeError('event payload exceeds 100KiB')
+        async with self._operation_lock:
+            race = await self._active()
+            if race.phase != Phase.APPLIED:
+                raise ValueError('race cannot accept events in its current state')
+            if not self.events:
+                raise RuntimeError('event publisher is not configured')
+            logger.info("Publishing operator event for race {} key {}", race.race_id, key)
+            await self.events.publish(key, value)
 
     async def historical_race(self, race_id: str, export_race: bool = False):
         race = await self.repository.race(race_id)
@@ -151,8 +157,8 @@ class RelayService:
         await self._reconcile()
         race = await self._active()
         logger.info("Stopping race {}", race.race_id)
-        if race.phase not in (Phase.APPLIED, Phase.STOPPING) or self._locked(race): raise ValueError(
-            'race cannot be stopped in its current state')
+        if race.phase not in (Phase.APPLIED, Phase.STOPPING) or self._locked(race):
+            raise ValueError('race cannot be stopped in its current state')
         race.phase = Phase.STOPPING
         race.stopped_at = datetime.now(timezone.utc)
         self._stamp(race, TerraformAction.CLOSE_INGEST)
@@ -189,7 +195,8 @@ class RelayService:
                     event.success)
         race = await self._active()
         run = race.terraform_run
-        if event.race_id != race.race_id or not run or run.run_token != event.run_token or run.build_id != event.build_id or run.action != event.action:
+        if (event.race_id != race.race_id or not run or run.run_token != event.run_token
+                or run.build_id != event.build_id or run.action != event.action):
             raise ValueError('build does not match active terraform run')
         if not run.locked:
             if (event.action == TerraformAction.CLOSE_INGEST and event.success
@@ -232,40 +239,36 @@ class RelayService:
         event = event if isinstance(event, ExportDone) else ExportDone.model_validate(event)
         logger.info("Export completed for race {}", event.race_id)
         race = await self._active()
-        if race.race_id != event.race_id or race.phase != Phase.EXPORTING or self._locked(race): raise ValueError(
-            'export completion is not accepted')
+        if race.race_id != event.race_id or race.phase != Phase.EXPORTING or self._locked(race):
+            raise ValueError('export completion is not accepted')
         race.phase = Phase.DESTROYING
         self._stamp(race, TerraformAction.DESTROY)
         await self.repository.save_race(race, {'phase', 'terraform_run', 'last_error'})
         await self._trigger(race)
         await self.repository.save_race(race, {'terraform_run'})
 
-    async def _active(self):
+    async def _active(self) -> Race:
         pointer = await self.repository.active()
-        if not pointer.race_id: raise ValueError('no active race')
+        if not pointer.race_id:
+            raise ValueError('no active race')
         race = await self.repository.race(pointer.race_id)
-        if not race: raise ValueError('active race document missing')
+        if not race:
+            raise ValueError('active race document missing')
         return race
 
     @staticmethod
-    def _locked(race):
+    def _locked(race: Race) -> bool:
         return bool(race.terraform_run and race.terraform_run.locked)
 
     @staticmethod
-    def _stamp(race, action):
+    def _stamp(race: Race, action: TerraformAction) -> None:
         race.last_error = None
         race.terraform_run = TerraformRun(run_token=str(uuid4()), stamped_at=datetime.now(timezone.utc), action=action)
 
-    async def _trigger(self, race):
-        if not self.builds:
-            exc = RuntimeError('Cloud Build trigger is not configured')
-            race.terraform_run.status = TerraformStatus.FAILED
-            race.last_error = str(exc)
-            if race.terraform_run.action == TerraformAction.APPLY:
-                race.phase = Phase.FAILED
-            await self.repository.save_race(race, {'phase', 'terraform_run', 'last_error'})
-            raise exc
+    async def _trigger(self, race: Race) -> None:
         try:
+            if not self.builds:
+                raise RuntimeError('Cloud Build trigger is not configured')
             run = race.terraform_run
             run.build_id = await self.builds.trigger(race.race_id, run.action.value, run.run_token)
             logger.info("Triggered {} build {} for race {}", run.action.value, run.build_id, race.race_id)
@@ -280,16 +283,23 @@ class RelayService:
 
     async def reconcile(self):
         async with self._operation_lock:
-            return await self._reconcile()
+            return await self._reconcile(republish_shutdown=True)
 
-    async def _reconcile(self):
+    async def _reconcile(self, *, republish_shutdown: bool = False):
         """Recover missed pushes and bind builds whose trigger response was lost."""
         if not self.builds:
             return
         race = await self._active_or_none()
-        if not race or not race.terraform_run or not race.terraform_run.locked:
+        if not race or not race.terraform_run:
             return
         run = race.terraform_run
+        if not run.locked:
+            # Exporting is committed before Kafka publish. Recover a publish
+            # failure even though the Terraform mutex has already been cleared.
+            if (republish_shutdown and race.phase == Phase.EXPORTING and run.action == TerraformAction.CLOSE_INGEST
+                    and run.status == TerraformStatus.SUCCEEDED):
+                await self._publish_shutdown(race.race_id)
+            return
         if not run.build_id:
             candidate = await self.builds.find(race.race_id, run.run_token)
             if candidate:

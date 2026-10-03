@@ -12,10 +12,10 @@ def iam_sign_params():
     """Cloud Run ADC has a token, not a private key. V4 signing then needs IAM signBlob.
 
     google-cloud-storage calls IAM only when both service_account_email and access_token
-    are set. Otherwise it demands Signing credentials and raises AttributeError.
+    are set.
     """
     credentials, _ = google.auth.default()
-    if not getattr(credentials, "token", None):
+    if not getattr(credentials, "token", None) or getattr(credentials, "expired", False):
         credentials.refresh(Request())
     email = getattr(credentials, "service_account_email", None)
     token = getattr(credentials, "token", None)

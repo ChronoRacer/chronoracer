@@ -28,6 +28,13 @@ def test_iam_sign_params_rejects_missing_email(monkeypatch):
         iam_sign_params()
 
 
+def test_iam_sign_params_refreshes_expired_token(monkeypatch):
+    creds = _Creds('relay@proj.iam.gserviceaccount.com', token='expired-token')
+    creds.expired = True
+    monkeypatch.setattr('app.gcp.storage.google.auth.default', lambda: (creds, 'proj'))
+    assert iam_sign_params()[2] == 'access-token'
+
+
 def test_signed_export_url_passes_iam_signblob_params(monkeypatch):
     creds = _Creds("relay@proj.iam.gserviceaccount.com")
     monkeypatch.setattr("app.gcp.storage.google.auth.default", lambda: (creds, "proj"))

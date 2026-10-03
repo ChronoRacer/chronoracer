@@ -2,7 +2,7 @@ import base64
 import json
 from fastapi import Depends, FastAPI, Request, HTTPException, status, Query
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Any
 
 from .auth import OktaAuthenticator, okta_user, pubsub_push, OktaUser
@@ -19,6 +19,29 @@ class StartRequest(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     race_id: str = Field(..., alias='raceId', pattern=GCP_LABEL_COMPACT_STRING_PATTERN.pattern)
     initial_driver_id: str = Field(..., alias='initialDriverId', pattern=GCP_LABEL_COMPACT_STRING_PATTERN.pattern)
+
+    @field_validator('config')
+    @classmethod
+    def validate_race_mapping(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if 'race' in value and not isinstance(value['race'], dict):
+            raise ValueError('config.race must be a mapping')
+        return value
+
+
+async def _pubsub_data(request: Request) -> dict[str, Any]:
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise ValueError('invalid Pub/Sub envelope')
+    message = payload.get('message')
+    if not isinstance(message, dict):
+        raise ValueError('invalid Pub/Sub envelope')
+    encoded = message.get('data')
+    if not isinstance(encoded, str) or not encoded:
+        raise ValueError('invalid Pub/Sub data')
+    data = json.loads(base64.b64decode(encoded, validate=True))
+    if not isinstance(data, dict):
+        raise ValueError('invalid Pub/Sub event')
+    return data
 
 
 def create_app() -> FastAPI:
@@ -77,17 +100,23 @@ def create_app() -> FastAPI:
                 declared = int(content_length)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail='invalid Content-Length') from exc
+            if declared < 0:
+                raise HTTPException(status_code=400, detail='invalid Content-Length')
             if declared > MAX_OPERATOR_PAYLOAD_BYTES:
                 raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                                     detail='event payload exceeds 100KiB')
-        body = await request.body()
-        if len(body) > MAX_OPERATOR_PAYLOAD_BYTES:
-            raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                                detail='event payload exceeds 100KiB')
+        body = bytearray()
+        async for chunk in request.stream():
+            if len(body) + len(chunk) > MAX_OPERATOR_PAYLOAD_BYTES:
+                raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                                    detail='event payload exceeds 100KiB')
+            body.extend(chunk)
         try:
-            await app.state.service.publish_event(key, body)
+            await app.state.service.publish_event(key, bytes(body))
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PayloadTooLargeError as exc:
+            raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)) from exc
 
     @app.get("/race/status")
     async def race_status(_: OktaUser = Depends(okta_user)):
@@ -127,13 +156,7 @@ def create_app() -> FastAPI:
         await pubsub_push(request, config.gcp.build_finished_audience,
                           config.gcp.build_finished_service_account)
         try:
-            payload = await request.json()
-            message = payload.get('message')
-            if not isinstance(message, dict) or not message.get('data'):
-                raise ValueError('invalid Pub/Sub envelope')
-            data = json.loads(base64.b64decode(message['data']))
-            if not isinstance(data, dict):
-                raise ValueError('invalid Cloud Build event')
+            data = await _pubsub_data(request)
             await app.state.service.build_finished(BuildFinished.from_cloud_build(data))
         except ValueError as exc:
             logger.info("Acknowledging rejected build-finished event: {}", exc)
@@ -144,13 +167,7 @@ def create_app() -> FastAPI:
         await pubsub_push(request, config.gcp.export_done_audience,
                           config.gcp.export_done_service_account)
         try:
-            payload = await request.json()
-            message = payload.get('message')
-            if not isinstance(message, dict) or not message.get('data'):
-                raise ValueError('invalid Pub/Sub envelope')
-            data = json.loads(base64.b64decode(message['data']))
-            if not isinstance(data, dict):
-                raise ValueError('invalid export-done event')
+            data = await _pubsub_data(request)
             await app.state.service.export_done(data)
         except ValueError as exc:
             logger.info("Acknowledging rejected export-done event: {}", exc)

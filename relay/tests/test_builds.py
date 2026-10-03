@@ -2,7 +2,7 @@ import pytest
 from app.gcp.builds import CloudBuildTrigger
 from google.cloud.devtools import cloudbuild_v1
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 PARENT = "projects/proj/locations/europe-west1"
 
@@ -40,7 +40,7 @@ async def test_trigger_run_get_list_are_regional(monkeypatch):
         status=cloudbuild_v1.Build.Status.SUCCESS,
         failure_info=None,
     ))
-    list_builds = MagicMock(return_value=_AsyncSeq([SimpleNamespace(id="build-9")]))
+    list_builds = AsyncMock(return_value=_AsyncSeq([SimpleNamespace(id="build-9")]))
     _client(monkeypatch, run_build_trigger=run, get_build=get, list_builds=list_builds)
 
     assert await trigger.trigger("r1", "apply", "tok") == "build-9"
@@ -53,8 +53,21 @@ async def test_trigger_run_get_list_are_regional(monkeypatch):
     assert get.await_args.kwargs["timeout"] == trigger.API_TIMEOUT_SECONDS
 
     assert await trigger.find("r1", "tok") == {"buildId": "build-9"}
-    list_req = list_builds.call_args.kwargs["request"]
+    list_req = list_builds.await_args.kwargs["request"]
     assert list_req.parent == PARENT
     assert 'substitutions._RACE_ID="r1"' in list_req.filter
     assert 'substitutions._RUN_TOKEN="tok"' in list_req.filter
     assert list_builds.call_args.kwargs["timeout"] == trigger.API_TIMEOUT_SECONDS
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status', list(cloudbuild_v1.Build.Status))
+async def test_get_distinguishes_running_and_all_terminal_builds(monkeypatch, status):
+    _client(monkeypatch, get_build=AsyncMock(return_value=SimpleNamespace(
+        id='build-1', status=status, failure_info=None,
+    )))
+    result = await CloudBuildTrigger('proj', 'trigger', 'europe-west1').get('build-1')
+    if status.name in {'STATUS_UNKNOWN', 'PENDING', 'QUEUED', 'WORKING'}:
+        assert result is None
+    else:
+        assert result == {'buildId': 'build-1', 'success': status.name == 'SUCCESS', 'error': None}
