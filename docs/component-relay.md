@@ -67,6 +67,7 @@ Input: required `raceId` and `initialDriverId` (no defaults; operator chooses), 
 mapping; partial OK). Both IDs use the same 1–12 character, GCP label-safe format. Relay writes
 `initialDriverId` into the uploaded config as `race.initial_driver_id`, overriding any value in the supplied config.
 Relay does not mint `raceId` and does not schema-validate the rest of Core.
+If supplied, `config.race` must be a mapping so Relay can inject the driver ID.
 On retry from `failed`, config is ignored; the original YAML stays. `raceId` must match the active race.
 
 New race (pointer empty): reject if `raceId` is invalid or `races/{raceId}` already exists (including destroyed races).

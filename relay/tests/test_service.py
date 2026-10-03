@@ -1,5 +1,7 @@
+import asyncio
 import pytest
 import yaml
+from app.auth import OktaUser
 from app.gcp.repository import InMemoryRaceRepository
 from app.gcp.storage import DevObjectStore
 from app.models import BuildFinished, ExportDone, Phase, TerraformAction, TerraformStatus
@@ -74,7 +76,7 @@ class FakeHeartbeat:
 
 async def started():
     service = RelayService(InMemoryRaceRepository(), builds=FakeBuilds())
-    await service.start('race1', {'x': 1}, 'operator')
+    await service.start('race1', {'x': 1}, OktaUser(sub='operator'))
     race = await service._active()
     race.terraform_run.build_id = 'b1'
     await service.repository.save_race(race)
@@ -130,13 +132,13 @@ async def test_export_done_only_allowed_in_exporting():
 async def test_retry_from_failed_keeps_race_and_yaml_unchanged():
     builds = FakeBuilds()
     service = RelayService(InMemoryRaceRepository(), builds=builds)
-    first = await service.start('race1', {'port': 1}, 'operator')
+    first = await service.start('race1', {'port': 1}, OktaUser(sub='operator'))
     race = await service._active()
     race.phase = Phase.FAILED
     race.terraform_run.status = TerraformStatus.FAILED
     await service.repository.save_race(race)
 
-    retried = await service.start('race1', {'port': 999}, 'other-operator')
+    retried = await service.start('race1', {'port': 999}, OktaUser(sub='other-operator'))
     current = await service._active()
     assert retried['raceId'] == first['raceId']
     assert current.race_id == first['raceId']
@@ -148,14 +150,14 @@ async def test_retry_from_failed_keeps_race_and_yaml_unchanged():
 @pytest.mark.asyncio
 async def test_retry_from_failed_clears_last_error():
     service = RelayService(InMemoryRaceRepository(), builds=FakeBuilds())
-    await service.start('race1', {})
+    await service.start('race1', {}, OktaUser(sub="operator"))
     race = await service._active()
     race.phase = Phase.FAILED
     race.terraform_run.status = TerraformStatus.FAILED
     race.last_error = 'terraform failed'
     await service.repository.save_race(race)
 
-    await service.start('race1', {})
+    await service.start('race1', {}, OktaUser(sub="operator"))
     current = await service._active()
     assert current.last_error is None
     assert current.terraform_run.locked
@@ -164,7 +166,7 @@ async def test_retry_from_failed_clears_last_error():
 @pytest.mark.asyncio
 async def test_new_start_persists_mutex_on_create():
     service = RelayService(InMemoryRaceRepository(), builds=FakeBuilds())
-    await service.start('race1', {})
+    await service.start('race1', {}, OktaUser(sub="operator"))
     race = await service.repository.race('race1')
     assert race.terraform_run is not None
     assert race.terraform_run.locked
@@ -175,18 +177,18 @@ async def test_new_start_persists_mutex_on_create():
 async def test_start_rejects_invalid_and_duplicate_race_id():
     service = RelayService(InMemoryRaceRepository(), builds=FakeBuilds())
     with pytest.raises(ValueError, match='label-safe'):
-        await service.start('Race1', {})
+        await service.start('Race1', {}, OktaUser(sub="operator"))
     with pytest.raises(ValueError, match='label-safe'):
-        await service.start('abcdefghijklm', {})
+        await service.start('abcdefghijklm', {}, OktaUser(sub="operator"))
     with pytest.raises(ValueError, match='label-safe'):
-        await service.start('', {})
-    await service.start('race-1', {})
+        await service.start('', {}, OktaUser(sub="operator"))
+    await service.start('race-1', {}, OktaUser(sub="operator"))
     race = await service._active()
     race.phase = Phase.FAILED
     race.terraform_run.status = TerraformStatus.FAILED
     await service.repository.save_race(race)
     with pytest.raises(ValueError, match='does not match'):
-        await service.start('other1', {})
+        await service.start('other1', {}, OktaUser(sub="operator"))
 
 
 @pytest.mark.asyncio
@@ -204,7 +206,7 @@ async def test_destroyed_race_id_cannot_be_reused():
         BuildFinished(race_id=race.race_id, action=TerraformAction.DESTROY, run_token=current.terraform_run.run_token,
                       build_id='b2', success=True))
     with pytest.raises(ValueError, match='already exists'):
-        await service.start(race.race_id, {})
+        await service.start(race.race_id, {}, OktaUser(sub="operator"))
 
 
 @pytest.mark.asyncio
@@ -213,7 +215,7 @@ async def test_trigger_failure_releases_mutex_and_marks_failed():
     service = RelayService(InMemoryRaceRepository(), builds=builds)
 
     with pytest.raises(RuntimeError):
-        await service.start('race1', {'x': 1})
+        await service.start('race1', {'x': 1}, OktaUser(sub="operator"))
     race = await service._active()
     assert race.phase is Phase.FAILED
     assert race.terraform_run.status is TerraformStatus.FAILED
@@ -225,7 +227,7 @@ async def test_trigger_failure_releases_mutex_and_marks_failed():
 async def test_apply_failure_marks_failed_and_clears_mutex():
     builds = FakeBuilds()
     service = RelayService(InMemoryRaceRepository(), builds=builds)
-    await service.start('race1', {}, 'operator')
+    await service.start('race1', {}, OktaUser(sub='operator'))
     race = await service._active()
 
     await service.build_finished(BuildFinished(
@@ -258,7 +260,7 @@ async def test_close_ingest_success_enters_exporting_and_publishes_shutdown():
     builds = FakeBuilds()
     shutdown = FakeShutdown()
     service = RelayService(InMemoryRaceRepository(), builds=builds, shutdown=shutdown)
-    await service.start('race1', {})
+    await service.start('race1', {}, OktaUser(sub="operator"))
     race = await service._active()
     race.phase = Phase.APPLIED
     race.terraform_run.status = TerraformStatus.SUCCEEDED
@@ -283,7 +285,7 @@ async def test_close_ingest_success_persists_exporting_before_shutdown_publish()
     repository = TrackingRepository()
     shutdown = OrderTrackingShutdown(repository)
     service = RelayService(repository, builds=builds, shutdown=shutdown)
-    await service.start('race1', {})
+    await service.start('race1', {}, OktaUser(sub="operator"))
     race = await service._active()
     race.phase = Phase.APPLIED
     race.terraform_run.status = TerraformStatus.SUCCEEDED
@@ -302,7 +304,7 @@ async def test_close_ingest_replay_republishes_shutdown_when_already_exporting()
     builds = FakeBuilds()
     shutdown = FakeShutdown()
     service = RelayService(InMemoryRaceRepository(), builds=builds, shutdown=shutdown)
-    await service.start('race1', {})
+    await service.start('race1', {}, OktaUser(sub="operator"))
     race = await service._active()
     race.phase = Phase.APPLIED
     race.terraform_run.status = TerraformStatus.SUCCEEDED
@@ -333,7 +335,7 @@ async def test_force_destroy_rejects_destroyed_phase():
 async def test_reconcile_expired_unbound_run_releases_mutex():
     builds = FakeBuilds()
     service = RelayService(InMemoryRaceRepository(), builds=builds)
-    await service.start('race1', {})
+    await service.start('race1', {}, OktaUser(sub="operator"))
     race = await service._active()
     race.terraform_run.build_id = ''
     race.terraform_run.stamped_at = datetime.now(timezone.utc) - timedelta(seconds=601)
@@ -352,7 +354,7 @@ async def test_start_uploads_operator_yaml_unchanged():
     service = RelayService(InMemoryRaceRepository(), object_store=object_store, builds=FakeBuilds())
     config = {'race': {'initial_driver_id': 'driver-1'}, 'runtime': {'rayon_threads': 8}}
 
-    result = await service.start('race1', config, 'operator')
+    result = await service.start('race1', config, OktaUser(sub='operator'))
 
     stored = yaml.safe_load(object_store.objects[f"{result['raceId']}/core-config.yaml"])
     assert stored == config
@@ -396,7 +398,7 @@ async def test_ready_status_includes_configured_kafka_port():
     service = RelayService(
         InMemoryRaceRepository(), builds=FakeBuilds(), heartbeat=FakeHeartbeat(), kafka_public_port=19092
     )
-    await service.start('race1', {})
+    await service.start('race1', {}, OktaUser(sub="operator"))
     race = await service._active()
     race.phase = Phase.APPLIED
     race.terraform_run.status = TerraformStatus.SUCCEEDED
@@ -414,7 +416,7 @@ async def test_ready_status_includes_telemetry_url():
     service = RelayService(
         InMemoryRaceRepository(), builds=FakeBuilds(), heartbeat=FakeHeartbeat()
     )
-    await service.start('race1', {})
+    await service.start('race1', {}, OktaUser(sub="operator"))
     race = await service._active()
     race.phase = Phase.APPLIED
     race.terraform_run.status = TerraformStatus.SUCCEEDED
@@ -432,14 +434,14 @@ async def test_ready_status_includes_telemetry_url():
 async def test_start_rejects_oversized_core_config_yaml():
     service = RelayService(InMemoryRaceRepository(), builds=FakeBuilds())
     with pytest.raises(PayloadTooLargeError):
-        await service.start('race1', {'blob': 'x' * MAX_OPERATOR_PAYLOAD_BYTES})
+        await service.start('race1', {'blob': 'x' * MAX_OPERATOR_PAYLOAD_BYTES}, OktaUser(sub="operator"))
 
 
 @pytest.mark.asyncio
 async def test_publish_event_requires_applied_race():
     events = FakeEvents()
     service = RelayService(InMemoryRaceRepository(), builds=FakeBuilds(), events=events)
-    await service.start('race1', {})
+    await service.start('race1', {}, OktaUser(sub="operator"))
     with pytest.raises(ValueError, match='current state'):
         await service.publish_event('FLAG', b'payload')
     assert events.messages == []
@@ -449,7 +451,7 @@ async def test_publish_event_requires_applied_race():
 async def test_publish_event_sends_opaque_bytes():
     events = FakeEvents()
     service = RelayService(InMemoryRaceRepository(), builds=FakeBuilds(), events=events)
-    await service.start('race1', {})
+    await service.start('race1', {}, OktaUser(sub="operator"))
     race = await service._active()
     race.phase = Phase.APPLIED
     race.terraform_run.status = TerraformStatus.SUCCEEDED
@@ -463,10 +465,100 @@ async def test_publish_event_sends_opaque_bytes():
 async def test_publish_event_rejects_oversized_body():
     events = FakeEvents()
     service = RelayService(InMemoryRaceRepository(), builds=FakeBuilds(), events=events)
-    await service.start('race1', {})
+    await service.start('race1', {}, OktaUser(sub="operator"))
     race = await service._active()
     race.phase = Phase.APPLIED
     await service.repository.save_race(race)
     with pytest.raises(PayloadTooLargeError):
         await service.publish_event('FLAG', b'x' * (MAX_OPERATOR_PAYLOAD_BYTES + 1))
     assert events.messages == []
+
+
+@pytest.mark.asyncio
+async def test_status_recovers_shutdown_publish_failure_after_exporting_commit():
+    shutdown = FakeShutdown()
+    service, race = await started()
+    service.shutdown = shutdown
+    race.phase = Phase.STOPPING
+    race.terraform_run.action = TerraformAction.CLOSE_INGEST
+    await service.repository.save_race(race)
+
+    original_publish = shutdown.publish_shutdown
+    async def fail(_race_id):
+        raise RuntimeError('Kafka unavailable')
+    shutdown.publish_shutdown = fail
+    event = BuildFinished(
+        race_id=race.race_id, action=TerraformAction.CLOSE_INGEST,
+        run_token=race.terraform_run.run_token, build_id='b1', success=True,
+    )
+    with pytest.raises(RuntimeError, match='Kafka unavailable'):
+        await service.build_finished(event)
+    current = await service._active()
+    assert current.phase is Phase.EXPORTING
+    assert current.terraform_run.status is TerraformStatus.SUCCEEDED
+    assert shutdown.close_calls == 1
+
+    shutdown.publish_shutdown = original_publish
+    assert (await service.status())['phase'] == 'exporting'
+    assert shutdown.calls == [race.race_id]
+    assert shutdown.close_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_event_publish_finishes_before_stop_closes_ingest():
+    entered, release = asyncio.Event(), asyncio.Event()
+    class BlockingEvents(FakeEvents):
+        async def publish(self, key, value):
+            entered.set()
+            await release.wait()
+            await super().publish(key, value)
+
+    service, race = await started()
+    service.events = BlockingEvents()
+    race.phase = Phase.APPLIED
+    race.terraform_run.status = TerraformStatus.SUCCEEDED
+    await service.repository.save_race(race)
+    publishing = asyncio.create_task(service.publish_event('FLAG', b'event'))
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    stopping = asyncio.create_task(service.stop())
+    try:
+        await asyncio.sleep(0)
+        assert (await service._active()).phase is Phase.APPLIED
+        assert not stopping.done()
+    finally:
+        release.set()
+        await asyncio.gather(publishing, stopping)
+    assert service.events.messages == [('FLAG', b'event')]
+    assert (await service._active()).phase is Phase.STOPPING
+
+
+@pytest.mark.asyncio
+async def test_reconcile_binds_lost_build_response_and_replays_result():
+    service, race = await started()
+    race.terraform_run.build_id = ''
+    await service.repository.save_race(race)
+    service.builds.terminal = {'buildId': 'recovered', 'success': False, 'error': 'apply failed'}
+    result = await service.status()
+    assert result['phase'] == 'failed'
+    assert result['terraformRun']['buildId'] == 'recovered'
+    assert result['terraformRun']['status'] == 'failed'
+    assert result['lastError'] == 'apply failed'
+
+
+@pytest.mark.asyncio
+async def test_force_destroy_from_exporting_does_not_require_kafka():
+    service, race = await started()
+    race.phase = Phase.EXPORTING
+    race.terraform_run.action = TerraformAction.CLOSE_INGEST
+    race.terraform_run.status = TerraformStatus.SUCCEEDED
+    await service.repository.save_race(race)
+    # No shutdown publisher is configured, but force-destroy must still work.
+    assert (await service.force_destroy())['phase'] == 'destroying'
+
+
+def test_expired_build_notification_is_a_terminal_failure():
+    event = BuildFinished.from_cloud_build({
+        'id': 'build-1', 'status': 'EXPIRED',
+        'substitutions': {'_RACE_ID': 'race1', '_ACTION': 'apply', '_RUN_TOKEN': 'token'},
+    })
+    assert event.success is False
