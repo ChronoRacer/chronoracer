@@ -61,3 +61,11 @@ resource "google_service_account" "export_done_push" {
 
   depends_on = [google_project_service.apis]
 }
+
+resource "google_service_account" "analysis" {
+  project      = var.project_id
+  account_id   = local.names.analysis_sa
+  display_name = "Chronoracer Analysis VM"
+
+  depends_on = [google_project_service.apis]
+}

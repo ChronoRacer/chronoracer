@@ -69,3 +69,13 @@ data "google_compute_image" "core" {
   family  = local.names.core_family
   project = var.project_id
 }
+
+data "google_service_account" "analysis" {
+  account_id = local.names.analysis_sa
+  project    = var.project_id
+}
+
+data "google_compute_image" "analysis" {
+  family  = local.names.analysis_family
+  project = var.project_id
+}

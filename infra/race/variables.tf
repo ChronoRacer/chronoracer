@@ -100,3 +100,26 @@ variable "core_boot_disk_size_gb" {
     error_message = "core_boot_disk_size_gb must be at least 20 GB"
   }
 }
+
+variable "analysis_machine_type" {
+  type        = string
+  description = "Analysis VM placeholder. Changing mid-race is forbidden."
+  default     = "e2-micro"
+}
+
+variable "analysis_boot_disk_type" {
+  type        = string
+  description = "Analysis boot disk. Must be supported by its machine type. Changing mid-race is forbidden."
+  default     = "pd-balanced"
+}
+
+variable "analysis_boot_disk_size_gb" {
+  type        = number
+  description = "Analysis boot disk size. Changing mid-race is forbidden."
+  default     = 20
+
+  validation {
+    condition     = var.analysis_boot_disk_size_gb >= 20
+    error_message = "analysis_boot_disk_size_gb must be at least 20 GB."
+  }
+}

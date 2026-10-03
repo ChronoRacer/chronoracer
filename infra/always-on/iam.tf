@@ -368,8 +368,9 @@ resource "google_project_iam_member" "dashboard_monitoring" {
 
 locals {
   race_vm_sa_emails = {
-    kafka = google_service_account.kafka.email
-    core  = google_service_account.core.email
+    kafka    = google_service_account.kafka.email
+    core     = google_service_account.core.email
+    analysis = google_service_account.analysis.email
   }
 }
 
@@ -451,4 +452,10 @@ resource "google_cloud_run_v2_service_iam_member" "push_invoker" {
   name     = google_cloud_run_v2_service.relay.name
   role     = "roles/run.invoker"
   member   = "serviceAccount:${each.value}"
+}
+
+resource "google_service_account_iam_member" "controller_as_analysis" {
+  service_account_id = google_service_account.analysis.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.controller.email}"
 }

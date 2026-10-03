@@ -14,7 +14,7 @@ outbound, stays in [ADR - Dashboard and live telemetry](adr-dashboard.md).
 
 ## Decision
 
-Core serves **one gRPC server-streaming RPC** over plaintext HTTP/2 (h2c).
+Core serves **gRPC server-streaming RPC** over plaintext HTTP/2 (h2c).
 
 - Package `chronoracer.telemetry.v1`, service `Telemetry`, rpc `Watch(WatchRequest) returns (stream StreamEvent)`.
 - `WatchRequest` names the caller and selects sensors; fields are in the proto and the rules are owned by

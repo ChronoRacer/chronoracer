@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Packages shared by Kafka and Core Packer builders. Runs as root on Debian 13.
+# Packages shared by race VM Packer builders. Runs as root on Debian 13.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 

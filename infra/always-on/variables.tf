@@ -62,7 +62,7 @@ variable "iap_ssh_members" {
 
 variable "subnet_cidr" {
   type        = string
-  description = "Race VPC subnet. Kafka/Core VMs land here."
+  description = "Race VPC subnet. All race VMs land here."
   default     = "10.20.0.0/24"
 
   validation {
@@ -89,7 +89,7 @@ variable "relay_run_subnet_cidr" {
 
 variable "telemetry_run_subnet_cidr" {
   type        = string
-  description = "Telemetry Direct VPC Egress subnet. Only this range may reach Core telemetry."
+  description = "Telemetry Direct VPC Egress subnet. This range may reach Core telemetry; Analysis is authorized separately by VM tag."
   default     = "10.20.2.0/26"
 
   validation {

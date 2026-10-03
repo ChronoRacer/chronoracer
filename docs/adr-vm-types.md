@@ -9,10 +9,11 @@ Global prerequisites:
 
 ## Decision
 
-| VM              | Machine type    | vCPU | Memory | Boot disk                   |
-|-----------------|-----------------|-----:|-------:|-----------------------------|
-| Kafka           | `n4-standard-2` |    2 |   8 GB | `hyperdisk balanced`, 20 GB |
-| Core + InfluxDB | `c4d-highcpu-4` |    4 |   7 GB | `hyperdisk balanced`, 20 GB | 
+| VM              | Machine type    |     vCPU | Memory | Boot disk                   |
+|-----------------|-----------------|---------:|-------:|-----------------------------|
+| Kafka           | `n4-standard-2` |        2 |   8 GB | `hyperdisk-balanced`, 20 GB |
+| Core + InfluxDB | `c4d-highcpu-4` |        4 |   7 GB | `hyperdisk-balanced`, 20 GB |
+| Analysis        | `e2-micro`      | 2 shared |   1 GB | `pd-balanced`, 20 GB        |
 
 Terraform variables in [`infra/race/variables.tf`](../infra/race/variables.tf) are the implementation of this decision.
 
@@ -55,6 +56,12 @@ If needed, we can go for a highmem variant, which would bump to `4.30$/30h`, so 
 better
 JVM performance than E2 series and for the predicted instance lifespan, cost difference is negligible.
 
+## Analysis VM
+
+`e2-micro` is an infrastructure placeholder pending module sizing. It uses `pd-balanced` because E2 does not support Hyperdisk.
+
+[IMPORTANT!] TODO - workload sizing and final machine type.
+
 ## Evidence from load testing
 
 Core thread config:
@@ -94,7 +101,7 @@ GCP latency or throughput.
 
 #### GCP load test
 
-Testing done on Core version `0.0.2`.
+Testing done on Core version `0.0.2` with telemetry module.
 
 Same settings, actual message sending time was around 290 seconds. The Telemetry module was constantly consuming
 sensor data stream and metric pushing was enabled on Core. Kafka traffic, of course, with TLS and Okta.

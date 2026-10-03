@@ -102,6 +102,57 @@ resource "google_compute_instance" "core" {
   }
 }
 
+resource "google_compute_instance" "analysis" {
+  name         = local.names.analysis_vm
+  project      = var.project_id
+  zone         = var.zone
+  machine_type = var.analysis_machine_type
+
+  tags = ["analysis"]
+
+  labels = {
+    race-id = var.race_id
+  }
+
+  boot_disk {
+    auto_delete = true
+
+    initialize_params {
+      image = data.google_compute_image.analysis.id
+      size  = var.analysis_boot_disk_size_gb
+      type  = var.analysis_boot_disk_type
+    }
+  }
+
+  network_interface {
+    subnetwork = data.google_compute_subnetwork.chronoracer.self_link
+  }
+
+  metadata = {
+    race-id            = var.race_id
+    core-telemetry-url = local.core_telemetry_url
+    telemetry-url      = local.telemetry_root_url
+    startup-script     = local.overlay_startup
+  }
+
+  service_account {
+    email  = data.google_service_account.analysis.email
+    scopes = ["cloud-platform"]
+  }
+
+  scheduling {
+    preemptible = false
+  }
+
+  lifecycle {
+    ignore_changes = all
+    precondition {
+      condition     = contains(data.google_compute_zones.available.names, var.zone)
+      error_message = "var.zone must be an UP Compute zone in var.region."
+    }
+  }
+}
+
 resource "google_compute_firewall" "kafka_public" {
   count = var.ingest_open ? 1 : 0
 
