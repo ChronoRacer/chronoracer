@@ -1,9 +1,9 @@
 import { ChannelCredentials } from "@grpc/grpc-js";
 import { createChannel, createClient, ClientError, Status } from "nice-grpc";
 import { TelemetryServiceDefinition } from "../gen/telemetry_v1.js";
-import type { SensorSelection } from "../env.js";
+import type { SensorSelection } from "../env/index.js";
 import type { FanoutHub } from "../fanout/hub.js";
-import type { PreviewStore } from "../store/ring-buffer.js";
+import type { PreviewStore } from "../store/index.js";
 import type { PreviewPoint } from "./types.js";
 import { coreTelemetryGrpcAddress } from "./grpc-address.js";
 
@@ -12,11 +12,15 @@ const MAX_BACKOFF_MS = 30_000;
 const KEEPALIVE_TIME_MS = 15_000;
 const KEEPALIVE_TIMEOUT_MS = 5_000;
 
-/** Identifies this service to Core. Another Watch with the same id replaces this one. */
 export const CLIENT_ID = "telemetry";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function backoffDelayMs(baseMs: number): number {
+  const jitter = 0.5 + Math.random() * 0.5;
+  return Math.floor(baseMs * jitter);
 }
 
 function u64Json(value: bigint): string {
@@ -46,25 +50,31 @@ export type CoreWatchOptions = {
   abortSignal: AbortSignal;
 };
 
-export async function runCoreWatchLoop(options: CoreWatchOptions): Promise<void> {
-  const { coreTelemetryUrl, raceId, sensors, store, hub, abortSignal } = options;
+export async function runCoreWatchLoop(
+  options: CoreWatchOptions,
+): Promise<void> {
+  const { coreTelemetryUrl, raceId, sensors, store, hub, abortSignal } =
+    options;
   const request =
     sensors === undefined
       ? { clientId: CLIENT_ID, all: {} }
       : { clientId: CLIENT_ID, sensors: { sensorIds: sensors } };
   const address = coreTelemetryGrpcAddress(coreTelemetryUrl);
   let backoffMs = MIN_BACKOFF_MS;
-  let sawStream = false;
 
   while (!abortSignal.aborted) {
-    // h2c: plaintext HTTP/2 — ChannelCredentials.createInsecure() is required (no TLS on this hop).
-    const channel = createChannel(address, ChannelCredentials.createInsecure(), {
-      "grpc.keepalive_time_ms": KEEPALIVE_TIME_MS,
-      "grpc.keepalive_timeout_ms": KEEPALIVE_TIMEOUT_MS,
-      "grpc.keepalive_permit_without_calls": 1,
-      "grpc.http2.min_time_between_pings_ms": KEEPALIVE_TIME_MS,
-      "grpc.max_receive_message_length": 4 * 1024 * 1024,
-    });
+    let gotHelloThisConnection = false;
+    const channel = createChannel(
+      address,
+      ChannelCredentials.createInsecure(),
+      {
+        "grpc.keepalive_time_ms": KEEPALIVE_TIME_MS,
+        "grpc.keepalive_timeout_ms": KEEPALIVE_TIMEOUT_MS,
+        "grpc.keepalive_permit_without_calls": 1,
+        "grpc.http2.min_time_between_pings_ms": KEEPALIVE_TIME_MS,
+        "grpc.max_receive_message_length": 4 * 1024 * 1024,
+      },
+    );
     const client = createClient(TelemetryServiceDefinition, channel);
 
     try {
@@ -72,7 +82,9 @@ export async function runCoreWatchLoop(options: CoreWatchOptions): Promise<void>
       backoffMs = MIN_BACKOFF_MS;
       store.setConnected(false);
 
-      for await (const event of client.watch(request, { signal: abortSignal })) {
+      for await (const event of client.watch(request, {
+        signal: abortSignal,
+      })) {
         if (event.hello !== undefined) {
           const hello = event.hello;
           const wire = {
@@ -84,11 +96,14 @@ export async function runCoreWatchLoop(options: CoreWatchOptions): Promise<void>
           };
           store.setHello(wire);
           store.setConnected(true);
-          sawStream = true;
+          gotHelloThisConnection = true;
           hub.onHello(wire);
           console.log(JSON.stringify({ type: "telemetry_hello", ...wire }));
           if (raceId !== undefined && hello.raceId !== raceId) {
-            logError("hello_race_id_mismatch", new Error(`expected race_id ${raceId}, got ${hello.raceId}`));
+            logError(
+              "hello_race_id_mismatch",
+              new Error(`expected race_id ${raceId}, got ${hello.raceId}`),
+            );
             break;
           }
           continue;
@@ -145,13 +160,18 @@ export async function runCoreWatchLoop(options: CoreWatchOptions): Promise<void>
       break;
     }
 
-    if (sawStream) {
+    if (gotHelloThisConnection) {
       store.recordReconnect();
-      hub.onGaps([{ kind: "reconnect", droppedPointCount: 0, atMs: Date.now() }]);
+      hub.onGaps([
+        { kind: "reconnect", droppedPointCount: 0, atMs: Date.now() },
+      ]);
     }
 
-    process.stdout.write(`telemetry reconnect in ${backoffMs}ms\n`);
-    await sleep(backoffMs);
+    const delayMs = backoffDelayMs(backoffMs);
+    process.stdout.write(
+      `telemetry reconnect in ${delayMs}ms (backoff ${backoffMs}ms)\n`,
+    );
+    await sleep(delayMs);
     backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
   }
 }
