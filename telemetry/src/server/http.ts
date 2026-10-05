@@ -10,7 +10,7 @@ import type WebSocket from "ws";
 import type { AuthConfig } from "./env/index.js";
 import type { FanoutHub } from "./fanout/hub.js";
 import type { PreviewStore } from "./store/index.js";
-import { requireSession, requireSessionOrNull } from "./auth/guard.js";
+import { requireSession } from "./auth/guard.js";
 import {
   beginLoginCookies,
   exchangeCode,
@@ -19,7 +19,9 @@ import {
   logoutCookies,
   logoutRedirectUrl,
   oauthEnabled,
+  readPkceCookie,
   readStateCookie,
+  sessionFromRequest,
 } from "./auth/oauth.js";
 
 export type HttpDeps = {
@@ -58,8 +60,8 @@ export function startHttpServer(
   app.get("/healthz", (c) => c.text("ok\n"));
   app.get("/health", (c) => c.text("ok\n"));
 
-  app.get("/api/me", (c) => {
-    const session = requireSessionOrNull(deps.auth, c.req.header("cookie"));
+  app.get("/api/me", async (c) => {
+    const session = await sessionFromRequest(deps.auth, c.req.header("cookie"));
     if (!session) {
       return c.json({ authenticated: false }, 401);
     }
@@ -80,7 +82,7 @@ export function startHttpServer(
   app.get(
     "/ws",
     async (c, next) => {
-      if (!requireSessionOrNull(deps.auth, c.req.header("cookie"))) {
+      if (!(await sessionFromRequest(deps.auth, c.req.header("cookie")))) {
         return c.text("unauthorized", 401);
       }
       await next();
@@ -95,32 +97,39 @@ export function startHttpServer(
   if (oauthEnabled(deps.auth)) {
     const auth = deps.auth;
 
-    app.get("/auth/login", (c) => {
+    app.get("/auth/login", async (c) => {
       const secure = isSecureRequest(
         auth.rootUrl,
         c.req.header("x-forwarded-proto"),
       );
-      const { state, headers } = beginLoginCookies(secure);
+      const { state, codeVerifier, headers } = await beginLoginCookies(secure);
       for (const h of headers) {
         c.header("set-cookie", h, { append: true });
       }
-      return c.redirect(loginRedirectUrl(auth, state), 302);
+      const target = await loginRedirectUrl(auth, state, codeVerifier);
+      return c.redirect(target, 302);
     });
 
     app.get("/auth/callback", async (c) => {
       const code = c.req.query("code");
       const state = c.req.query("state");
       const expected = readStateCookie(c.req.header("cookie"));
-      if (!code || !state || !expected || state !== expected) {
+      const codeVerifier = readPkceCookie(c.req.header("cookie"));
+      if (!code || !state || !expected || state !== expected || !codeVerifier) {
         return c.text("invalid oauth state", 400);
       }
       try {
-        const identity = await exchangeCode(auth, code);
+        const identity = await exchangeCode(
+          auth,
+          new URL(c.req.url),
+          state,
+          codeVerifier,
+        );
         const secure = isSecureRequest(
           auth.rootUrl,
           c.req.header("x-forwarded-proto"),
         );
-        for (const h of finishLoginCookies(auth, identity, secure)) {
+        for (const h of await finishLoginCookies(auth, identity, secure)) {
           c.header("set-cookie", h, { append: true });
         }
         return c.redirect("/", 302);
@@ -136,7 +145,7 @@ export function startHttpServer(
       }
     });
 
-    app.get("/auth/logout", (c) => {
+    app.get("/auth/logout", async (c) => {
       const secure = isSecureRequest(
         auth.rootUrl,
         c.req.header("x-forwarded-proto"),
@@ -144,7 +153,8 @@ export function startHttpServer(
       for (const h of logoutCookies(secure)) {
         c.header("set-cookie", h, { append: true });
       }
-      return c.redirect(logoutRedirectUrl(auth), 302);
+      const target = await logoutRedirectUrl(auth);
+      return c.redirect(target, 302);
     });
   } else {
     app.get("/auth/login", (c) => c.redirect("/", 302));
@@ -161,7 +171,7 @@ export function startHttpServer(
       pathName === "/ws";
 
     if (!isPublicRoute && deps.auth.enabled) {
-      const session = requireSessionOrNull(deps.auth, c.req.header("cookie"));
+      const session = await sessionFromRequest(deps.auth, c.req.header("cookie"));
       if (!session) {
         return c.redirect("/auth/login", 302);
       }
