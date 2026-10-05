@@ -24,7 +24,13 @@ export type HttpDeps = {
   hub: FanoutHub;
 };
 
-export function startHttpServer({ port, auth, clientDir, store, hub }: HttpDeps): Server {
+export function startHttpServer({
+  port,
+  auth,
+  clientDir,
+  store,
+  hub,
+}: HttpDeps): Server {
   const root = path.resolve(clientDir ?? BUILT_CLIENT_DIR);
   const app = new Hono();
   const { upgradeWebSocket, injectWebSocket } = createNodeWebSocket({ app });
@@ -38,21 +44,29 @@ export function startHttpServer({ port, auth, clientDir, store, hub }: HttpDeps)
   app.route("/auth", oauthRoutes(auth));
   app.get("/api/me", async (c) => {
     const session = await readSession(c, auth);
-    return session ? c.json({ authenticated: true, ...session }) : c.json({ authenticated: false }, 401);
+    return session
+      ? c.json({ authenticated: true, ...session })
+      : c.json({ authenticated: false }, 401);
   });
 
-  app.get("/api/sensors", signedIn, (c) => c.json({ sensorIds: store.sensorIds(), stats: store.stats() }));
+  app.get("/api/sensors", signedIn, (c) =>
+    c.json({ sensorIds: store.sensorIds(), stats: store.stats() }),
+  );
   app.get(
     "/ws",
     requireSameOrigin(auth),
     signedIn,
-    upgradeWebSocket(() => ({ onOpen: (_event, ws) => hub.addClient(ws.raw as WebSocket) })),
+    upgradeWebSocket(() => ({
+      onOpen: (_event, ws) => hub.addClient(ws.raw as WebSocket),
+    })),
   );
   app.use("*", signedIn, serveStatic({ root }));
   app.get("*", serveStatic({ root, path: "index.html" }));
 
   const server = createServer(getRequestListener(app.fetch));
   injectWebSocket(server);
-  server.listen(port, () => log("telemetry_listening", { port, ui: root, auth: auth.enabled }));
+  server.listen(port, () =>
+    log("telemetry_listening", { port, ui: root, auth: auth.enabled }),
+  );
   return server;
 }

@@ -12,10 +12,12 @@ const server = startHttpServer({ ...env, store, hub });
 const shutdown = new AbortController();
 
 hub.start();
-runCoreWatchLoop({ ...env, store, signal: shutdown.signal }).catch((err: unknown) => {
-  logError("fatal", err);
-  process.exit(1);
-});
+runCoreWatchLoop({ ...env, store, signal: shutdown.signal }).catch(
+  (err: unknown) => {
+    logError("fatal", err);
+    process.exit(1);
+  },
+);
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.once(signal, () => {
