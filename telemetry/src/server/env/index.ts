@@ -17,7 +17,9 @@ export function loadEnv(): TelemetryEnv {
     runtimeEnv: process.env,
     emptyStringAsUndefined: true,
     onValidationError: (issues) => {
-      const details = issues.map((issue) => `${issue.path?.join(".")}: ${issue.message}`);
+      const details = issues.map(
+        (issue) => `${issue.path?.join(".")}: ${issue.message}`,
+      );
       throw new Error(`invalid environment: ${details.join("; ")}`);
     },
   });
