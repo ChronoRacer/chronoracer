@@ -1,177 +1,78 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { ChannelCredentials } from "@grpc/grpc-js";
-import { createChannel, createClient, ClientError, Status } from "nice-grpc";
-import { TelemetryServiceDefinition } from "../gen/telemetry_v1.js";
+import { ClientError, createChannel, createClient, Status } from "nice-grpc";
 import type { SensorSelection } from "../env/index.js";
-import type { FanoutHub } from "../fanout/hub.js";
+import { TelemetryServiceDefinition, type WatchRequest } from "../gen/telemetry_v1.js";
+import { log, logError } from "../log.js";
 import type { PreviewStore } from "../store/index.js";
-import type { PreviewPoint } from "./types.js";
 import { coreTelemetryGrpcAddress } from "./grpc-address.js";
-
-const MIN_BACKOFF_MS = 1_000;
-const MAX_BACKOFF_MS = 30_000;
-const KEEPALIVE_TIME_MS = 15_000;
-const KEEPALIVE_TIMEOUT_MS = 5_000;
 
 export const CLIENT_ID = "telemetry";
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const MIN_BACKOFF_MS = 1_000;
+const MAX_BACKOFF_MS = 30_000;
 
-function backoffDelayMs(baseMs: number): number {
-  const jitter = 0.5 + Math.random() * 0.5;
-  return Math.floor(baseMs * jitter);
-}
-
-function u64Json(value: bigint): string {
-  return value.toString();
-}
-
-function logError(context: string, err: unknown): void {
-  const payload: Record<string, unknown> = { type: "telemetry_error", context };
-  if (err instanceof ClientError) {
-    payload.message = err.message;
-    payload.code = Status[err.code] ?? err.code;
-    payload.details = err.details;
-  } else if (err instanceof Error) {
-    payload.message = err.message;
-  } else {
-    payload.message = String(err);
-  }
-  console.error(JSON.stringify(payload));
-}
+const CHANNEL_OPTIONS = {
+  "grpc.keepalive_time_ms": 15_000,
+  "grpc.keepalive_timeout_ms": 5_000,
+  "grpc.keepalive_permit_without_calls": 1,
+  "grpc.http2.min_time_between_pings_ms": 15_000,
+  "grpc.max_receive_message_length": 4 * 1024 * 1024,
+};
 
 export type CoreWatchOptions = {
   coreTelemetryUrl: string;
   raceId: string | undefined;
   sensors: SensorSelection;
   store: PreviewStore;
-  hub: FanoutHub;
-  abortSignal: AbortSignal;
+  signal: AbortSignal;
 };
 
-export async function runCoreWatchLoop(
-  options: CoreWatchOptions,
-): Promise<void> {
-  const { coreTelemetryUrl, raceId, sensors, store, hub, abortSignal } =
-    options;
-  const request =
-    sensors === undefined
-      ? { clientId: CLIENT_ID, all: {} }
-      : { clientId: CLIENT_ID, sensors: { sensorIds: sensors } };
+export async function runCoreWatchLoop(options: CoreWatchOptions): Promise<void> {
+  const { coreTelemetryUrl, raceId, sensors, store, signal } = options;
   const address = coreTelemetryGrpcAddress(coreTelemetryUrl);
+  const request: WatchRequest = sensors
+    ? { clientId: CLIENT_ID, sensors: { sensorIds: sensors } }
+    : { clientId: CLIENT_ID, all: {} };
   let backoffMs = MIN_BACKOFF_MS;
 
-  while (!abortSignal.aborted) {
-    let gotHelloThisConnection = false;
-    const channel = createChannel(
-      address,
-      ChannelCredentials.createInsecure(),
-      {
-        "grpc.keepalive_time_ms": KEEPALIVE_TIME_MS,
-        "grpc.keepalive_timeout_ms": KEEPALIVE_TIMEOUT_MS,
-        "grpc.keepalive_permit_without_calls": 1,
-        "grpc.http2.min_time_between_pings_ms": KEEPALIVE_TIME_MS,
-        "grpc.max_receive_message_length": 4 * 1024 * 1024,
-      },
-    );
-    const client = createClient(TelemetryServiceDefinition, channel);
-
+  while (!signal.aborted) {
+    const channel = createChannel(address, ChannelCredentials.createInsecure(), CHANNEL_OPTIONS);
     try {
-      process.stdout.write(`telemetry connecting Watch to ${address}\n`);
-      backoffMs = MIN_BACKOFF_MS;
-      store.setConnected(false);
-
-      for await (const event of client.watch(request, {
-        signal: abortSignal,
-      })) {
-        if (event.hello !== undefined) {
-          const hello = event.hello;
-          const wire = {
-            protocolVersion: hello.protocolVersion,
-            raceId: hello.raceId,
-            streamId: hello.streamId,
-            nextSequence: u64Json(hello.nextSequence),
-            selectedSensorCount: hello.selectedSensorCount,
-          };
-          store.setHello(wire);
-          store.setConnected(true);
-          gotHelloThisConnection = true;
-          hub.onHello(wire);
-          console.log(JSON.stringify({ type: "telemetry_hello", ...wire }));
+      log("telemetry_connecting", { address });
+      const stream = createClient(TelemetryServiceDefinition, channel).watch(request, { signal });
+      for await (const { hello, pointBatch, gap } of stream) {
+        if (hello) {
           if (raceId !== undefined && hello.raceId !== raceId) {
-            logError(
-              "hello_race_id_mismatch",
-              new Error(`expected race_id ${raceId}, got ${hello.raceId}`),
-            );
-            break;
+            throw new Error(`Core hello has race_id ${hello.raceId}, expected ${raceId}`);
           }
-          continue;
-        }
-
-        if (event.pointBatch !== undefined) {
-          const batch = event.pointBatch;
-          const points: PreviewPoint[] = batch.points.map((p) => ({
-            sensorId: p.sensorId,
-            timestampNanos: p.timestampNanos,
-            value: p.value,
-            driverId: p.driverId,
-          }));
-          store.ingestPoints(points);
-          hub.onPoints(points);
-          continue;
-        }
-
-        if (event.gap !== undefined) {
-          const gap = event.gap;
-          store.recordCoreGap(gap.firstSequence, gap.droppedPointCount);
-          hub.onGaps([
-            {
-              kind: "core",
-              firstSequence: gap.firstSequence,
-              droppedPointCount: gap.droppedPointCount,
-              atMs: Date.now(),
-            },
-          ]);
-          console.log(
-            JSON.stringify({
-              type: "telemetry_gap",
-              firstSequence: u64Json(gap.firstSequence),
-              droppedPointCount: u64Json(gap.droppedPointCount),
-            }),
-          );
+          store.connect(hello);
+          backoffMs = MIN_BACKOFF_MS;
+          log("telemetry_hello", { ...hello });
+        } else if (pointBatch) {
+          store.ingest(pointBatch.points);
+        } else if (gap) {
+          store.recordCoreGap(gap);
+          log("telemetry_gap", { ...gap });
         }
       }
-
-      if (!abortSignal.aborted) {
-        process.stdout.write("telemetry Watch stream ended; reconnecting\n");
-      }
+      log("telemetry_stream_ended");
     } catch (err) {
-      if (abortSignal.aborted) {
-        break;
+      if (signal.aborted) {
+        return;
+      }
+      if (err instanceof ClientError && err.code === Status.INVALID_ARGUMENT) {
+        throw err;
       }
       logError("watch_stream", err);
     } finally {
-      store.setConnected(false);
+      store.disconnect();
       channel.close();
     }
 
-    if (abortSignal.aborted) {
-      break;
-    }
-
-    if (gotHelloThisConnection) {
-      store.recordReconnect();
-      hub.onGaps([
-        { kind: "reconnect", droppedPointCount: 0, atMs: Date.now() },
-      ]);
-    }
-
-    const delayMs = backoffDelayMs(backoffMs);
-    process.stdout.write(
-      `telemetry reconnect in ${delayMs}ms (backoff ${backoffMs}ms)\n`,
-    );
-    await sleep(delayMs);
+    const delayMs = Math.round(backoffMs * (0.5 + Math.random() / 2));
+    log("telemetry_reconnect_wait", { delayMs });
+    await sleep(delayMs, undefined, { signal }).catch(() => {});
     backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
   }
 }
