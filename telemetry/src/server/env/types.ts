@@ -12,16 +12,15 @@ export type FanoutConfig = {
   maxBufferedBytes: number;
 };
 
-export type AuthConfig =
-  | { enabled: false }
-  | {
-      enabled: true;
-      clientId: string;
-      clientSecret: string;
-      issuer: string;
-      rootUrl: string;
-      sessionSecret: string;
-    };
+export type OAuthConfig = {
+  clientId: string;
+  clientSecret: string;
+  issuer: string;
+  rootUrl: string;
+  sessionSecret: string;
+};
+
+export type AuthConfig = { enabled: false } | ({ enabled: true } & OAuthConfig);
 
 export type TelemetryEnv = {
   port: number;
@@ -31,5 +30,5 @@ export type TelemetryEnv = {
   ring: RingLimits;
   fanout: FanoutConfig;
   auth: AuthConfig;
-  clientDir: string;
+  clientDir: string | undefined;
 };
