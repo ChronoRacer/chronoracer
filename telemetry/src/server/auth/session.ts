@@ -1,99 +1,46 @@
-import { SignJWT, jwtVerify } from "jose";
+import type { Context } from "hono";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { sign, verify } from "hono/jwt";
+import type { AuthConfig, OAuthConfig } from "../env/index.js";
 
-export const SESSION_COOKIE = "telemetry_session";
-const MAX_AGE_SEC = 60 * 60 * 12;
+export type Session = { sub: string; email?: string };
 
-export type SessionPayload = {
-  sub: string;
-  email?: string;
-  exp: number;
-};
+const SESSION_COOKIE = "telemetry_session";
+const SESSION_MAX_AGE_SEC = 12 * 60 * 60;
 
-export type CookieSerializeOptions = {
-  maxAge?: number;
-  secure?: boolean;
-};
+export const cookieOptions = (auth: OAuthConfig, maxAge: number) => ({
+  path: "/",
+  httpOnly: true,
+  sameSite: "Lax" as const,
+  secure: auth.rootUrl.startsWith("https:"),
+  maxAge,
+});
 
-export function serializeCookie(
-  name: string,
-  value: string,
-  opts?: CookieSerializeOptions,
-): string {
-  const parts = [`${name}=${value}`, "Path=/", "HttpOnly", "SameSite=Lax"];
-  if (opts?.maxAge !== undefined) {
-    parts.push(`Max-Age=${opts.maxAge}`);
+export async function startSession(c: Context, auth: OAuthConfig, session: Session): Promise<void> {
+  const exp = Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SEC;
+  const token = await sign({ ...session, exp }, auth.sessionSecret, "HS256");
+  setCookie(c, SESSION_COOKIE, token, cookieOptions(auth, SESSION_MAX_AGE_SEC));
+}
+
+export function endSession(c: Context, auth: OAuthConfig): void {
+  deleteCookie(c, SESSION_COOKIE, cookieOptions(auth, 0));
+}
+
+export async function readSession(c: Context, auth: AuthConfig): Promise<Session | undefined> {
+  if (!auth.enabled) {
+    return { sub: "anonymous" };
   }
-  if (opts?.secure) {
-    parts.push("Secure");
+  const token = getCookie(c, SESSION_COOKIE);
+  if (!token) {
+    return undefined;
   }
-  return parts.join("; ");
-}
-
-function sessionKey(secret: string): Uint8Array {
-  return new TextEncoder().encode(secret);
-}
-
-export async function createSessionToken(
-  payload: Omit<SessionPayload, "exp">,
-  secret: string,
-): Promise<string> {
-  const key = sessionKey(secret);
-  return new SignJWT({
-    sub: payload.sub,
-    ...(payload.email !== undefined ? { email: payload.email } : {}),
-  })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime(`${MAX_AGE_SEC}s`)
-    .sign(key);
-}
-
-export async function verifySessionToken(
-  token: string,
-  secret: string,
-): Promise<SessionPayload | undefined> {
   try {
-    const { payload } = await jwtVerify(token, sessionKey(secret), {
-      algorithms: ["HS256"],
-    });
-    if (typeof payload.sub !== "string") {
+    const { sub, email } = await verify(token, auth.sessionSecret, "HS256");
+    if (typeof sub !== "string") {
       return undefined;
     }
-    const exp = payload.exp;
-    if (typeof exp !== "number") {
-      return undefined;
-    }
-    return {
-      sub: payload.sub,
-      email: typeof payload.email === "string" ? payload.email : undefined,
-      exp,
-    };
+    return { sub, email: typeof email === "string" ? email : undefined };
   } catch {
     return undefined;
   }
-}
-
-export function sessionCookieHeader(token: string, secure: boolean): string {
-  return serializeCookie(SESSION_COOKIE, token, { maxAge: MAX_AGE_SEC, secure });
-}
-
-export function clearSessionCookieHeader(secure: boolean): string {
-  return serializeCookie(SESSION_COOKIE, "", { maxAge: 0, secure });
-}
-
-export function parseCookieHeader(header: string | undefined): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!header) {
-    return out;
-  }
-  for (const part of header.split(";")) {
-    const idx = part.indexOf("=");
-    if (idx <= 0) {
-      continue;
-    }
-    const key = part.slice(0, idx).trim();
-    const value = part.slice(idx + 1).trim();
-    out[key] = value;
-  }
-  return out;
 }
