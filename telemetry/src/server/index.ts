@@ -1,41 +1,28 @@
-import { loadEnv } from "./env/index.js";
-import { startHttpServer } from "./http.js";
 import { runCoreWatchLoop } from "./core/watch.js";
-import { PreviewStore } from "./store/index.js";
+import { loadEnv } from "./env/index.js";
 import { FanoutHub } from "./fanout/hub.js";
+import { startHttpServer } from "./http.js";
+import { log, logError } from "./log.js";
+import { PreviewStore } from "./store/index.js";
 
 const env = loadEnv();
 const store = new PreviewStore(env.ring);
 const hub = new FanoutHub(store, env.fanout);
+const server = startHttpServer({ ...env, store, hub });
+const shutdown = new AbortController();
+
 hub.start();
-
-startHttpServer({
-  port: env.port,
-  auth: env.auth,
-  clientDir: env.clientDir,
-  store,
-  hub,
-});
-
-const abort = new AbortController();
-process.on("SIGTERM", () => {
-  process.stdout.write("telemetry SIGTERM; shutting down\n");
-  abort.abort();
-  hub.stop();
-});
-process.on("SIGINT", () => {
-  abort.abort();
-  hub.stop();
-});
-
-void runCoreWatchLoop({
-  coreTelemetryUrl: env.coreTelemetryUrl,
-  raceId: env.raceId,
-  sensors: env.sensors,
-  store,
-  hub,
-  abortSignal: abort.signal,
-}).catch((err) => {
-  console.error(JSON.stringify({ type: "telemetry_fatal", message: String(err) }));
+runCoreWatchLoop({ ...env, store, signal: shutdown.signal }).catch((err: unknown) => {
+  logError("fatal", err);
   process.exit(1);
 });
+
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, () => {
+    log("telemetry_shutdown", { signal });
+    shutdown.abort();
+    hub.stop();
+    server.close();
+    server.closeAllConnections();
+  });
+}
