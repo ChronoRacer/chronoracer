@@ -1,28 +1,22 @@
 import WebSocket from "ws";
 import type { FanoutConfig } from "../env/index.js";
-import type { GapEvent, PreviewPoint, StreamHello } from "../core/types.js";
-import type { PreviewStore } from "../store/index.js";
-import { buildSnapshotPayload } from "../store/index.js";
-import {
-  encode,
-  encodeGaps,
-  encodePoints,
-  parseClientMessage,
-  subscriptionKey,
-} from "./ws-protocol.js";
+import { log } from "../log.js";
+import type { PreviewStore, StoreStatus } from "../store/index.js";
+import { encode, parseClientMessage } from "./ws-protocol.js";
+
+const STATS_INTERVAL_MS = 20_000;
 
 type Client = {
   socket: WebSocket;
-  sensors: Set<string> | undefined;
-  overloaded: boolean;
+  sensors: ReadonlySet<string> | undefined;
+  key: string;
+  needsSnapshot: boolean;
 };
 
 export class FanoutHub {
   private readonly clients = new Set<Client>();
-  private pendingPoints: PreviewPoint[] = [];
-  private pendingGaps: GapEvent[] = [];
-  private timer: ReturnType<typeof setInterval> | undefined;
-  private statsTimer: ReturnType<typeof setInterval> | undefined;
+  private sentStatus: StoreStatus | undefined;
+  private timers: NodeJS.Timeout[] = [];
 
   constructor(
     private readonly store: PreviewStore,
@@ -30,162 +24,87 @@ export class FanoutHub {
   ) {}
 
   start(): void {
-    if (this.timer) {
-      return;
-    }
-    this.timer = setInterval(() => this.flush(), this.config.tickMs);
-    this.statsTimer = setInterval(() => this.logStats(), 20_000);
+    const logStats = () => log("telemetry_stats", { clients: this.clients.size, ...this.store.stats() });
+    this.timers = [setInterval(() => this.flush(), this.config.tickMs), setInterval(logStats, STATS_INTERVAL_MS)];
   }
 
   stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = undefined;
+    this.timers.forEach(clearInterval);
+    for (const { socket } of this.clients) {
+      socket.terminate();
     }
-    if (this.statsTimer) {
-      clearInterval(this.statsTimer);
-      this.statsTimer = undefined;
-    }
-    this.flush();
   }
 
   addClient(socket: WebSocket): void {
-    const client: Client = { socket, sensors: undefined, overloaded: false };
+    const client: Client = { socket, sensors: undefined, key: "*", needsSnapshot: true };
     this.clients.add(client);
-
-    socket.send(JSON.stringify(buildSnapshotPayload(this.store, undefined)));
-    socket.send(
-      encode({ type: "status", connected: true, clients: this.clients.size }),
-    );
-
+    socket.on("close", () => this.clients.delete(client));
     socket.on("message", (data) => {
-      const text = typeof data === "string" ? data : data.toString("utf8");
-      const msg = parseClientMessage(text);
-      if (msg === undefined) {
+      const message = parseClientMessage(data.toString());
+      if (message === undefined) {
         return;
       }
-      if (msg.type === "ping") {
-        socket.send(encode({ type: "status", pong: true, atMs: Date.now() }));
-        return;
-      }
-      if (msg.type === "subscribe") {
-        client.sensors = "all" in msg ? undefined : new Set(msg.sensors);
-        const filter = client.sensors ? [...client.sensors] : undefined;
-        socket.send(JSON.stringify(buildSnapshotPayload(this.store, filter)));
-      }
+      client.sensors = "sensors" in message ? new Set(message.sensors) : undefined;
+      client.key = client.sensors ? [...client.sensors].sort().join(",") : "*";
+      client.needsSnapshot = true;
     });
-
-    const cleanup = () => {
-      this.clients.delete(client);
-    };
-    socket.on("close", cleanup);
-    socket.on("error", cleanup);
-  }
-
-  onHello(hello: StreamHello): void {
-    this.broadcastRaw(encode({ type: "hello", hello }));
-  }
-
-  onPoints(points: PreviewPoint[]): void {
-    if (points.length === 0) {
-      return;
-    }
-    this.pendingPoints.push(...points);
-  }
-
-  onGaps(gaps: GapEvent[]): void {
-    if (gaps.length === 0) {
-      return;
-    }
-    this.pendingGaps.push(...gaps);
   }
 
   private flush(): void {
-    const points = this.pendingPoints;
-    const gaps = this.pendingGaps;
-    this.pendingPoints = [];
-    this.pendingGaps = [];
-
-    if (points.length === 0 && gaps.length === 0) {
+    const delta = this.store.drain();
+    const status = this.store.status();
+    const statusChanged =
+      status.connected !== this.sentStatus?.connected || status.hello !== this.sentStatus?.hello;
+    this.sentStatus = status;
+    if (this.clients.size === 0) {
       return;
     }
 
-    const gapsFrame = gaps.length > 0 ? encodeGaps(gaps) : undefined;
-    const allPointsFrame = points.length > 0 ? encodePoints(points) : undefined;
-    const pointsFrameCache = new Map<string, string | undefined>();
+    const frames = new Map<string, string | undefined>();
+    const frame = (key: string, encodeFrame: () => string | undefined) => {
+      if (!frames.has(key)) {
+        frames.set(key, encodeFrame());
+      }
+      return frames.get(key);
+    };
 
     for (const client of this.clients) {
-      if (client.socket.readyState !== WebSocket.OPEN) {
+      const { socket, sensors, key } = client;
+      const send = (data: string | undefined) => {
+        if (data !== undefined) {
+          socket.send(data);
+        }
+      };
+      if (socket.readyState !== WebSocket.OPEN) {
         continue;
       }
 
-      const frames: string[] = [];
-      if (client.sensors === undefined) {
-        if (allPointsFrame) {
-          frames.push(allPointsFrame);
+      if (socket.bufferedAmount > this.config.maxBufferedBytes) {
+        if (!client.needsSnapshot) {
+          client.needsSnapshot = true;
+          send(encode({ type: "overloaded", atMs: Date.now() }));
         }
-      } else if (points.length > 0) {
-        const key = subscriptionKey(client.sensors);
-        let frame = pointsFrameCache.get(key);
-        if (frame === undefined && !pointsFrameCache.has(key)) {
-          const filtered = points.filter((p) =>
-            client.sensors!.has(p.sensorId),
-          );
-          frame = filtered.length > 0 ? encodePoints(filtered) : undefined;
-          pointsFrameCache.set(key, frame);
-        }
-        if (frame) {
-          frames.push(frame);
-        }
-      }
-
-      if (gapsFrame) {
-        frames.push(gapsFrame);
-      }
-      if (frames.length === 0) {
         continue;
       }
-      this.sendFrames(client, frames);
-    }
-  }
 
-  private sendFrames(client: Client, frames: string[]): void {
-    const { socket } = client;
-    if (socket.bufferedAmount > this.config.maxBufferedBytes) {
-      if (!client.overloaded) {
-        client.overloaded = true;
-        try {
-          socket.send(encode({ type: "overloaded", atMs: Date.now() }));
-        } catch {}
-      }
-      return;
-    }
-    client.overloaded = false;
-    for (const frame of frames) {
-      try {
-        socket.send(frame);
-      } catch {}
-    }
-  }
-
-  private broadcastRaw(frame: string): void {
-    for (const client of this.clients) {
-      if (client.socket.readyState !== WebSocket.OPEN) {
+      if (client.needsSnapshot) {
+        client.needsSnapshot = false;
+        send(frame(`snapshot:${key}`, () => encode({ type: "snapshot", ...this.store.snapshot(sensors) })));
         continue;
       }
-      this.sendFrames(client, [frame]);
-    }
-  }
 
-  private logStats(): void {
-    const stats = this.store.stats();
-    console.log(
-      JSON.stringify({
-        type: "telemetry_stats",
-        windowSeconds: 20,
-        clients: this.clients.size,
-        ...stats,
-      }),
-    );
+      if (statusChanged) {
+        send(frame("status", () => encode({ type: "status", ...status })));
+      }
+      send(
+        frame(`points:${key}`, () => {
+          const points = sensors ? delta.points.filter((p) => sensors.has(p.sensorId)) : delta.points;
+          return points.length > 0 ? encode({ type: "points", points }) : undefined;
+        }),
+      );
+      if (delta.gaps.length > 0) {
+        send(frame("gaps", () => encode({ type: "gap", gaps: delta.gaps })));
+      }
+    }
   }
 }
