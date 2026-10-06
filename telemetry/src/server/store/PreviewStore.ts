@@ -1,8 +1,10 @@
-import Denque from "denque";
-import type { CoreGap, Hello, Point } from "../core/types.js";
-import type { RingLimits } from "../env/index.js";
-import { BYTES_PER_POINT_ESTIMATE, MAX_GAPS_COUNT } from "./constants.js";
-import type { Delta, GapEvent, RingStats, StoreSnapshot, StoreStatus } from "./types.js";
+// Preview store for the telemetry server.
+
+import Denque from 'denque';
+import type { CoreGap, Hello, Point } from '../core/types.js';
+import type { RingLimits } from '../env/index.js';
+import { BYTES_PER_POINT_ESTIMATE, MAX_GAPS_COUNT } from './constants.js';
+import type { Delta, GapEvent, RingStats, StoreSnapshot, StoreStatus } from './types.js';
 
 type Entry = { point: Point; receivedAtMs: number };
 
@@ -22,7 +24,7 @@ export class PreviewStore {
   connect(hello: Hello): void {
     if (this.hello && this.hello.streamId !== hello.streamId) {
       const detail = `stream ${this.hello.streamId} -> ${hello.streamId}`;
-      this.recordGap({ kind: "stream_restart", atMs: Date.now(), detail });
+      this.recordGap({ kind: 'stream_restart', atMs: Date.now(), detail });
     }
     this.hello = hello;
     this.connected = true;
@@ -31,7 +33,7 @@ export class PreviewStore {
   disconnect(): void {
     if (this.connected) {
       this.connected = false;
-      this.recordGap({ kind: "reconnect", atMs: Date.now() });
+      this.recordGap({ kind: 'reconnect', atMs: Date.now() });
     }
   }
 
@@ -51,7 +53,7 @@ export class PreviewStore {
   }
 
   recordCoreGap({ firstSequence, droppedPointCount }: CoreGap): void {
-    this.recordGap({ kind: "core", atMs: Date.now(), firstSequence, droppedPointCount });
+    this.recordGap({ kind: 'core', atMs: Date.now(), firstSequence, droppedPointCount });
   }
 
   status(): StoreStatus {
@@ -74,7 +76,7 @@ export class PreviewStore {
   }
 
   snapshot(sensors?: ReadonlySet<string>): StoreSnapshot {
-    const pointsBySensor: StoreSnapshot["pointsBySensor"] = {};
+    const pointsBySensor: StoreSnapshot['pointsBySensor'] = {};
     for (const [sensorId, series] of this.series) {
       if (sensors === undefined || sensors.has(sensorId)) {
         pointsBySensor[sensorId] = series
@@ -114,7 +116,7 @@ export class PreviewStore {
       if (!this.refusedSensors.has(sensorId)) {
         this.refusedSensors.add(sensorId);
         const detail = `sensor ${sensorId} refused: ${this.limits.maxSensors} sensors already tracked`;
-        this.recordGap({ kind: "local_drop", atMs: Date.now(), detail });
+        this.recordGap({ kind: 'local_drop', atMs: Date.now(), detail });
       }
       return undefined;
     }

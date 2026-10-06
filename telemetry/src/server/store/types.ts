@@ -1,7 +1,9 @@
-import type { CoreStatus, Gap, Snapshot } from "../../shared/protocol.js";
-import type { Point } from "../core/types.js";
+// Types for the telemetry server store.
 
-export type { RingStats } from "../../shared/protocol.js";
+import type { CoreStatus, Gap, Snapshot } from '../../shared/protocol.js';
+import type { Point } from '../core/types.js';
+
+export type { RingStats } from '../../shared/protocol.js';
 
 export type GapEvent = Gap<bigint>;
 export type StoreStatus = CoreStatus<bigint>;
