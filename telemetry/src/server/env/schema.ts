@@ -20,16 +20,11 @@ function parseSensorList(raw: string | undefined): string[] | undefined {
   ];
 }
 
-const sensorIds = z
-  .array(z.string().refine((id) => Buffer.byteLength(id) <= 24, 'sensor id longer than 24 bytes'))
-  .min(1)
-  .max(100);
-
 export const serverEnvShape = {
   PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
   CORE_TELEMETRY_URL: z.url(),
   RACE_ID: optionalString,
-  TELEMETRY_SENSORS: z.string().optional().transform(parseSensorList).pipe(sensorIds.optional()),
+  TELEMETRY_SENSORS: z.string().optional().transform(parseSensorList).pipe(z.array(z.string()).min(1).optional()),
   TELEMETRY_MAX_POINTS_PER_SENSOR: positiveInt(1000),
   TELEMETRY_RETENTION_MS: positiveInt(5 * 60_000),
   TELEMETRY_MAX_SENSORS: positiveInt(500),
