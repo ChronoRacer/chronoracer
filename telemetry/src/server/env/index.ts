@@ -28,7 +28,6 @@ function toTelemetryEnv(raw: RawEnv): TelemetryEnv {
     ring: {
       maxPointsPerSensor: raw.TELEMETRY_MAX_POINTS_PER_SENSOR,
       maxAgeMs: raw.TELEMETRY_RETENTION_MS,
-      maxSensors: raw.TELEMETRY_MAX_SENSORS,
       maxTotalPoints: raw.TELEMETRY_MAX_POINTS,
     },
     fanout: {

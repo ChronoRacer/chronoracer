@@ -11,13 +11,11 @@ type Entry = { point: Point; receivedAtMs: number };
 export class PreviewStore {
   private readonly series = new Map<string, Denque<Entry>>();
   private readonly gaps = new Denque<GapEvent>();
-  private readonly refusedSensors = new Set<string>();
   private delta: Delta = { points: [], gaps: [] };
   private hello: Hello | undefined;
   private connected = false;
   private pointCount = 0;
   private evictedPoints = 0;
-  private droppedPoints = 0;
 
   constructor(private readonly limits: RingLimits) {}
 
@@ -40,12 +38,7 @@ export class PreviewStore {
   ingest(points: Point[]): void {
     const now = Date.now();
     for (const point of points) {
-      const series = this.seriesFor(point.sensorId);
-      if (series === undefined) {
-        this.droppedPoints += 1;
-        continue;
-      }
-      series.push({ point, receivedAtMs: now });
+      this.seriesFor(point.sensorId).push({ point, receivedAtMs: now });
       this.pointCount += 1;
       this.delta.points.push(point);
     }
@@ -70,8 +63,6 @@ export class PreviewStore {
       sensorCount: this.series.size,
       approxBytes: this.pointCount * BYTES_PER_POINT_ESTIMATE,
       evictedPoints: this.evictedPoints,
-      droppedPoints: this.droppedPoints,
-      droppedSensors: this.refusedSensors.size,
     };
   }
 
@@ -107,22 +98,13 @@ export class PreviewStore {
     this.delta.gaps.push(gap);
   }
 
-  private seriesFor(sensorId: string): Denque<Entry> | undefined {
+  private seriesFor(sensorId: string): Denque<Entry> {
     const existing = this.series.get(sensorId);
     if (existing) {
       return existing;
     }
-    if (this.series.size >= this.limits.maxSensors) {
-      if (!this.refusedSensors.has(sensorId)) {
-        this.refusedSensors.add(sensorId);
-        const detail = `sensor ${sensorId} refused: ${this.limits.maxSensors} sensors already tracked`;
-        this.recordGap({ kind: 'local_drop', atMs: Date.now(), detail });
-      }
-      return undefined;
-    }
     const series = new Denque<Entry>();
     this.series.set(sensorId, series);
-    this.refusedSensors.delete(sensorId);
     return series;
   }
 

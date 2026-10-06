@@ -17,7 +17,6 @@ export type SnapshotPoint<U64 = string> = Omit<Point<U64>, "sensorId">;
 
 export type Gap<U64 = string> =
   | { kind: "core"; atMs: number; firstSequence: U64; droppedPointCount: U64 }
-  | { kind: "local_drop"; atMs: number; detail: string }
   | { kind: "reconnect"; atMs: number }
   | { kind: "stream_restart"; atMs: number; detail: string };
 
@@ -31,8 +30,6 @@ export type RingStats = {
   sensorCount: number;
   approxBytes: number;
   evictedPoints: number;
-  droppedPoints: number;
-  droppedSensors: number;
 };
 
 export type Snapshot<U64 = string> = CoreStatus<U64> & {

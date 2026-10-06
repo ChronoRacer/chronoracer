@@ -5,7 +5,6 @@ export type SensorSelection = string[] | undefined;
 export type RingLimits = {
   maxPointsPerSensor: number;
   maxAgeMs: number;
-  maxSensors: number;
   maxTotalPoints: number;
 };
 
