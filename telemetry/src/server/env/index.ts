@@ -1,15 +1,10 @@
-import { createEnv } from "@t3-oss/env-core";
-import { serverEnvShape, type RawEnv } from "./schema.js";
-import type { AuthConfig, TelemetryEnv } from "./types.js";
+// Load the telemetry server environment variables.
 
-export type {
-  AuthConfig,
-  FanoutConfig,
-  OAuthConfig,
-  RingLimits,
-  SensorSelection,
-  TelemetryEnv,
-} from "./types.js";
+import { createEnv } from '@t3-oss/env-core';
+import { serverEnvShape, type RawEnv } from './schema.js';
+import type { AuthConfig, TelemetryEnv } from './types.js';
+
+export type { AuthConfig, FanoutConfig, OAuthConfig, RingLimits, SensorSelection, TelemetryEnv } from './types.js';
 
 export function loadEnv(): TelemetryEnv {
   const raw = createEnv({
@@ -17,10 +12,8 @@ export function loadEnv(): TelemetryEnv {
     runtimeEnv: process.env,
     emptyStringAsUndefined: true,
     onValidationError: (issues) => {
-      const details = issues.map(
-        (issue) => `${issue.path?.join(".")}: ${issue.message}`,
-      );
-      throw new Error(`invalid environment: ${details.join("; ")}`);
+      const details = issues.map((issue) => `${issue.path?.join('.')}: ${issue.message}`);
+      throw new Error(`invalid environment: ${details.join('; ')}`);
     },
   });
   return toTelemetryEnv(raw);
@@ -59,8 +52,8 @@ function toAuthConfig(raw: RawEnv): AuthConfig {
   } = raw;
   if (!clientId || !clientSecret || !issuer || !rootUrl) {
     throw new Error(
-      "OAuth config incomplete: set OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, OAUTH_ISSUER and TELEMETRY_ROOT_URL" +
-        " (or TELEMETRY_AUTH_DISABLED=1 for local runs)",
+      'OAuth config incomplete: set OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, OAUTH_ISSUER and TELEMETRY_ROOT_URL' +
+        ' (or TELEMETRY_AUTH_DISABLED=1 for local runs)',
     );
   }
   return {

@@ -1,3 +1,5 @@
+// Types for the telemetry server environment variables.
+
 export type SensorSelection = string[] | undefined;
 
 export type RingLimits = {
