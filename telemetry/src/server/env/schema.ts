@@ -1,18 +1,27 @@
-import { z } from "zod";
+// Environment variables validation schema for the telemetry server.
+
+import { z } from 'zod';
 
 const positiveInt = (fallback: number) => z.coerce.number().int().positive().default(fallback);
 const optionalString = z.string().trim().optional();
 
 function parseSensorList(raw: string | undefined): string[] | undefined {
   const value = raw?.trim();
-  if (!value || value === "*") {
+  if (!value || value === '*') {
     return undefined;
   }
-  return [...new Set(value.split(",").map((id) => id.trim()).filter(Boolean))];
+  return [
+    ...new Set(
+      value
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 const sensorIds = z
-  .array(z.string().refine((id) => Buffer.byteLength(id) <= 24, "sensor id longer than 24 bytes"))
+  .array(z.string().refine((id) => Buffer.byteLength(id) <= 24, 'sensor id longer than 24 bytes'))
   .min(1)
   .max(100);
 
