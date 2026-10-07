@@ -8,9 +8,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { createNodeWebSocket } from '@hono/node-ws';
 import { Hono } from 'hono';
 import type WebSocket from 'ws';
-import { requireSameOrigin, requireSession } from './auth/guard.js';
-import { oauthRoutes } from './auth/oauth.js';
-import { readSession } from './auth/session.js';
+import { authRoutes, oidcConfig, readSession, requireSameOrigin, requireSession } from './auth/index.js';
 import type { AuthConfig } from './env/index.js';
 import type { FanoutHub } from './fanout/hub.js';
 import { log, logError } from './log.js';
@@ -37,7 +35,8 @@ export function startHttpServer({ port, auth, clientDir, store, hub }: HttpDeps)
   });
 
   app.get('/healthz', (c) => c.text('ok\n'));
-  app.route('/auth', oauthRoutes(auth));
+  app.use('*', oidcConfig(auth));
+  app.route('/auth', authRoutes(auth));
   app.get('/api/me', async (c) => {
     const session = await readSession(c, auth);
     return session ? c.json({ authenticated: true, ...session }) : c.json({ authenticated: false }, 401);
