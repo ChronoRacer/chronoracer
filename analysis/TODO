@@ -1,0 +1,9 @@
+1. to co przychodzi z GRPC
+
+
+
+
+1. Rozpoczecie wyscigu najlepiej dostać liste/id wszystkich dostępnych sensorów
+2. odrzucenie reguł z brakującymi sensorami
+3. otrzyamnie od serwera albo wlasnei ustalenie delty dla predyckji oraz mozliwosc dynaicznej zmiany przez dahsboard?
+4. wystawic resta do komunikacji z dashboardem
