@@ -36,7 +36,7 @@ export const serverEnvShape = {
   OAUTH_CLIENT_SECRET: optionalString,
   OAUTH_ISSUER: z.url().optional(),
   TELEMETRY_ROOT_URL: z.url().optional(),
-  SESSION_SECRET: optionalString,
+  SESSION_SECRET: z.string().trim().min(32).optional(),
 };
 
 export type RawEnv = z.infer<z.ZodObject<typeof serverEnvShape>>;
