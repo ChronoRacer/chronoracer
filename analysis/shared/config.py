@@ -4,7 +4,7 @@ from loguru import logger
 from pydantic import  BaseModel
 
 REQUIRED_ENV = (
-    "CORE_TELEMETRY_URL"
+    "CORE_TELEMETRY_URL",
 )
 
 
