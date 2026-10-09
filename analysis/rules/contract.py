@@ -5,7 +5,8 @@ from pydantic import BaseModel
 # THIS IS SENDING AFTER ANALYSIS GET LIST OF SENSORS AND THEN
 # BASED ON THESE I INFORM DASHBOARD WHAT IT CAN EXPECT FROM ANALYSIS (ALERTS AND PREDICTIONS)
 # ALSO THIS IS IMPORTANT TO SET ID TO EVERY ALERT AND PREDICTION SO DASHBOARD CAN KNOW WHAT TO EXPECT FROM ANALYSIS
-# E.G TO CHANGE FREQ DURING RACE
+# E.G TO CHANGE FREQ DURING RACE.
+# TO BE PRECISE THIS WILL BE LIST OF JSON THAT TYPE
 
 class AnalysisInitJSON(BaseModel):
     timestamp: datetime # datetime in ISO 8601 format
@@ -15,6 +16,16 @@ class AnalysisInitJSON(BaseModel):
 
     alert_pred_id: int
 
+
+# THIS IS SCHEMA FOR JSON DATA SENT FROM DASHBOARD TO ANALYSIS
+class DashboardChangePredFreqJSON(BaseModel):
+    timestamp: datetime # datetime in ISO 8601 format
+
+    alert_pred_id: int
+
+    new_refresh_rate: int # This is value in seconds, this is how often dashboard will expect new prediction from analysis module
+
+# THIS IS SCHEMA FOR JSON DATA SENT FROM ANALYSIS TO DASHBOARD
 class NewAnalysisJSON(BaseModel):
     timestamp: datetime # datetime in ISO 8601 format
 
@@ -27,3 +38,4 @@ class NewAnalysisJSON(BaseModel):
     analysis_reason: str # this is a description with flag and definion of the flag
 
     value: float | None # additional value for prediction or alert, maybe value that break the rule??
+
