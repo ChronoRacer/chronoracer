@@ -3,23 +3,23 @@ from typing import Annotated
 
 TimestampUs = Annotated[int, Field(ge=1767225600000000)]  # TIMESTAMP IN MICROSECONDS (LOWER BOUND = 01.01.2026 UTC)
 
-ID = Annotated[str, Field(min_length=1)] # THIS IS WHAT ANALYSIS SENDS TO DASHBOARD TO IDENTIFY POSSIBLE PREDICTION, ALSO DASHBOARD CAN USE IT  TO CHANGE E.G EVALUATION FREQUENCY
+ID = Annotated[str, Field(min_length=1)] # THIS IS WHAT ANALYSIS SENDS TO DASHBOARD TO IDENTIFY POSSIBLE PREDICTION, ALSO DASHBOARD CAN USE IT TO CACHE IT ETC
 
 SensorId = Annotated[str,Field(min_length=1)]  # THIS IS WHAT I GET FROM CORE WHEN I AM CONNECTING BY GRPC - SENSOR ID
 
-RefreshRate = Annotated[int, Field(ge=1)] # PREDICTIONS  REFRESH RATE
+RefreshRate = Annotated[int, Field(ge=1)] # PREDICTIONS REFRESH RATE
 
 
 # THIS IS SCHEMA FOR JSON DATA SENT FROM ANALYSIS TO DASHBOARD
 # THIS IS SENDING AFTER ANALYSIS GET KNOWLEDGE ABOUT WHAT PREDICTIONS CAN BE MADE
 # BASED ON THESE I INFORM DASHBOARD WHAT IT CAN EXPECT FROM ANALYSIS (PREDICTIONS)
 # PREDICTION_ID IT CAN BE USED FURTHER BY DASHBOARD
-# E.G TO CHANGE VALUATION FREQ DURING RACE -  FIRST TIME ANALYSIS SENDS IT WITH DEFAULT VALUE
 class PredictionRunningJSON(BaseModel):
     timestamp: TimestampUs # timestamp in microseconds
     prediction_id : ID # THIS IS ONE ID FOR ONE TYPE OF PREDICTION
     name : str = Field(...,min_length=1) # "XYZ PREDICTION" - dashboard can use it as a title (especially prediction title)
-    refresh_rate: RefreshRate
+    refresh_rate: RefreshRate | None  # THIS CAN BE NONE BECAUSE THERE ARE PREDICTION WHERE YOU CAN'T DETERMINE REFRESH RATE.
+    # WHERE WE CAN SAY EXACTLY TIME THERE THIS TIME WILL BE SEND
 
 # THIS IS NEEDED WHEN PREDICTION CANT BE MADE BECAUSE OF
 # E.G NOT RESPONDING ONE OF SENSOR THAT WE NEED TO FORMULA
@@ -29,18 +29,6 @@ class PredictionUnavailableJSON(BaseModel):
     timestamp: TimestampUs  # timestamp in microseconds
     prediction_id: ID
     info : str = Field(...,min_length=1)
-
-
-# THIS IS SCHEMA FOR JSON DATA SENT FROM DASHBOARD TO ANALYSIS
-# 200 OK FROM ANALYSIS -> THAT MEANS CHANGE WAS DONE,
-# WHEN DASHBOARD SENDS REQUEST WITH WRONG VALUE (freq or prediction_id) IT WILL BE ERROR CODE 4XX
-class DashboardChangePredFreqJSON(BaseModel):
-    timestamp: TimestampUs # timestamp in microseconds
-    prediction_id: ID
-    new_refresh_rate: RefreshRate # This is value in seconds, this is how often dashboard will expect new prediction from analysis module
-
-
-
 
 class SensorValue(BaseModel):
     sensor_id: SensorId
@@ -67,7 +55,6 @@ class NewAlertJSON(BaseModel):
 
 
 # THIS IS SCHEMA FOR JSON DATA SENT FROM ANALYSIS TO DASHBOARD
-# SENDING EVERY REFRESH_RATE (s) TIME
 # THIS IS TRICKY ONE, BECAUSE WHAT IS PREDICTION, THIS IS NOT A VALUE EVERY TIME
 class NewPredictionJSON(BaseModel):
     timestamp: TimestampUs
@@ -77,6 +64,7 @@ class NewPredictionJSON(BaseModel):
     sensors_id: list[SensorId]
 
     instruction : str  | None
+
     value:        float | None
 
 
