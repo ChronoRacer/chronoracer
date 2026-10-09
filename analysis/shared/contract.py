@@ -7,7 +7,7 @@ ID = Annotated[str, Field(min_length=1)] # THIS IS WHAT ANALYSIS SENDS TO DASHBO
 
 SensorId = Annotated[str,Field(min_length=1)]  # THIS IS WHAT I GET FROM CORE WHEN I AM CONNECTING BY GRPC - SENSOR ID
 
-RefreshRate = Annotated[int, Field(ge=1)] # PREDICTIONS RATE FOR ALERTS
+RefreshRate = Annotated[int, Field(ge=1)] # PREDICTIONS  REFRESH RATE
 
 
 # THIS IS SCHEMA FOR JSON DATA SENT FROM ANALYSIS TO DASHBOARD
@@ -17,7 +17,7 @@ RefreshRate = Annotated[int, Field(ge=1)] # PREDICTIONS RATE FOR ALERTS
 # E.G TO CHANGE VALUATION FREQ DURING RACE -  FIRST TIME ANALYSIS SENDS IT WITH DEFAULT VALUE
 class PredictionRunningJSON(BaseModel):
     timestamp: TimestampUs # timestamp in microseconds
-    prediction_id : ID
+    prediction_id : ID # THIS IS ONE ID FOR ONE TYPE OF PREDICTION
     name : str = Field(...,min_length=1) # "XYZ PREDICTION" - dashboard can use it as a title (especially prediction title)
     refresh_rate: RefreshRate
 
@@ -25,7 +25,7 @@ class PredictionRunningJSON(BaseModel):
 # E.G NOT RESPONDING ONE OF SENSOR THAT WE NEED TO FORMULA
 # THEN ANALYSIS SENDS IT TO DASHBOARD
 
-class PredictionEndedJSON(BaseModel):
+class PredictionUnavailableJSON(BaseModel):
     timestamp: TimestampUs  # timestamp in microseconds
     prediction_id: ID
     info : str = Field(...,min_length=1)
@@ -51,7 +51,7 @@ class SensorValue(BaseModel):
 class NewAlertJSON(BaseModel):
     timestamp : TimestampUs
 
-    alert_id : ID
+    alert_id : ID #THIS IS ONE ID FOR ONE TYPE OF ALERT
 
     sensors : list[SensorValue] = Field(min_length=1)
 
@@ -74,7 +74,7 @@ class NewPredictionJSON(BaseModel):
 
     prediction_id: ID
 
-    sensor_list: list[SensorId]
+    sensors_id: list[SensorId]
 
     instruction : str  | None
     value:        float | None
