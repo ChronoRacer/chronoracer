@@ -1,11 +1,12 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel, ConfigDict, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
+from analysis.shared.contract import DashboardChangePredFreqJSON
+
 APP_TITLE = "chrono-analysis"
 APP_VERSION = "0.0.1"
 
@@ -33,7 +34,7 @@ app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(TrustedHostMiddleware,allowed_hosts=["*"])
 app.add_middleware(
     CORSMiddleware,
-    allow_origin=["*"],
+    allow_origins=["*"],
     allow_methods=["GET","POST"],
     allow_headers=["Content-Type"]
 )
@@ -48,3 +49,13 @@ async def security_headers(request: Request, call_next):
     return response
 
 
+
+
+@app.get("/api/v1/health")
+async def health():
+    return {"OK":"OK"}
+
+@app.post("/api/v1/change-prediction-refresh-rate")
+async def change_prediction_refresh_rate(change_request : DashboardChangePredFreqJSON):
+    # TODO
+    return {"OK":"OK"}
