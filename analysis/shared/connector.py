@@ -56,14 +56,4 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
         # WHEN I USE TEMP FILES I CAN DELETE IT HERE BECAUSE
         # ON STOP SIGNALS WHEN PATHWAY HAS ENDED JOB SO WE DONT NEED TO KEEP THESE VALUES ANYMORE
         pass
-if __name__ == '__main__':
-    print("WORKING")
-    config = Config(CORE_TELEMETRY_URL="127.0.0.1:9470",CLIENT_ID="analysis_id")
-    table = pw.io.python.read(
-        GRPCSensorStream(config),schema=GRPCSchema,autocommit_duration_ms=100
-    )
-    #pw.io.csv.write(table,"output.csv")
-    #pw.run()
-    #print("TABLE",table)
-    connector = GRPCSensorStream(config)
-    connector.run()
+
