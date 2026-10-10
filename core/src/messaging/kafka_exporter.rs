@@ -189,7 +189,10 @@ impl KafkaExporter {
                 );
                 Err(anyhow!("{status_msg}"))
             }
-            Ok(Err(error)) => Err(anyhow!("Failed waiting for {}: {error}", Self::REDPANDA_CLI)),
+            Ok(Err(error)) => Err(anyhow!(
+                "Failed waiting for {}: {error}",
+                Self::REDPANDA_CLI
+            )),
             Err(_) => {
                 let _ = child.kill().await;
                 let _ = child.wait().await;
@@ -226,8 +229,7 @@ mod tests {
         )
             .expect("template should be written");
 
-        let race_id: &'static CompactString =
-            Box::leak(Box::new(CompactString::from("race-123")));
+        let race_id: &'static CompactString = Box::leak(Box::new(CompactString::from("race-123")));
         let gcp_config: &'static GcpConfig = Box::leak(Box::new(GcpConfig {
             enabled: true,
             project_id: "project".to_string(),

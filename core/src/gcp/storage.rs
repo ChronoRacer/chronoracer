@@ -21,7 +21,10 @@ pub struct GcsStorageManager {
 }
 
 impl GcsStorageManager {
-    pub async fn new(race_id: &'static CompactString, gcp_config: &'static GcpConfig) -> Result<Self> {
+    pub async fn new(
+        race_id: &'static CompactString,
+        gcp_config: &'static GcpConfig,
+    ) -> Result<Self> {
         let client = Storage::builder()
             .with_retry_policy(AlwaysRetry.with_attempt_limit(u32::from(gcp_config.max_retries)))
             .build()
@@ -59,7 +62,8 @@ impl GcsStorageManager {
                         anyhow!("Export path has no file name: {}", path.display())
                     })?;
                     let in_bucket_path = format!("{bucket_prefix}/{}", file_name.to_string_lossy());
-                    Self::upload_file(&client, &bucket, &path, &in_bucket_path, upload_timeout).await
+                    Self::upload_file(&client, &bucket, &path, &in_bucket_path, upload_timeout)
+                        .await
                 }
             })
             .buffer_unordered(self.gcp_config.max_gcs_concurrent_uploads.get() as usize)

@@ -336,7 +336,9 @@ impl InfluxDbFlusher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::messaging::offset_ledger::testing::{RecordingSink, detached_ledger, recording_ledger};
+    use crate::messaging::offset_ledger::testing::{
+        RecordingSink, detached_ledger, recording_ledger,
+    };
     use crate::messaging::offset_tracker::OffsetSet;
     use crate::persistence::persistence_entrypoint::PersistenceLayerEntryPoint;
     use std::io::{Read, Write};
@@ -648,7 +650,8 @@ mod tests {
     #[tokio::test]
     async fn auth_and_missing_database_are_retried_until_the_write_succeeds() {
         for code in [401, 403, 404] {
-            let (port, server) = spawn_mock_influx(vec![(code, r#"{"error":"rejected"}"#), (204, "")]);
+            let (port, server) =
+                spawn_mock_influx(vec![(code, r#"{"error":"rejected"}"#), (204, "")]);
             let metrics = Arc::new(WriteMetrics::new());
             let context = context_for(port, Arc::clone(&metrics)).await;
 
@@ -719,13 +722,20 @@ mod tests {
     }
 
     /// Registers the offsets with the context's ledger as the sink would, and pairs them with points.
-    fn point_batch(context: &FlushContext, offsets: &[(i32, i64)], points: Vec<SimplePoint>) -> PointBatch {
+    fn point_batch(
+        context: &FlushContext,
+        offsets: &[(i32, i64)],
+        points: Vec<SimplePoint>,
+    ) -> PointBatch {
         let mut set = OffsetSet::default();
         for &(partition, offset) in offsets {
             context.offsets.register(partition, offset);
             set.push(partition, offset);
         }
-        PointBatch { points, offsets: set }
+        PointBatch {
+            points,
+            offsets: set,
+        }
     }
 
     fn recording_context(context: &mut FlushContext) -> Arc<RecordingSink> {
@@ -747,9 +757,14 @@ mod tests {
             let sink = recording_context(&mut context);
             let batch = point_batch(&context, &[(0, 5), (0, 6), (1, 9)], batch());
 
-            let points = context.flush_and_settle(batch, BatcherWiringType::Normal).await;
+            let points = context
+                .flush_and_settle(batch, BatcherWiringType::Normal)
+                .await;
 
-            assert!(points.is_empty(), "{expected:?}: the buffer comes back cleared");
+            assert!(
+                points.is_empty(),
+                "{expected:?}: the buffer comes back cleared"
+            );
             assert_eq!(sink.positions(), [(0, 7), (1, 10)], "{expected:?}");
             server.join().unwrap();
         }
@@ -759,7 +774,11 @@ mod tests {
     async fn a_batch_is_settled_only_after_the_database_answered() {
         // Accepts connections but never answers: the write hangs like an unreachable database.
         let hung = TcpListener::bind("127.0.0.1:0").unwrap();
-        let mut context = context_for(hung.local_addr().unwrap().port(), Arc::new(WriteMetrics::new())).await;
+        let mut context = context_for(
+            hung.local_addr().unwrap().port(),
+            Arc::new(WriteMetrics::new()),
+        )
+        .await;
         let sink = recording_context(&mut context);
         let batch = point_batch(&context, &[(0, 0)], batch());
 
@@ -781,7 +800,9 @@ mod tests {
         let sink = recording_context(&mut context);
         let batch = point_batch(&context, &[(2, 100)], batch());
 
-        context.flush_and_settle(batch, BatcherWiringType::Normal).await;
+        context
+            .flush_and_settle(batch, BatcherWiringType::Normal)
+            .await;
 
         assert_eq!(sink.stored(), [(2, 101)]);
         assert_eq!(server.join().unwrap().len(), 3);
@@ -790,7 +811,11 @@ mod tests {
     #[tokio::test]
     async fn a_batch_without_points_settles_without_writing() {
         // Nothing listens on this port: a write attempt would retry forever.
-        let closed_port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let closed_port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
         let mut context = context_for(closed_port, Arc::new(WriteMetrics::new())).await;
         let sink = recording_context(&mut context);
         let batch = point_batch(&context, &[(0, 3)], Vec::new());
@@ -814,9 +839,16 @@ mod tests {
         let first = point_batch(&context, &[(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)], batch());
         let second = point_batch(&context, &[(0, 5), (0, 6)], batch());
 
-        context.flush_and_settle(second, BatcherWiringType::Normal).await;
-        assert!(sink.stored().is_empty(), "offsets 0..=4 are still in flight");
-        context.flush_and_settle(first, BatcherWiringType::Normal).await;
+        context
+            .flush_and_settle(second, BatcherWiringType::Normal)
+            .await;
+        assert!(
+            sink.stored().is_empty(),
+            "offsets 0..=4 are still in flight"
+        );
+        context
+            .flush_and_settle(first, BatcherWiringType::Normal)
+            .await;
 
         assert_eq!(sink.stored(), [(0, 7)]);
         server.join().unwrap();
@@ -887,4 +919,5 @@ mod tests {
         let recycled = pool_rx.try_recv().unwrap();
         assert!(recycled.is_empty() && recycled.capacity() > 0);
         server.join().unwrap();
-    }}
+    }
+}

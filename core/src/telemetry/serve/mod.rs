@@ -1,10 +1,11 @@
+use crate::processing::sensor_data_message::MAX_SENSOR_ID_BYTES;
 use crate::telemetry::proto::stream_event::Payload;
 use crate::telemetry::proto::telemetry_server::{Telemetry, TelemetryServer};
-use crate::telemetry::proto::{Gap, Hello, Point, PointBatch, StreamEvent, WatchRequest};
 use crate::telemetry::proto::watch_request::Selection;
+use crate::telemetry::proto::{Gap, Hello, Point, PointBatch, StreamEvent, WatchRequest};
 use crate::telemetry::queue::{
-    Chunk, Drain, FIRST_SEQUENCE, Filter, GapSpan, MAX_POINTS_PER_BATCH, PreviewHub, SubscribeError,
-    Subscriber,
+    Chunk, Drain, FIRST_SEQUENCE, Filter, GapSpan, MAX_POINTS_PER_BATCH, PreviewHub,
+    SubscribeError, Subscriber,
 };
 use compact_str::CompactString;
 use std::collections::{HashSet, VecDeque};
@@ -14,13 +15,12 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
-use tokio_stream::wrappers::TcpListenerStream;
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::TcpListenerStream;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
-use crate::processing::sensor_data_message::MAX_SENSOR_ID_BYTES;
 
 const HTTP2_WINDOW_SIZE: u32 = 256 * 1024;
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
@@ -184,12 +184,12 @@ impl Telemetry for WatchService {
         request: Request<WatchRequest>,
     ) -> Result<Response<Self::WatchStream>, Status> {
         let (client_id, filter) = parse_request(request.into_inner())?;
-        let subscriber = self
-            .hub
-            .subscribe(&client_id, filter)
-            .map_err(|SubscribeError::Full| {
-                Status::resource_exhausted("every telemetry subscriber slot is in use")
-            })?;
+        let subscriber =
+            self.hub
+                .subscribe(&client_id, filter)
+                .map_err(|SubscribeError::Full| {
+                    Status::resource_exhausted("every telemetry subscriber slot is in use")
+                })?;
         info!(
             client_id = subscriber.client_id(),
             selected_sensors = subscriber.selected_sensor_count(),
@@ -284,10 +284,7 @@ async fn poll_step(drive: Drive) -> Option<(Result<StreamEvent, Status>, Drive)>
     }
     match wait_for_chunk(&mut state).await {
         Step::Event(event) => Some((Ok(event), Drive::Live(state))),
-        Step::Replaced => Some((
-            Err(Status::aborted("replaced by a new watch")),
-            Drive::End,
-        )),
+        Step::Replaced => Some((Err(Status::aborted("replaced by a new watch")), Drive::End)),
         Step::Stopped => None,
     }
 }

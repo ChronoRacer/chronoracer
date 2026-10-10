@@ -135,7 +135,12 @@ mod tests {
 
     impl Fixture {
         async fn send(&self, message: PartialMessage) {
-            self.control_tx.as_ref().unwrap().send(message).await.unwrap();
+            self.control_tx
+                .as_ref()
+                .unwrap()
+                .send(message)
+                .await
+                .unwrap();
         }
 
         fn close_input(&mut self) {
@@ -143,7 +148,12 @@ mod tests {
         }
     }
 
-    fn event(offset: i64, key: &[u8], payload: Option<&[u8]>, ledger: &OffsetLedger) -> PartialMessage {
+    fn event(
+        offset: i64,
+        key: &[u8],
+        payload: Option<&[u8]>,
+        ledger: &OffsetLedger,
+    ) -> PartialMessage {
         ledger.register(0, offset);
         PartialMessage {
             key: Some(Box::from(key)),
@@ -155,7 +165,11 @@ mod tests {
     }
 
     fn at(offset: i64) -> SourceOffset {
-        SourceOffset { origin: MessageOrigin::Control, partition: 0, offset }
+        SourceOffset {
+            origin: MessageOrigin::Control,
+            partition: 0,
+            offset,
+        }
     }
 
     #[test]
@@ -171,7 +185,11 @@ mod tests {
         ));
 
         assert_eq!(fixture.driver_id.get().as_str(), "driver-42");
-        assert_eq!(fixture.sink.positions(), [(0, 1)], "handled events are settled");
+        assert_eq!(
+            fixture.sink.positions(),
+            [(0, 1)],
+            "handled events are settled"
+        );
     }
 
     #[tokio::test]
@@ -179,7 +197,11 @@ mod tests {
         let mut fixture = fixture(true);
         fixture.ledger.register(0, 0);
 
-        assert!(fixture.filter.apply_control_event(CoreControlMessage::SHUTDOWN, at(0)));
+        assert!(
+            fixture
+                .filter
+                .apply_control_event(CoreControlMessage::SHUTDOWN, at(0))
+        );
 
         assert_eq!(fixture.shutdown_rx.try_recv().unwrap(), at(0));
         assert_eq!(fixture.driver_id.get().as_str(), "initial");
@@ -193,10 +215,11 @@ mod tests {
         let mut fixture = fixture(true);
         fixture.ledger.register(0, 0);
 
-        assert!(!fixture.filter.apply_control_event(
-            CoreControlMessage::UNKNOWN("other".to_string()),
-            at(0)
-        ));
+        assert!(
+            !fixture
+                .filter
+                .apply_control_event(CoreControlMessage::UNKNOWN("other".to_string()), at(0))
+        );
 
         assert_eq!(fixture.driver_id.get().as_str(), "initial");
         assert_eq!(fixture.sink.positions(), [(0, 1)]);

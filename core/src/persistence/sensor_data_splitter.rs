@@ -132,7 +132,10 @@ mod tests {
         splitter.ingest().await;
 
         let offsets = |batch: SensorDataBatch| -> Vec<(i32, i64)> {
-            batch.iter().map(|m| (m.source.partition, m.source.offset)).collect()
+            batch
+                .iter()
+                .map(|m| (m.source.partition, m.source.offset))
+                .collect()
         };
         assert_eq!(offsets(fast_rx.recv().await.unwrap()), [(2, 10), (2, 12)]);
         assert_eq!(offsets(normal_rx.recv().await.unwrap()), [(2, 11), (2, 13)]);

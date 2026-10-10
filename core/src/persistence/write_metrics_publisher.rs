@@ -22,7 +22,6 @@ const METADATA_ROOT: &str = "http://metadata.google.internal/computeMetadata/v1/
 const UNKNOWN_GCE_IDENTITY_INSTANCE_ID: &str = "1111111111111111111";
 const UNKNOWN_GCE_IDENTITY_ZONE: &str = "europe-west1-b";
 
-
 #[derive(Debug)]
 struct GceIdentity {
     instance_id: String,
@@ -346,7 +345,10 @@ mod tests {
                 (outcome, point_value(series).unwrap_or(-1))
             })
             .collect();
-        assert_eq!(outcomes, vec![("ok", 2), ("partial", 1), ("error", 4), ("retry", 7)]);
+        assert_eq!(
+            outcomes,
+            vec![("ok", 2), ("partial", 1), ("error", 4), ("retry", 7)]
+        );
 
         let resource = series[0].resource.as_ref().expect("resource");
         assert_eq!(resource.r#type, "gce_instance");

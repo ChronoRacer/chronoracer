@@ -1,16 +1,14 @@
 use crate::configuration::KafkaConfig;
-use crate::messaging::offset_ledger::{
-    OffsetLedger, OffsetSink, SharedTracker, lock_tracker,
-};
+use crate::messaging::offset_ledger::{OffsetLedger, OffsetSink, SharedTracker, lock_tracker};
 use crate::messaging::partial_message::{MessageOrigin, PartialMessage};
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
+use rdkafka::ClientContext;
 use rdkafka::consumer::{
     BaseConsumer, CommitMode, Consumer, ConsumerContext, MessageStream, Rebalance, StreamConsumer,
 };
 use rdkafka::error::{KafkaError, KafkaResult, RDKafkaErrorCode};
 use rdkafka::topic_partition_list::TopicPartitionList;
-use rdkafka::ClientContext;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -45,7 +43,10 @@ struct OffsetContext {
 
 impl OffsetContext {
     fn partitions(tpl: &TopicPartitionList) -> Vec<i32> {
-        tpl.elements().iter().map(rdkafka::topic_partition_list::TopicPartitionListElem::partition).collect()
+        tpl.elements()
+            .iter()
+            .map(rdkafka::topic_partition_list::TopicPartitionListElem::partition)
+            .collect()
     }
 }
 
@@ -77,16 +78,18 @@ impl ConsumerContext for OffsetContext {
     fn post_rebalance(&self, base_consumer: &BaseConsumer<Self>, rebalance: &Rebalance<'_>) {
         if let Rebalance::Assign(tpl) = rebalance
             && self.paused.load(Ordering::Acquire)
-                && let Err(error) = base_consumer.pause(tpl) {
-                    warn!(consumer = self.name, %error, "Failed to pause newly assigned partitions");
-                }
+            && let Err(error) = base_consumer.pause(tpl)
+        {
+            warn!(consumer = self.name, %error, "Failed to pause newly assigned partitions");
+        }
     }
 
     fn commit_callback(&self, result: KafkaResult<()>, _offsets: &TopicPartitionList) {
         if let Err(error) = result
-            && !is_no_offset(&error) {
-                warn!(consumer = self.name, %error, "Offset commit failed");
-            }
+            && !is_no_offset(&error)
+        {
+            warn!(consumer = self.name, %error, "Offset commit failed");
+        }
     }
 }
 
@@ -375,7 +378,9 @@ impl BatchMessageSink {
         let message = PartialMessage::from_borrowed(message, MessageOrigin::SensorData);
         // Registered at consumption, never later: a rebalance that revokes the partition between here
         // and the flush has already dropped it from the tracker.
-        self.consumer.ledger.register(message.partition, message.offset);
+        self.consumer
+            .ledger
+            .register(message.partition, message.offset);
         buffer.push(message);
     }
 
@@ -398,7 +403,10 @@ impl BatchMessageSink {
         let Some(permit) = permit else {
             return false;
         };
-        permit.send(std::mem::replace(buffer, Vec::with_capacity(self.batch_size)));
+        permit.send(std::mem::replace(
+            buffer,
+            Vec::with_capacity(self.batch_size),
+        ));
         true
     }
 
@@ -536,7 +544,8 @@ mod tests {
 
     fn unconnected_sink(capacity: usize, pause_after: Duration) -> (BatchMessageSink, BatchSinkRx) {
         let (tx, rx) = tokio::sync::mpsc::channel(capacity);
-        let mut sink = BatchMessageSink::new(&unconnected_kafka(), vec!["data"], tx, 8, 15).unwrap();
+        let mut sink =
+            BatchMessageSink::new(&unconnected_kafka(), vec!["data"], tx, 8, 15).unwrap();
         sink.pause_after = pause_after;
         (sink, rx)
     }
@@ -551,7 +560,10 @@ mod tests {
         let mut stream = sink.consumer.consumer.stream();
         let mut buffer = Vec::with_capacity(8);
 
-        assert!(sink.flush(&mut stream, &mut buffer, &CancellationToken::new()).await);
+        assert!(
+            sink.flush(&mut stream, &mut buffer, &CancellationToken::new())
+                .await
+        );
 
         assert!(rx.try_recv().is_err());
         assert_eq!(buffer.capacity(), 8);
@@ -563,7 +575,10 @@ mod tests {
         let mut stream = sink.consumer.consumer.stream();
         let mut buffer = vec![message(1), message(2)];
 
-        assert!(sink.flush(&mut stream, &mut buffer, &CancellationToken::new()).await);
+        assert!(
+            sink.flush(&mut stream, &mut buffer, &CancellationToken::new())
+                .await
+        );
 
         assert_eq!(offsets(&rx.try_recv().unwrap()), [1, 2]);
         assert!(buffer.is_empty());
@@ -577,7 +592,11 @@ mod tests {
         let cancel = CancellationToken::new();
 
         assert!(!sink.flush(&mut stream, &mut Vec::new(), &cancel).await);
-        assert!(!sink.flush(&mut stream, &mut vec![message(1)], &cancel).await);
+        assert!(
+            !sink
+                .flush(&mut stream, &mut vec![message(1)], &cancel)
+                .await
+        );
     }
 
     /// Frees one slot after `delay`, reporting whether the sink had paused by then.
@@ -603,7 +622,10 @@ mod tests {
         let mut stream = sink.consumer.consumer.stream();
         let mut buffer = vec![message(1), message(2)];
 
-        assert!(sink.flush(&mut stream, &mut buffer, &CancellationToken::new()).await);
+        assert!(
+            sink.flush(&mut stream, &mut buffer, &CancellationToken::new())
+                .await
+        );
 
         let (paused_while_full, mut rx) = drain.await.unwrap();
         assert!(!paused_while_full);
@@ -618,7 +640,10 @@ mod tests {
         let mut stream = sink.consumer.consumer.stream();
         let mut buffer = vec![message(1), message(2)];
 
-        assert!(sink.flush(&mut stream, &mut buffer, &CancellationToken::new()).await);
+        assert!(
+            sink.flush(&mut stream, &mut buffer, &CancellationToken::new())
+                .await
+        );
 
         let (paused_while_full, mut rx) = drain.await.unwrap();
         assert!(paused_while_full);
@@ -636,7 +661,10 @@ mod tests {
         let cancel = CancellationToken::new();
         cancel.cancel();
 
-        assert!(sink.flush(&mut stream, &mut vec![message(1)], &cancel).await);
+        assert!(
+            sink.flush(&mut stream, &mut vec![message(1)], &cancel)
+                .await
+        );
 
         let (paused_while_full, mut rx) = drain.await.unwrap();
         assert!(!paused_while_full);
@@ -664,6 +692,11 @@ mod tests {
 
     #[test]
     fn no_offset_commit_errors_are_not_failures() {
-        assert!(is_no_offset(&KafkaError::ConsumerCommit(RDKafkaErrorCode::NoOffset)));
-        assert!(!is_no_offset(&KafkaError::ConsumerCommit(RDKafkaErrorCode::UnknownMemberId)));
-    }}
+        assert!(is_no_offset(&KafkaError::ConsumerCommit(
+            RDKafkaErrorCode::NoOffset
+        )));
+        assert!(!is_no_offset(&KafkaError::ConsumerCommit(
+            RDKafkaErrorCode::UnknownMemberId
+        )));
+    }
+}

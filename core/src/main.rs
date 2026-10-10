@@ -122,14 +122,13 @@ fn run() -> Result<()> {
         info!("Processing layer initialized");
 
         // Persistence
-        let mut persistence_wrapper =
-            PersistenceLayerEntryPoint::init(
-                config,
-                processing_layer.processed_data_rx,
-                handler,
-                messaging_wrapper.sensor_offsets.clone(),
-            )
-            .await?;
+        let mut persistence_wrapper = PersistenceLayerEntryPoint::init(
+            config,
+            processing_layer.processed_data_rx,
+            handler,
+            messaging_wrapper.sensor_offsets.clone(),
+        )
+        .await?;
         info!("Persistence layer initialized");
 
         // GCP
@@ -433,7 +432,10 @@ async fn finalize_write_metrics(
                 return;
             }
             Ok(Some(Ok(name))) => {
-                info!(task = name, "Control task ended while awaiting final metrics");
+                info!(
+                    task = name,
+                    "Control task ended while awaiting final metrics"
+                );
                 if !control_tasks.has_task(WRITE_METRICS) {
                     return;
                 }
@@ -442,7 +444,10 @@ async fn finalize_write_metrics(
                 if error.is_cancelled() {
                     continue;
                 }
-                warn!(?error, "Control task join error while awaiting final metrics");
+                warn!(
+                    ?error,
+                    "Control task join error while awaiting final metrics"
+                );
                 if !control_tasks.has_task(WRITE_METRICS) {
                     return;
                 }
@@ -533,8 +538,12 @@ async fn run_tasks(
     handle_outcome(outcome, control_tasks, monitor, write_metrics_stop).await
 }
 
-async fn handle_outcome(outcome: RunOutcome, mut control_tasks: NamedControlTasks,
-                        monitor: Monitor, write_metrics_stop: CancellationToken) -> Result<()> {
+async fn handle_outcome(
+    outcome: RunOutcome,
+    mut control_tasks: NamedControlTasks,
+    monitor: Monitor,
+    write_metrics_stop: CancellationToken,
+) -> Result<()> {
     let write_metrics_final_timeout = monitor.write_metrics_final_timeout();
     match outcome {
         RunOutcome::RaceShutdown(shutdown_at) => {
@@ -549,7 +558,7 @@ async fn handle_outcome(outcome: RunOutcome, mut control_tasks: NamedControlTask
                 &write_metrics_stop,
                 write_metrics_final_timeout,
             )
-                .await;
+            .await;
             // Heartbeat keeps running during export.
             monitor.execute_exports().await;
             // Whether the exports succeeded or not: a restart must not repeat the race end.
@@ -569,7 +578,7 @@ async fn handle_outcome(outcome: RunOutcome, mut control_tasks: NamedControlTask
                 &write_metrics_stop,
                 write_metrics_final_timeout,
             )
-                .await;
+            .await;
             control_tasks.abort_all();
             Ok(())
         }
