@@ -91,7 +91,7 @@ pub struct DatabaseExportConfig {
     /// Object-key prefix under `{raceId}/` in the race bucket (file name only after this).
     pub nested_path_in_bucket: String,
     pub max_retries: u16,
-    /// Per-attempt HTTP timeout for the InfluxDB export-plugin trigger.
+    /// Per-attempt HTTP timeout for the `InfluxDB` export-plugin trigger.
     pub attempt_timeout_s: NonZeroU16,
 }
 

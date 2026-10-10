@@ -92,7 +92,7 @@ async fn accept_loop(
         match run_server(&hub, &cancel, addr, &race_id, &mut bound_tx).await {
             Ok(()) => return,
             Err(error) => {
-                if failures % BIND_LOG_EVERY == 0 {
+                if failures.is_multiple_of(BIND_LOG_EVERY) {
                     error!(
                         %error,
                         %addr,
@@ -126,11 +126,10 @@ async fn run_server(
     // tonic's `tcp_nodelay` applies only to its own listener. This server accepts on
     // `TcpListenerStream`, so Nagle would hold small preview frames unless set here.
     let incoming = TcpListenerStream::new(listener).map(|accepted| {
-        accepted.map(|stream| {
+        accepted.inspect(|stream| {
             if let Err(error) = stream.set_nodelay(true) {
                 error!(%error, "failed to set TCP_NODELAY on telemetry connection");
             }
-            stream
         })
     });
     let service = WatchService {

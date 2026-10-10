@@ -188,7 +188,7 @@ impl FlushContext {
                 }
                 Err(error) if is_retryable(&error) => {
                     self.write_metrics.record_retry();
-                    if retries % RETRY_LOG_EVERY == 0 {
+                    if retries.is_multiple_of(RETRY_LOG_EVERY) {
                         if is_auth_or_config(&error) {
                             warn!(%error, "Database write failed: auth/config problem, retrying. retries_so_far={retries}, flush_type={wiring_type:?}");
                         } else {

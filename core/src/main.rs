@@ -1,4 +1,6 @@
 #![warn(clippy::pedantic)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::missing_panics_doc)]
 
 use crate::configuration::CoreConfig;
 use crate::gcp::gcp_entrypoint::GcpLayerEntrypoint;
@@ -54,6 +56,7 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+#[allow(clippy::too_many_lines)]
 #[tracing::instrument(err(Debug))]
 fn run() -> Result<()> {
     let config_val = CoreConfig::load_from_env()?;
@@ -207,7 +210,7 @@ fn run() -> Result<()> {
         });
         let heartbeat_write_metrics = Arc::clone(&persistence_wrapper.write_metrics);
         control_tasks.spawn(HEARTBEAT, async move {
-            let _ = messaging_wrapper
+            let () = messaging_wrapper
                 .heartbeat_handler
                 .keep_alive(heartbeat_write_metrics)
                 .await;
@@ -468,13 +471,11 @@ async fn run_tasks(
         tokio::select! {
             biased;
             res = &mut shutdown_rx => {
-                match res {
-                    Ok(at) => break RunOutcome::RaceShutdown(at),
-                    Err(_) => {
-                        error!("Shutdown sender dropped before signaling; stopping Core without export");
-                        break RunOutcome::FatalShutdownSenderDropped;
-                    }
+                if let Ok(at) = res {
+                    break RunOutcome::RaceShutdown(at)
                 }
+                error!("Shutdown sender dropped before signaling; stopping Core without export");
+                break RunOutcome::FatalShutdownSenderDropped;
             }
             () = wait_for_termination_signal() => {
                 break RunOutcome::SignalDrain;
@@ -493,11 +494,10 @@ async fn run_tasks(
                 match res {
                     Some(Ok(name)) => {
                         // Filter exits right after signaling SHUTDOWN; oneshot may already be ready.
-                        if matches!(name, CONTROL_FILTER | DLQ_HANDLER) {
-                            if let Ok(at) = shutdown_rx.try_recv() {
+                        if matches!(name, CONTROL_FILTER | DLQ_HANDLER)
+                            && let Ok(at) = shutdown_rx.try_recv() {
                                 break RunOutcome::RaceShutdown(at);
                             }
-                        }
                         match control_task_action(SupervisorPhase::Running, name) {
                             ControlTaskAction::Fatal => {
                                 error!(
@@ -530,9 +530,12 @@ async fn run_tasks(
             }
         }
     };
+    handle_outcome(outcome, control_tasks, monitor, write_metrics_stop).await
+}
 
+async fn handle_outcome(outcome: RunOutcome, mut control_tasks: NamedControlTasks,
+                        monitor: Monitor, write_metrics_stop: CancellationToken) -> Result<()> {
     let write_metrics_final_timeout = monitor.write_metrics_final_timeout();
-
     match outcome {
         RunOutcome::RaceShutdown(shutdown_at) => {
             info!("SHUTDOWN received; draining pipeline before export");
@@ -546,7 +549,7 @@ async fn run_tasks(
                 &write_metrics_stop,
                 write_metrics_final_timeout,
             )
-            .await;
+                .await;
             // Heartbeat keeps running during export.
             monitor.execute_exports().await;
             // Whether the exports succeeded or not: a restart must not repeat the race end.
@@ -566,7 +569,7 @@ async fn run_tasks(
                 &write_metrics_stop,
                 write_metrics_final_timeout,
             )
-            .await;
+                .await;
             control_tasks.abort_all();
             Ok(())
         }

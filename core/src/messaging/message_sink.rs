@@ -45,7 +45,7 @@ struct OffsetContext {
 
 impl OffsetContext {
     fn partitions(tpl: &TopicPartitionList) -> Vec<i32> {
-        tpl.elements().iter().map(|element| element.partition()).collect()
+        tpl.elements().iter().map(rdkafka::topic_partition_list::TopicPartitionListElem::partition).collect()
     }
 }
 
@@ -75,21 +75,18 @@ impl ConsumerContext for OffsetContext {
     }
 
     fn post_rebalance(&self, base_consumer: &BaseConsumer<Self>, rebalance: &Rebalance<'_>) {
-        if let Rebalance::Assign(tpl) = rebalance {
-            if self.paused.load(Ordering::Acquire) {
-                if let Err(error) = base_consumer.pause(tpl) {
+        if let Rebalance::Assign(tpl) = rebalance
+            && self.paused.load(Ordering::Acquire)
+                && let Err(error) = base_consumer.pause(tpl) {
                     warn!(consumer = self.name, %error, "Failed to pause newly assigned partitions");
                 }
-            }
-        }
     }
 
     fn commit_callback(&self, result: KafkaResult<()>, _offsets: &TopicPartitionList) {
-        if let Err(error) = result {
-            if !is_no_offset(&error) {
+        if let Err(error) = result
+            && !is_no_offset(&error) {
                 warn!(consumer = self.name, %error, "Offset commit failed");
             }
-        }
     }
 }
 

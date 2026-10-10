@@ -82,7 +82,7 @@ impl fmt::Display for InvalidDriverId {
     }
 }
 
-/// Rejects values unsafe as InfluxDB line-protocol tag values (unescaped).
+/// Rejects values unsafe as `InfluxDB` line-protocol tag values (unescaped).
 pub fn validate_driver_id(driver_id: &str) -> Result<(), InvalidDriverId> {
     if driver_id.is_empty() {
         return Err(InvalidDriverId::Empty);
