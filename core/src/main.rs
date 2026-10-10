@@ -160,8 +160,12 @@ fn run() -> Result<()> {
                 .await;
         });
         monitor.track_task(async move { processing_layer.collector.ingest().await });
-        monitor.track_task(async move { persistence_wrapper.splitter.ingest().await });
-        monitor.track_task(async move { persistence_wrapper.fast_batcher.ingest().await });
+        if let Some(mut splitter) = persistence_wrapper.splitter {
+            monitor.track_task(async move { splitter.ingest().await });
+        }
+        if let Some(mut fast_batcher) = persistence_wrapper.fast_batcher {
+            monitor.track_task(async move { fast_batcher.ingest().await });
+        }
         monitor.track_task(async move { persistence_wrapper.normal_batcher.ingest().await });
         monitor.track_task(async move { persistence_wrapper.flusher.ingest().await });
         info!("Data pipeline started");
