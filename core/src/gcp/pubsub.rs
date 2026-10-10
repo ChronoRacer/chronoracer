@@ -20,7 +20,10 @@ fn topic_resource_name(project_id: &str, topic_id: &str) -> String {
 }
 
 impl PubSubManager {
-    pub async fn new(race_id: &'static CompactString, gcp_config: &'static GcpConfig) -> Result<Self> {
+    pub async fn new(
+        race_id: &'static CompactString,
+        gcp_config: &'static GcpConfig,
+    ) -> Result<Self> {
         let topic_name = topic_resource_name(&gcp_config.project_id, &gcp_config.pubsub_topic_id);
         let publisher = Publisher::builder(&topic_name).build().await?;
         Ok(Self {

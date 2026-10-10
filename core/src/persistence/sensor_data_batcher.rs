@@ -295,8 +295,14 @@ mod tests {
             .unwrap();
         drop(data_tx);
 
-        let first = timeout(Duration::from_secs(2), batch_rx.recv()).await.unwrap().unwrap();
-        let second = timeout(Duration::from_secs(2), batch_rx.recv()).await.unwrap().unwrap();
+        let first = timeout(Duration::from_secs(2), batch_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let second = timeout(Duration::from_secs(2), batch_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!((first.points.len(), ranges(&first)), (6, vec![(0, 0, 1)]));
         assert_eq!((second.points.len(), ranges(&second)), (1, vec![(0, 2, 2)]));
         ingest.await.unwrap();
@@ -309,7 +315,10 @@ mod tests {
 
         data_tx.send(vec![message_at("a", 0, 3, 41)]).await.unwrap();
 
-        let batch = timeout(Duration::from_secs(2), batch_rx.recv()).await.unwrap().unwrap();
+        let batch = timeout(Duration::from_secs(2), batch_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
         assert!(batch.points.is_empty());
         assert_eq!(ranges(&batch), [(3, 41, 41)]);
         drop(data_tx);

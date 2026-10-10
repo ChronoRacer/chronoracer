@@ -95,10 +95,12 @@ impl Monitor {
         self.data_tracker.close();
     }
 
+    #[must_use]
     pub fn data_pipeline_drain_timeout(&self) -> Duration {
         Duration::from_secs(u64::from(self.config.runtime.data_pipeline_drain_timeout_s))
     }
 
+    #[must_use]
     pub fn write_metrics_final_timeout(&self) -> Duration {
         Duration::from_secs(u64::from(
             self.config.runtime.write_metrics_final_timeout_s.get(),

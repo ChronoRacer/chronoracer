@@ -91,7 +91,7 @@ pub struct DatabaseExportConfig {
     /// Object-key prefix under `{raceId}/` in the race bucket (file name only after this).
     pub nested_path_in_bucket: String,
     pub max_retries: u16,
-    /// Per-attempt HTTP timeout for the InfluxDB export-plugin trigger.
+    /// Per-attempt HTTP timeout for the `InfluxDB` export-plugin trigger.
     pub attempt_timeout_s: NonZeroU16,
 }
 
@@ -137,7 +137,10 @@ impl fmt::Debug for PersistenceConfig {
                 "write_retry_initial_backoff_ms",
                 &self.write_retry_initial_backoff_ms,
             )
-            .field("write_retry_max_backoff_ms", &self.write_retry_max_backoff_ms)
+            .field(
+                "write_retry_max_backoff_ms",
+                &self.write_retry_max_backoff_ms,
+            )
             .field("export", &self.export)
             .finish()
     }
@@ -258,9 +261,7 @@ impl CoreConfig {
 
         for sensor_id in &self.persistence.fast_flush_sensor_ids {
             if sensor_id.len() > MAX_SENSOR_ID_BYTES {
-                bail!(
-                    "Sensor ID '{sensor_id}' too long. At most {MAX_SENSOR_ID_BYTES} bytes"
-                );
+                bail!("Sensor ID '{sensor_id}' too long. At most {MAX_SENSOR_ID_BYTES} bytes");
             }
         }
 
@@ -506,7 +507,14 @@ mod tests {
                 assert_eq!(loaded.persistence.write_retry_max_backoff_ms.get(), 10_000);
                 assert_eq!(loaded.runtime.heartbeat_write_failure_threshold_s.get(), 60);
                 assert_eq!(loaded.runtime.offset_final_commit_timeout_s.get(), 15);
-                assert_eq!(loaded.kafka.sensor_data_consumer.offset_lag_log_interval_s.get(), 60);
+                assert_eq!(
+                    loaded
+                        .kafka
+                        .sensor_data_consumer
+                        .offset_lag_log_interval_s
+                        .get(),
+                    60
+                );
                 assert_eq!(loaded.kafka.group_id, "chrono-core");
                 assert!(loaded.validate().is_ok());
             }
@@ -532,8 +540,7 @@ mod tests {
     #[test]
     fn validate_rejects_oversized_fast_flush_sensor_ids() {
         let mut config = CoreConfig::mock_config();
-        config.persistence.fast_flush_sensor_ids =
-            vec!["a".repeat(MAX_SENSOR_ID_BYTES + 1)];
+        config.persistence.fast_flush_sensor_ids = vec!["a".repeat(MAX_SENSOR_ID_BYTES + 1)];
         let err = config.validate().unwrap_err().to_string();
         assert!(err.contains("too long"));
     }
@@ -556,7 +563,10 @@ mod tests {
 
         assert_eq!(config.kafka.data_group_id(), "test_group-data");
         assert_eq!(config.kafka.control_group_id(), "test_group-control");
-        assert_ne!(config.kafka.data_group_id(), config.kafka.control_group_id());
+        assert_ne!(
+            config.kafka.data_group_id(),
+            config.kafka.control_group_id()
+        );
         assert_ne!(config.kafka.data_group_id(), config.kafka.group_id);
     }
 
@@ -565,7 +575,13 @@ mod tests {
         let mut config = CoreConfig::mock_config();
         config.kafka.group_id = "  ".to_string();
 
-        assert!(config.validate().unwrap_err().to_string().contains("group_id"));
+        assert!(
+            config
+                .validate()
+                .unwrap_err()
+                .to_string()
+                .contains("group_id")
+        );
     }
 
     #[test]
@@ -726,7 +742,10 @@ export:
     fn mock_config_passes_validation() {
         let config = CoreConfig::mock_config();
         assert!(config.validate().is_ok());
-        assert_ne!(config.processing.message_channel_buffer_size, NonZeroUsize::MIN);
+        assert_ne!(
+            config.processing.message_channel_buffer_size,
+            NonZeroUsize::MIN
+        );
         assert_ne!(config.runtime.tokio_workers, NonZeroU16::MIN);
         assert_ne!(config.persistence.flush_interval_ms, NonZeroU32::MIN);
     }

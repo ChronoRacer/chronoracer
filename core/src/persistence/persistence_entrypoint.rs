@@ -18,8 +18,8 @@ pub type SensorDataBatch = Vec<Arc<UnwoundSensorDataMessage>>;
 pub type SensorDataRx = tokio::sync::mpsc::Receiver<SensorDataBatch>;
 
 pub struct PersistenceLayerEntryPoint {
-    pub(crate) splitter: SensorDataSplitter,
-    pub(crate) fast_batcher: SensorDataBatcher,
+    pub(crate) splitter: Option<SensorDataSplitter>,
+    pub(crate) fast_batcher: Option<SensorDataBatcher>,
     pub(crate) normal_batcher: SensorDataBatcher,
     pub(crate) flusher: InfluxDbFlusher,
     pub(crate) exporter: InfluxDbExporter,
@@ -38,18 +38,21 @@ impl PersistenceLayerEntryPoint {
 
         let splitter_channel_capacity =
             usize::from(config.runtime.rayon_threads.get()).saturating_mul(2);
-        let (fast_tx, fast_rx) = tokio::sync::mpsc::channel(splitter_channel_capacity);
-        let (normal_tx, normal_rx) = tokio::sync::mpsc::channel(splitter_channel_capacity);
-
-        let splitter =
-            SensorDataSplitter::new(processed_data_rx, fast_tx, normal_tx, persistence_config);
-
-        let (fast_batcher, fast_batcher_wiring) = PersistenceLayerEntryPoint::create_batcher(
-            fast_rx,
-            driver_id_holder,
+        let (splitter, fast_rx, normal_rx) = SensorDataSplitter::wire(
+            processed_data_rx,
+            splitter_channel_capacity,
             persistence_config,
-            BatcherWiringType::Fast,
         );
+        let (fast_batcher, fast_batcher_wiring) = fast_rx
+            .map(|rx| {
+                Self::create_batcher(
+                    rx,
+                    driver_id_holder,
+                    persistence_config,
+                    BatcherWiringType::Fast,
+                )
+            })
+            .unzip();
         let (normal_batcher, normal_batcher_wiring) = PersistenceLayerEntryPoint::create_batcher(
             normal_rx,
             driver_id_holder,

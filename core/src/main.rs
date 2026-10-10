@@ -1,4 +1,6 @@
 #![warn(clippy::pedantic)]
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::missing_panics_doc)]
 
 use crate::configuration::CoreConfig;
 use crate::gcp::gcp_entrypoint::GcpLayerEntrypoint;
@@ -54,6 +56,7 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+#[allow(clippy::too_many_lines)]
 #[tracing::instrument(err(Debug))]
 fn run() -> Result<()> {
     let config_val = CoreConfig::load_from_env()?;
@@ -119,14 +122,13 @@ fn run() -> Result<()> {
         info!("Processing layer initialized");
 
         // Persistence
-        let mut persistence_wrapper =
-            PersistenceLayerEntryPoint::init(
-                config,
-                processing_layer.processed_data_rx,
-                handler,
-                messaging_wrapper.sensor_offsets.clone(),
-            )
-            .await?;
+        let mut persistence_wrapper = PersistenceLayerEntryPoint::init(
+            config,
+            processing_layer.processed_data_rx,
+            handler,
+            messaging_wrapper.sensor_offsets.clone(),
+        )
+        .await?;
         info!("Persistence layer initialized");
 
         // GCP
@@ -160,8 +162,12 @@ fn run() -> Result<()> {
                 .await;
         });
         monitor.track_task(async move { processing_layer.collector.ingest().await });
-        monitor.track_task(async move { persistence_wrapper.splitter.ingest().await });
-        monitor.track_task(async move { persistence_wrapper.fast_batcher.ingest().await });
+        if let Some(mut splitter) = persistence_wrapper.splitter {
+            monitor.track_task(async move { splitter.ingest().await });
+        }
+        if let Some(mut fast_batcher) = persistence_wrapper.fast_batcher {
+            monitor.track_task(async move { fast_batcher.ingest().await });
+        }
         monitor.track_task(async move { persistence_wrapper.normal_batcher.ingest().await });
         monitor.track_task(async move { persistence_wrapper.flusher.ingest().await });
         info!("Data pipeline started");
@@ -203,7 +209,7 @@ fn run() -> Result<()> {
         });
         let heartbeat_write_metrics = Arc::clone(&persistence_wrapper.write_metrics);
         control_tasks.spawn(HEARTBEAT, async move {
-            let _ = messaging_wrapper
+            let () = messaging_wrapper
                 .heartbeat_handler
                 .keep_alive(heartbeat_write_metrics)
                 .await;
@@ -426,7 +432,10 @@ async fn finalize_write_metrics(
                 return;
             }
             Ok(Some(Ok(name))) => {
-                info!(task = name, "Control task ended while awaiting final metrics");
+                info!(
+                    task = name,
+                    "Control task ended while awaiting final metrics"
+                );
                 if !control_tasks.has_task(WRITE_METRICS) {
                     return;
                 }
@@ -435,7 +444,10 @@ async fn finalize_write_metrics(
                 if error.is_cancelled() {
                     continue;
                 }
-                warn!(?error, "Control task join error while awaiting final metrics");
+                warn!(
+                    ?error,
+                    "Control task join error while awaiting final metrics"
+                );
                 if !control_tasks.has_task(WRITE_METRICS) {
                     return;
                 }
@@ -464,13 +476,11 @@ async fn run_tasks(
         tokio::select! {
             biased;
             res = &mut shutdown_rx => {
-                match res {
-                    Ok(at) => break RunOutcome::RaceShutdown(at),
-                    Err(_) => {
-                        error!("Shutdown sender dropped before signaling; stopping Core without export");
-                        break RunOutcome::FatalShutdownSenderDropped;
-                    }
+                if let Ok(at) = res {
+                    break RunOutcome::RaceShutdown(at)
                 }
+                error!("Shutdown sender dropped before signaling; stopping Core without export");
+                break RunOutcome::FatalShutdownSenderDropped;
             }
             () = wait_for_termination_signal() => {
                 break RunOutcome::SignalDrain;
@@ -489,11 +499,10 @@ async fn run_tasks(
                 match res {
                     Some(Ok(name)) => {
                         // Filter exits right after signaling SHUTDOWN; oneshot may already be ready.
-                        if matches!(name, CONTROL_FILTER | DLQ_HANDLER) {
-                            if let Ok(at) = shutdown_rx.try_recv() {
+                        if matches!(name, CONTROL_FILTER | DLQ_HANDLER)
+                            && let Ok(at) = shutdown_rx.try_recv() {
                                 break RunOutcome::RaceShutdown(at);
                             }
-                        }
                         match control_task_action(SupervisorPhase::Running, name) {
                             ControlTaskAction::Fatal => {
                                 error!(
@@ -526,9 +535,16 @@ async fn run_tasks(
             }
         }
     };
+    handle_outcome(outcome, control_tasks, monitor, write_metrics_stop).await
+}
 
+async fn handle_outcome(
+    outcome: RunOutcome,
+    mut control_tasks: NamedControlTasks,
+    monitor: Monitor,
+    write_metrics_stop: CancellationToken,
+) -> Result<()> {
     let write_metrics_final_timeout = monitor.write_metrics_final_timeout();
-
     match outcome {
         RunOutcome::RaceShutdown(shutdown_at) => {
             info!("SHUTDOWN received; draining pipeline before export");

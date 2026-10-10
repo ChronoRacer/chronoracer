@@ -15,13 +15,12 @@ pub const WRITE_LINES: &str = "custom.googleapis.com/chronoracer/influx_write_li
 pub const WRITE_BYTES: &str = "custom.googleapis.com/chronoracer/influx_write_bytes";
 pub const WRITE_REQUESTS: &str = "custom.googleapis.com/chronoracer/influx_write_requests";
 
-const PUBLISH_INTERVAL: Duration = Duration::from_secs(60);
+const PUBLISH_INTERVAL: Duration = Duration::from_mins(1);
 const METADATA_TIMEOUT: Duration = Duration::from_secs(2);
 const METADATA_ROOT: &str = "http://metadata.google.internal/computeMetadata/v1/instance";
 /// Must be in the correct format, not necessarily correct values
 const UNKNOWN_GCE_IDENTITY_INSTANCE_ID: &str = "1111111111111111111";
 const UNKNOWN_GCE_IDENTITY_ZONE: &str = "europe-west1-b";
-
 
 #[derive(Debug)]
 struct GceIdentity {
@@ -346,7 +345,10 @@ mod tests {
                 (outcome, point_value(series).unwrap_or(-1))
             })
             .collect();
-        assert_eq!(outcomes, vec![("ok", 2), ("partial", 1), ("error", 4), ("retry", 7)]);
+        assert_eq!(
+            outcomes,
+            vec![("ok", 2), ("partial", 1), ("error", 4), ("retry", 7)]
+        );
 
         let resource = series[0].resource.as_ref().expect("resource");
         assert_eq!(resource.r#type, "gce_instance");

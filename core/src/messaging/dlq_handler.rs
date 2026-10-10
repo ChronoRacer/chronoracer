@@ -44,7 +44,10 @@ pub struct InvalidSettler {
 impl InvalidSettler {
     #[must_use]
     pub fn new(sensor_data: OffsetLedger, control: OffsetLedger) -> Self {
-        Self { sensor_data, control }
+        Self {
+            sensor_data,
+            control,
+        }
     }
 
     fn ledger(&self, origin: MessageOrigin) -> &OffsetLedger {
@@ -55,14 +58,23 @@ impl InvalidSettler {
     }
 
     pub fn settle(&self, at: SourceOffset, outcome: InvalidOutcome) {
-        trace!(partition = at.partition, offset = at.offset, ?outcome, "Invalid message settled");
+        trace!(
+            partition = at.partition,
+            offset = at.offset,
+            ?outcome,
+            "Invalid message settled"
+        );
         self.ledger(at.origin).settle_one(at.partition, at.offset);
     }
 
     /// Settles many at once, for the parse path: one lock per batch.
     pub fn settle_set(&self, origin: MessageOrigin, set: &OffsetSet, outcome: InvalidOutcome) {
         if !set.is_empty() {
-            trace!(?outcome, ranges = set.ranges().len(), "Invalid messages settled");
+            trace!(
+                ?outcome,
+                ranges = set.ranges().len(),
+                "Invalid messages settled"
+            );
         }
         self.ledger(origin).settle(set);
     }
@@ -147,7 +159,11 @@ pub fn invalid_message_channel(
             dropped: Arc::clone(&dropped),
             settler: settler.clone(),
         },
-        InvalidMessageRx { rx, dropped, settler },
+        InvalidMessageRx {
+            rx,
+            dropped,
+            settler,
+        },
     )
 }
 
@@ -229,7 +245,12 @@ struct DlqWindow {
 }
 
 impl DlqWindow {
-    fn record(&mut self, settler: &InvalidSettler, at: SourceOffset, result: Result<(), KafkaError>) {
+    fn record(
+        &mut self,
+        settler: &InvalidSettler,
+        at: SourceOffset,
+        result: Result<(), KafkaError>,
+    ) {
         match result {
             Ok(()) => {
                 self.dead_lettered += 1;
@@ -250,7 +271,10 @@ impl DlqWindow {
 
     fn report(&mut self, dropped: u64) {
         if self.dead_lettered > 0 {
-            info!(redirected = self.dead_lettered, "Redirected messages to DLQ");
+            info!(
+                redirected = self.dead_lettered,
+                "Redirected messages to DLQ"
+            );
         }
         if let Some(last_error) = self.last_error.take() {
             error!(
@@ -259,7 +283,10 @@ impl DlqWindow {
             );
         }
         if dropped > 0 {
-            error!(dropped, "DLQ queue full: discarded invalid messages without a DLQ record");
+            error!(
+                dropped,
+                "DLQ queue full: discarded invalid messages without a DLQ record"
+            );
         }
         *self = Self::default();
     }
@@ -306,10 +333,8 @@ impl<P: KafkaProducer> DLQHandler<P> {
         let settler = dlq_rx.settler.clone();
         let mut in_flight = FuturesUnordered::new();
         let mut window = DlqWindow::default();
-        let mut report = tokio::time::interval_at(
-            Instant::now() + DLQ_REPORT_INTERVAL,
-            DLQ_REPORT_INTERVAL,
-        );
+        let mut report =
+            tokio::time::interval_at(Instant::now() + DLQ_REPORT_INTERVAL, DLQ_REPORT_INTERVAL);
         report.set_missed_tick_behavior(MissedTickBehavior::Skip);
         let mut receiving = true;
 
@@ -544,7 +569,10 @@ mod tests {
     fn try_offer_hands_the_record_back_when_the_queue_is_full() {
         let (tx, mut rx) = invalid_message_channel(1, InvalidSettler::detached());
 
-        assert!(matches!(tx.try_offer(failed_message(1, None)), DlqOffer::Queued));
+        assert!(matches!(
+            tx.try_offer(failed_message(1, None)),
+            DlqOffer::Queued
+        ));
         let DlqOffer::Dropped(rejected) = tx.try_offer(failed_message(2, None)) else {
             panic!("second record should not fit");
         };
@@ -592,11 +620,8 @@ mod tests {
     async fn delivered_records_settle_into_the_ledger_of_their_consumer() {
         let (settler, sensor_sink, control_sink) = registered_ledgers();
         let (tx, rx) = invalid_message_channel(10, settler);
-        let handler = DLQHandler::with_producer(
-            mock_config(1),
-            rx,
-            Arc::new(MockKafkaProducer::default()),
-        );
+        let handler =
+            DLQHandler::with_producer(mock_config(1), rx, Arc::new(MockKafkaProducer::default()));
 
         tx.send(failed_message(0, None)).await.unwrap();
         tx.send(failed_message(1, None)).await.unwrap();
@@ -652,7 +677,10 @@ mod tests {
         let (settler, sensor_sink, _control_sink) = registered_ledgers();
         let (tx, _rx) = invalid_message_channel(1, settler);
 
-        assert!(matches!(tx.try_offer(failed_message(0, None)), DlqOffer::Queued));
+        assert!(matches!(
+            tx.try_offer(failed_message(0, None)),
+            DlqOffer::Queued
+        ));
 
         assert!(sensor_sink.stored().is_empty());
     }

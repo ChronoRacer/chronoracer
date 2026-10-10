@@ -30,7 +30,9 @@ impl fmt::Display for DecodeError {
             Self::NegativeTimestamp => "Sensor data timestamp is negative",
             Self::NegativeDelta => "Sensor reading delta is negative",
             Self::TimestampOverflow => "Sensor reading timestamp overflows u64",
-            Self::ItemCountExceedsInput => "Avro array block declares more items than the payload can hold",
+            Self::ItemCountExceedsInput => {
+                "Avro array block declares more items than the payload can hold"
+            }
             Self::BlockSizeMismatch => "Avro array block byte size does not match its items",
         })
     }
@@ -87,7 +89,9 @@ impl<'a> AvroReader<'a> {
 
     pub fn read_double(&mut self) -> Result<f64, DecodeError> {
         let bytes = self.take(8)?;
-        Ok(f64::from_le_bytes(bytes.try_into().expect("take(8) returns 8 bytes")))
+        Ok(f64::from_le_bytes(
+            bytes.try_into().expect("take(8) returns 8 bytes"),
+        ))
     }
 
     /// Borrowed string; the length is checked against the remaining input before any use.
@@ -152,27 +156,40 @@ mod tests {
 
     #[test]
     fn read_str_checks_length_and_utf8() {
-        assert_eq!(AvroReader::new(&[0x06, b'a', b'b', b'c']).read_str(), Ok("abc"));
+        assert_eq!(
+            AvroReader::new(&[0x06, b'a', b'b', b'c']).read_str(),
+            Ok("abc")
+        );
         assert_eq!(AvroReader::new(&[0x00]).read_str(), Ok(""));
         assert_eq!(
             AvroReader::new(&[0x06, b'a', b'b']).read_str(),
             Err(DecodeError::Truncated)
         );
-        assert_eq!(AvroReader::new(&[0x01]).read_str(), Err(DecodeError::NegativeLength));
+        assert_eq!(
+            AvroReader::new(&[0x01]).read_str(),
+            Err(DecodeError::NegativeLength)
+        );
         assert_eq!(
             AvroReader::new(&[0x04, 0xff, 0xfe]).read_str(),
             Err(DecodeError::InvalidUtf8)
         );
         // Length far beyond the input must not allocate or panic.
         assert_eq!(
-            AvroReader::new(&[0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]).read_str(),
+            AvroReader::new(&[0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01])
+                .read_str(),
             Err(DecodeError::Truncated)
         );
     }
 
     #[test]
     fn read_double_needs_eight_bytes() {
-        assert_eq!(AvroReader::new(&1.5f64.to_le_bytes()).read_double(), Ok(1.5));
-        assert_eq!(AvroReader::new(&[0; 7]).read_double(), Err(DecodeError::Truncated));
+        assert_eq!(
+            AvroReader::new(&1.5f64.to_le_bytes()).read_double(),
+            Ok(1.5)
+        );
+        assert_eq!(
+            AvroReader::new(&[0; 7]).read_double(),
+            Err(DecodeError::Truncated)
+        );
     }
 }

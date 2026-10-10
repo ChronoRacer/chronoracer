@@ -51,14 +51,17 @@ reported as an error by the DLQ handler; Kafka still holds the original message 
 `kafka.dlq_config.max_inflight_sends` deliveries outstanding, logs one aggregated line every 10 seconds (the first
 failure of each window is logged at once), and on channel close finishes every outstanding delivery before it ends.
 Control-path invalid messages are few and wait for room instead.
-The splitter partitions each processed batch into one fast-flush and one normal batch. The persistence
+When `persistence.fast_flush_sensor_ids` is non-empty, the splitter partitions each processed batch into one
+fast-flush and one normal batch. When the list is empty, processed batches go directly to the normal batcher;
+the splitter, fast batcher, fast flusher loop, and their channels are not created or spawned. The persistence
 batcher consumes those grouped messages and forms its database point batches using the fast/normal path and
 interval settings. If either downstream channel closes, the splitter ends instead of dropping data, which is a
 data-task exit under [the failure policy](#shutdown-signals-and-failure-policy).
 
 The flusher sends each point batch as one line-protocol request. `persistence.max_inflight_db_writes` is the only limit
 on concurrent writes: the InfluxDB client is configured not to split, limit, or retry on its own. A quarter of those
-permits are reserved for the fast path and the rest are shared. The reserved count is at least one whenever more than
+permits are reserved when the fast path is enabled and the rest are shared. With no fast sensors, all permits are
+available to the normal path. With the fast path enabled, the reserved count is at least one whenever more than
 one permit exists, and one permit always stays shared, so with two or more permits normal batches cannot take every
 permit and starve fast flushes. A single permit is shared by both paths. A transient failure (connection error, timeout, 429, any 5xx, or 401, 403, or 404)
 sends the same batch again after a backoff that starts at `persistence.write_retry_initial_backoff_ms`, doubles per
@@ -314,8 +317,8 @@ flowchart TB
     end
 
     subgraph persistence["Persistence layer"]
-        splitter["Splitter"]
-        batcherFast["Fast batcher"]
+        splitter["Splitter (fast path enabled)"]
+        batcherFast["Fast batcher (fast path enabled)"]
         batcherNormal["Normal batcher"]
         flusher[("Flusher")]
     end
@@ -329,6 +332,7 @@ flowchart TB
     dataSink -->|message batches| decode
     decode --> |invalid messages| dlqPublisher
     decode -->|processed batches| splitter
+    decode -->|no fast sensors| batcherNormal
     decode -->|processed batches| tel_queue
     tel_queue --> |stream into| tel_stream
     splitter -->|fast batches| batcherFast

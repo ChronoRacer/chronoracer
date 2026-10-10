@@ -277,8 +277,16 @@ mod tests {
         assert_eq!(
             lag,
             [
-                PartitionLag { partition: 0, pending: 0, position: 3 },
-                PartitionLag { partition: 1, pending: 0, position: 103 },
+                PartitionLag {
+                    partition: 0,
+                    pending: 0,
+                    position: 3
+                },
+                PartitionLag {
+                    partition: 1,
+                    pending: 0,
+                    position: 103
+                },
             ]
         );
     }
@@ -300,7 +308,11 @@ mod tests {
 
         assert_eq!(tracker.settle(7, 10, 12), None, "unknown partition");
         assert_eq!(tracker.settle(0, 500, 600), None, "never consumed");
-        assert_eq!(tracker.settle(0, 0, 9), None, "below the first consumed offset");
+        assert_eq!(
+            tracker.settle(0, 0, 9),
+            None,
+            "below the first consumed offset"
+        );
         assert_eq!(tracker.settle(0, 12, 11), None, "inverted range");
         assert_eq!(tracker.lag()[0].pending, 3);
         assert_eq!(tracker.lag()[0].position, 10);
@@ -354,7 +366,14 @@ mod tests {
         tracker.forget([0]);
 
         assert_eq!(tracker.settle(0, 0, 4), None);
-        assert_eq!(tracker.lag().iter().map(|l| l.partition).collect::<Vec<_>>(), [1]);
+        assert_eq!(
+            tracker
+                .lag()
+                .iter()
+                .map(|l| l.partition)
+                .collect::<Vec<_>>(),
+            [1]
+        );
         assert_eq!(tracker.settle(1, 50, 50), Some(51));
     }
 
@@ -369,7 +388,14 @@ mod tests {
             tracker.register(0, offset);
         }
 
-        assert_eq!(tracker.lag()[0], PartitionLag { partition: 0, pending: 3, position: 105 });
+        assert_eq!(
+            tracker.lag()[0],
+            PartitionLag {
+                partition: 0,
+                pending: 3,
+                position: 105
+            }
+        );
         // The old generation's in-flight message settles: it is durable, so it counts.
         assert_eq!(tracker.settle(0, 105, 105), Some(106));
         assert_eq!(tracker.settle(0, 106, 107), Some(108));
@@ -409,12 +435,36 @@ mod tests {
         assert_eq!(
             set.ranges(),
             [
-                OffsetRange { partition: 0, first: 5, last: 10 },
-                OffsetRange { partition: 1, first: 10, last: 10 },
-                OffsetRange { partition: 1, first: 12, last: 12 },
-                OffsetRange { partition: 1, first: 14, last: 14 },
-                OffsetRange { partition: 1, first: 16, last: 16 },
-                OffsetRange { partition: 1, first: 18, last: 18 },
+                OffsetRange {
+                    partition: 0,
+                    first: 5,
+                    last: 10
+                },
+                OffsetRange {
+                    partition: 1,
+                    first: 10,
+                    last: 10
+                },
+                OffsetRange {
+                    partition: 1,
+                    first: 12,
+                    last: 12
+                },
+                OffsetRange {
+                    partition: 1,
+                    first: 14,
+                    last: 14
+                },
+                OffsetRange {
+                    partition: 1,
+                    first: 16,
+                    last: 16
+                },
+                OffsetRange {
+                    partition: 1,
+                    first: 18,
+                    last: 18
+                },
             ]
         );
     }
@@ -430,8 +480,16 @@ mod tests {
         assert_eq!(
             set.ranges(),
             [
-                OffsetRange { partition: 2, first: 3, last: 4 },
-                OffsetRange { partition: 2, first: 9, last: 10 },
+                OffsetRange {
+                    partition: 2,
+                    first: 3,
+                    last: 4
+                },
+                OffsetRange {
+                    partition: 2,
+                    first: 9,
+                    last: 10
+                },
             ]
         );
     }
@@ -446,7 +504,9 @@ mod tests {
 
         let mut position = None;
         for range in set.ranges() {
-            position = tracker.settle(range.partition, range.first, range.last).or(position);
+            position = tracker
+                .settle(range.partition, range.first, range.last)
+                .or(position);
         }
 
         assert_eq!(position, Some(3));

@@ -585,7 +585,12 @@ fn budget_misses_are_split_by_each_subscribers_sensors() {
     let a = join_as(&preview, "a", &["a"]);
     let b = join_as(&preview, "b", &["b"]);
     // Budget is 8 points: the last two messages are refused.
-    preview.offer(&[message("a", 4), message("b", 4), message("a", 4), message("b", 2)]);
+    preview.offer(&[
+        message("a", 4),
+        message("b", 4),
+        message("a", 4),
+        message("b", 2),
+    ]);
     let read = drained(&preview, &a);
     assert_eq!(read.chunks, vec![(1, "a".to_owned(), 4)]);
     let tail = read.tail.expect("a lost its refused points");
@@ -613,7 +618,10 @@ fn full_handoff_misses_are_split_by_each_subscribers_sensors() {
     let read = drained(&preview, &a);
     assert_eq!(read.chunks.len(), HANDOFF_SLOTS);
     let tail = read.tail.expect("a lost refused points");
-    assert_eq!((tail.first_sequence, tail.dropped), (as_u64(HANDOFF_SLOTS) + 1, 6));
+    assert_eq!(
+        (tail.first_sequence, tail.dropped),
+        (as_u64(HANDOFF_SLOTS) + 1, 6)
+    );
     let read = drained(&preview, &b);
     assert!(read.chunks.is_empty());
     let gap = read.gap.expect("b lost refused points");
@@ -659,7 +667,11 @@ fn same_client_id_replaces_and_distinct_ids_coexist() {
 fn subscribers_beyond_the_cap_are_refused_without_evicting_anyone() {
     let preview = hub(100, Duration::from_secs(10));
     let held: Vec<_> = (0..4)
-        .map(|index| preview.subscribe(&format!("client-{index}"), Filter::All).unwrap())
+        .map(|index| {
+            preview
+                .subscribe(&format!("client-{index}"), Filter::All)
+                .unwrap()
+        })
         .collect();
     assert_eq!(
         preview.subscribe("extra", Filter::All).err(),
