@@ -1,0 +1,88 @@
+{
+  "edges": [
+    {
+      "id": "evjmbr37",
+      "sourceId": "K1vHo3CP",
+      "targetId": "TKaE15Ct"
+    },
+    {
+      "id": "i-PjZzhR",
+      "sourceId": "TKaE15Ct",
+      "targetId": "9mRzy7Oh"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "K1vHo3CP",
+      "name": "Request",
+      "type": "inputNode",
+      "content": {
+        "schema": "{\"type\":\"object\",\"properties\":{\"rpm\":{\"type\":\"number\"},\"temperature\":{\"type\":\"number\"}},\"required\":[\"rpm\",\"temperature\"]}"
+      },
+      "position": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "TKaE15Ct",
+      "name": "Table",
+      "type": "decisionTableNode",
+      "content": {
+        "rules": [
+          {
+            "_id": "9bbfa5e2-b393-41a2-9dcb-14c50992faae",
+            "0a4e97c9-c76e-48e9-a7d7-0272752325b6": "\"CRITICAL\"",
+            "3d1eac49-5215-4aa0-b813-bc9f0f42e34d": "500",
+            "ae789bdf-e6b9-4dd7-8323-7aea32f09429": "> 4000",
+            "edea35d0-1a47-492a-b5af-fd637e5c0ca4": "> 95"
+          }
+        ],
+        "inputs": [
+          {
+            "id": "ae789bdf-e6b9-4dd7-8323-7aea32f09429",
+            "name": "rpm",
+            "field": "rpm"
+          },
+          {
+            "id": "edea35d0-1a47-492a-b5af-fd637e5c0ca4",
+            "name": "temperature",
+            "field": "temperature"
+          }
+        ],
+        "outputs": [
+          {
+            "id": "0a4e97c9-c76e-48e9-a7d7-0272752325b6",
+            "name": "severity",
+            "type": "string",
+            "field": "severity"
+          },
+          {
+            "id": "3d1eac49-5215-4aa0-b813-bc9f0f42e34d",
+            "name": "alert_code",
+            "type": "number",
+            "field": "alert_code"
+          }
+        ],
+        "hitPolicy": "first",
+        "passThrough": true,
+        "executionMode": "single"
+      },
+      "position": {
+        "x": 280,
+        "y": 0
+      }
+    },
+    {
+      "id": "9mRzy7Oh",
+      "name": "Response",
+      "type": "outputNode",
+      "content": {},
+      "position": {
+        "x": 560,
+        "y": 0
+      }
+    }
+  ],
+  "contentType": "graph"
+}

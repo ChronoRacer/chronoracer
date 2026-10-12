@@ -8,8 +8,14 @@ from loguru import logger
 
 from analysis.shared.proto import telemetry_v1_pb2_grpc
 from analysis.shared.proto import  telemetry_v1_pb2
-from analysis.shared.connector import GRPCSensorStream, GRPCSchema
+from analysis.shared.connector import GRPCSensorStream
 
+
+class GRPCSchema(pw.Schema):
+    sensor_id: str = pw.column_definition(primary_key=True)
+    timestamp_nano: int
+    value: float
+    driver_id: str
 
 
 context = zmq.Context()
@@ -34,7 +40,6 @@ def publish_to_predictions(key,row,time,is_addition):
         pub_socket.send_multipart([TOPIC_PREDICTIONS,payload])
 
 if __name__ == '__main__':
-    print("WORKING")
     config = Config(CORE_TELEMETRY_URL="127.0.0.1:9470",CLIENT_ID="analysis_id")
     table = pw.io.python.read(
         GRPCSensorStream(config),schema=GRPCSchema,autocommit_duration_ms=100
@@ -43,7 +48,9 @@ if __name__ == '__main__':
 
     pw.io.subscribe(table,publish_to_rules)
     pw.io.subscribe(table,publish_to_predictions)
+
+    logger.info("STARTING PATHWAY STREAMING JOB")
+
+
     pw.run()
     print("TABLE",table)
-    #connector = GRPCSensorStream(config)
-    #connector.run()

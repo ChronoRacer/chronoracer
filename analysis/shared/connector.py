@@ -8,11 +8,6 @@ from loguru import logger
 from analysis.shared.proto import telemetry_v1_pb2_grpc
 from analysis.shared.proto import  telemetry_v1_pb2
 
-class GRPCSchema(pw.Schema):
-        sensor_id : str = pw.column_definition(primary_key=True)
-        timestamp_nano : int
-        value: float
-        driver_id:str
 
 class GRPCSensorStream(pw.io.python.ConnectorSubject):
     def __init__(self,config: Config) -> None:
