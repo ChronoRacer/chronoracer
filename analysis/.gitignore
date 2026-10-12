@@ -25,5 +25,7 @@ rules/rules_files/
 models/
 data/
 requirements-todo.txt
-TODO.txt
+analysis/TODOo.txt
+analysis/TODO
+analysis/TODO.txt
 
