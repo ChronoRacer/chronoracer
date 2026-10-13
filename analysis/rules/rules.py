@@ -60,35 +60,32 @@ class RulesEngine:
     def loader(self,key:str):
         return self.rules[key].rule_json
 
-# EVERY AFTER DELTA I SEND NEW SENSORS LIST
-# AND I RESET IT AND START ONCE AGAIN FROM EMPTY LIST
-REFRESH_SENSOR_DELTA = timedelta(seconds=5)
 
 context = zmq.Context()
 sub_socket = context.socket(zmq.SUB)
 sub_socket.setsockopt(zmq.SUBSCRIBE,b"rules")
+sub_socket.setsockopt(zmq.SUBSCRIBE,b"sensors")
+
 sub_socket.connect("tcp://127.0.0.1:6767")
 rules_engine = RulesEngine()
 
 engine = zen.ZenEngine({"loader":rules_engine.loader})
-response = engine.evaluate("test1.json",{"rpm": 10000, "temperature": 50000})
+response = engine.evaluate("test.json",{"rpm": 10000, "temperature": 50000})
 print(response)
 
+
+def handle_message(topic:str,message:dict):
+    match message:
+        case _:
+            pass
 while True:
-    print("XD")
     topic, raw_payload = sub_socket.recv_multipart()
     data = json.loads(raw_payload.decode("utf-8"))
-    print("Received data on topic:", topic.decode("utf-8"))
-    print(data)
+    print(topic)
+    if topic == b"sensors":
+        print(data["unique_sensors"])
+        #rules_engine.synchronize_active_rules()
+    elif topic == b"rules":
+        handle_message(topic=str(topic),message=data)
 
 # TODO retries - when server is not up yet, we should retry to connect to it.
-# Bucket na reguly i modele
-
-project_root = Path(__file__).resolve().parents[2]
-
-rules_path = project_root / "analysis" / "rules" / "rules_files" / "rules_config.json"
-
-
-
-print(len(rules_engine.rules))
-print(rules_engine.rules)

@@ -3,7 +3,9 @@ import time
 import zmq
 import pathway as pw
 import grpc
-from datetime import timedelta
+
+from pathway.stdlib.temporal import inactivity_detection
+from pathway.internals.datetime_types import Duration
 from analysis.shared.config import Config
 from loguru import logger
 
@@ -11,6 +13,7 @@ from analysis.shared.proto import telemetry_v1_pb2_grpc
 from analysis.shared.proto import  telemetry_v1_pb2
 from analysis.shared.connector import GRPCSensorStream
 
+import os
 
 class GRPCSchema(pw.Schema):
     sensor_id: str = pw.column_definition(primary_key=True)
@@ -18,8 +21,7 @@ class GRPCSchema(pw.Schema):
     value: float
     driver_id: str
 
-class Sensors():
-    pass
+
 context = zmq.Context()
 pub_socket = context.socket(zmq.PUB)
 pub_socket.setsockopt(zmq.SNDHWM,10_000)
@@ -28,6 +30,7 @@ pub_socket.bind("tcp://127.0.0.1:6767")
 # MOVE IT TO CONSTANTS
 TOPIC_RULES = b"rules"
 TOPIC_PREDICTIONS = b"predictions"
+TOPIC_SENSORS = b"sensors"
 
 def publish_to_rules(key,row,time,is_addition):
     if is_addition:
@@ -41,23 +44,39 @@ def publish_to_predictions(key,row,time,is_addition):
         pub_socket.send_multipart([TOPIC_PREDICTIONS,payload])
 
 
+def publish_unavailable_sensors(key,row,time,is_addition):
+    if is_addition:
+        payload = json.dumps({"unique_sensors":[]}).encode("utf-8")
+        pub_socket.send_multipart([TOPIC_SENSORS,payload])
+
+
+
+
 @pw.udf
 def get_unique_elements(messages_tuple: tuple) -> list:
     return list(set(messages_tuple))
 
 
-DURATION_5_SECONDS_NS = 5 * 1_000_000_000
+# EVERY AFTER DELTA I SEND NEW SENSORS LIST
+# AND I RESET IT AND START ONCE AGAIN FROM EMPTY LIST
+DURATION_5_SECONDS_NS = 5 * 1_000_000_000 # 5 SECONDS
+DURATION_05_SECONDS_NS = 1 * 500_000_000 # 5 SECONDS
 if __name__ == '__main__':
+    os.environ["PATHWAY_LOG_STYLE"] = "plain"
+
     config = Config(CORE_TELEMETRY_URL="127.0.0.1:9470",CLIENT_ID="analysis_id")
     table = pw.io.python.read(
         GRPCSensorStream(config),schema=GRPCSchema,autocommit_duration_ms=100
     )
-    #pw.io.csv.write(table,"output.csv")
-
-    #pw.io.subscribe(table,publish_to_rules)
-    pw.io.subscribe(table,publish_to_predictions)
-
     logger.info("STARTING PATHWAY STREAMING JOB")
+
+    # SENSORS DETECTION
+    inactivity_table = table.inactivity_detection(
+        allowed_inactivity_period=Duration(seconds=5),
+        refresh_rate=Duration(milliseconds=500)
+    )
+    pw.io.subscribe(inactivity_table,publish_unavailable_sensors)
+
 
     sensor_window = table.windowby(
         pw.this.timestamp_nano,
@@ -70,7 +89,7 @@ if __name__ == '__main__':
     ).select(
         unique_sensors=get_unique_elements(pw.this._all_messages)
     )
-    pw.io.subscribe(sensor_window,publish_to_rules)
+    pw.io.subscribe(sensor_window,publish_unavailable_sensors)
     pw.run()
     print("TABLE",table)
 
