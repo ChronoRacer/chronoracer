@@ -3,6 +3,8 @@ from collections import  defaultdict
 import zmq
 import json
 import zen
+from pprint import pformat
+
 from google.cloud import storage
 from pydantic import BaseModel
 from datetime import timedelta
@@ -16,9 +18,9 @@ class RulesEngine:
     def __init__(self):
         self.rules : dict[str,RuleObj] = defaultdict(RuleObj)
         rules = defaultdict(RuleObj)
-        client = storage.Client()
-        bucket = client.bucket("chronoracer-analysis")
-        for blob in client.list_blobs(bucket,prefix="rules/"):
+        client = storage.Client("chronoracer")
+        bucket = client.bucket("chronoracer-artifacts")
+        for blob in client.list_blobs(bucket,prefix="analysis/rules/"):
             if blob.name.endswith(".json"):
                 rule_json = json.loads(blob.download_as_text())
                 sensors = set(self._get_mandatory_sensors(rule_json))
@@ -26,7 +28,7 @@ class RulesEngine:
                     rule_json=rule_json,
                     sensors=sensors
                 )
-                rules[blob.name] = rule
+                rules[str(blob.name).split("/")[-1]] = rule
         self.rules = rules
 
     @staticmethod
@@ -55,6 +57,8 @@ class RulesEngine:
             else:
                 self.rules[rule_id].is_active = True
 
+    def loader(self,key:str):
+        return self.rules[key].rule_json
 
 # EVERY AFTER DELTA I SEND NEW SENSORS LIST
 # AND I RESET IT AND START ONCE AGAIN FROM EMPTY LIST
@@ -64,13 +68,10 @@ context = zmq.Context()
 sub_socket = context.socket(zmq.SUB)
 sub_socket.setsockopt(zmq.SUBSCRIBE,b"rules")
 sub_socket.connect("tcp://127.0.0.1:6767")
+rules_engine = RulesEngine()
 
-project_root = Path(__file__).resolve().parents[2]
-rules_path = project_root / "analysis" / "rules" / "rules_files"
-print(rules_path)
-
-engine = zen.ZenEngine({"loader":{"type":"fs","path":str(rules_path)}})
-response = engine.evaluate("test.json",{"rpm": 10000, "temperature": 50000})
+engine = zen.ZenEngine({"loader":rules_engine.loader})
+response = engine.evaluate("test1.json",{"rpm": 10000, "temperature": 50000})
 print(response)
 
 while True:
@@ -88,3 +89,6 @@ project_root = Path(__file__).resolve().parents[2]
 rules_path = project_root / "analysis" / "rules" / "rules_files" / "rules_config.json"
 
 
+
+print(len(rules_engine.rules))
+print(rules_engine.rules)
