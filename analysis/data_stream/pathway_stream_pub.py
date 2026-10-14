@@ -1,8 +1,11 @@
 import json
 import time
+from typing import Any
+from enum import Enum, StrEnum
 import zmq
 import pathway as pw
 import grpc
+from pathway import Pointer
 
 from pathway.stdlib.temporal import inactivity_detection
 from pathway.internals.datetime_types import Duration
@@ -22,76 +25,83 @@ class GRPCSchema(pw.Schema):
     driver_id: str
 
 
+
+class BatchedSensorObserver(pw.io.python.ConnectorObserver):
+    def __init__(self):
+        super().__init__()
+        self.buffer : list[dict] = []
+    def on_change(self, key: Pointer, row: dict[str, Any], time: int, is_addition: bool) -> None:
+        if not is_addition:
+            return
+        self.buffer.append(row)
+    def on_end(self) -> None:
+        self._flush()
+    def on_time_end(self, time: int) -> None:
+        self._flush()
+
+    def _flush(self) -> None:
+        batch_to_send = self.buffer.copy()
+        self.buffer.clear()
+        payload = json.dumps(batch_to_send).encode("utf-8")
+        pub_socket.send_multipart([TOPIC_SENSOR_AGG,payload])
+
+
+
+
 context = zmq.Context()
 pub_socket = context.socket(zmq.PUB)
 pub_socket.setsockopt(zmq.SNDHWM,10_000)
 pub_socket.bind("tcp://127.0.0.1:6767")
 
 # MOVE IT TO CONSTANTS
-TOPIC_RULES = b"rules"
-TOPIC_PREDICTIONS = b"predictions"
-TOPIC_SENSORS = b"sensors"
+TOPIC_SENSOR_AGG = b"sensor_agg"
 
-def publish_to_rules(key,row,time,is_addition):
+
+"""
+def publish_sensor_agg(key,row,time,is_addition):
     if is_addition:
         payload = json.dumps(row).encode("utf-8")
-        pub_socket.send_multipart([TOPIC_RULES,payload])
+        pub_socket.send_multipart([TOPIC_SENSOR_AGG,payload])
+"""
 
 
-def publish_to_predictions(key,row,time,is_addition):
-    if is_addition:
-        payload = json.dumps(row).encode("utf-8")
-        pub_socket.send_multipart([TOPIC_PREDICTIONS,payload])
-
-
-def publish_unavailable_sensors(key,row,time,is_addition):
-    if is_addition:
-        payload = json.dumps({"unique_sensors":[]}).encode("utf-8")
-        pub_socket.send_multipart([TOPIC_SENSORS,payload])
-
-
-
-
-@pw.udf
-def get_unique_elements(messages_tuple: tuple) -> list:
-    return list(set(messages_tuple))
 
 
 # EVERY AFTER DELTA I SEND NEW SENSORS LIST
 # AND I RESET IT AND START ONCE AGAIN FROM EMPTY LIST
-DURATION_5_SECONDS_NS = 5 * 1_000_000_000 # 5 SECONDS
-DURATION_05_SECONDS_NS = 1 * 500_000_000 # 5 SECONDS
+DURATION_1_SECONDS_NS = 1 * 1_000_000_000 # 1 SECONDS
+HOP_200_MS_NS = 1 * 200_000_000
 if __name__ == '__main__':
-    os.environ["PATHWAY_LOG_STYLE"] = "plain"
-
     config = Config(CORE_TELEMETRY_URL="127.0.0.1:9470",CLIENT_ID="analysis_id")
     table = pw.io.python.read(
         GRPCSensorStream(config),schema=GRPCSchema,autocommit_duration_ms=100
     )
     logger.info("STARTING PATHWAY STREAMING JOB")
 
-    # SENSORS DETECTION
-    inactivity_table = table.inactivity_detection(
-        allowed_inactivity_period=Duration(seconds=5),
-        refresh_rate=Duration(milliseconds=500)
-    )
-    pw.io.subscribe(inactivity_table,publish_unavailable_sensors)
+    sensor_agg = (
+        table.windowby(
+            pw.this.timestamp_nano,
+            window=pw.temporal.sliding(
+                duration=DURATION_1_SECONDS_NS,
+                hop=HOP_200_MS_NS
+            ),
+            behavior=pw.temporal.exactly_once_behavior(),
+            instance=pw.this.sensor_id
+        ).reduce(
+            sensor_id=pw.this._pw_instance,
+            window_start=pw.this._pw_window_start,
+            window_end=pw.this._pw_window_end,
+            avg=pw.reducers.avg(pw.this.value),
+            max=pw.reducers.max(pw.this.value),
+            min=pw.reducers.min(pw.this.value),
+            sample_count=pw.reducers.count()
+        )
 
-
-    sensor_window = table.windowby(
-        pw.this.timestamp_nano,
-        window=pw.temporal.tumbling(duration=DURATION_5_SECONDS_NS),
-        behavior=pw.temporal.exactly_once_behavior()
-    ).reduce(
-        window_start=pw.this._pw_window_start,
-        window_end=pw.this._pw_window_end,
-        _all_messages=pw.reducers.tuple(pw.this.sensor_id),
-    ).select(
-        unique_sensors=get_unique_elements(pw.this._all_messages)
     )
-    pw.io.subscribe(sensor_window,publish_unavailable_sensors)
+    #pw.io.subscribe(sensor_agg,on_change=publish_sensor_agg)
+    pw.io.python.write(sensor_agg,BatchedSensorObserver())
     pw.run()
-    print("TABLE",table)
+
 
 
 """

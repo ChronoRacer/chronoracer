@@ -45,17 +45,6 @@ class RulesEngine:
     def get_rules_files(self) -> dict[str,RuleObj]:
         return self.rules
 
-    # THIS FUNC IS RESPONSIBLE FOR TURNING ON BUT ALSO TURING OFF RULES
-    # BASED ON AVAILABLE SENSORS GATHERED FOR SOME DELTA TIME
-    # AFTER DELTA TIME I GET NEW SET WITH AVAILABLE SENSORS
-    # AND BASED ON THAT I DECIDE WHAT RULES CAN CHECK
-    def synchronize_active_rules(self,set_of_sensors : set[str]):
-        for rule_id in self.rules:
-            rule_obj = self.rules[rule_id]
-            if len(rule_obj.sensors & set_of_sensors) != len(rule_obj.sensors):
-                self.rules[rule_id].is_active = False
-            else:
-                self.rules[rule_id].is_active = True
 
     def loader(self,key:str):
         return self.rules[key].rule_json
@@ -63,8 +52,7 @@ class RulesEngine:
 
 context = zmq.Context()
 sub_socket = context.socket(zmq.SUB)
-sub_socket.setsockopt(zmq.SUBSCRIBE,b"rules")
-sub_socket.setsockopt(zmq.SUBSCRIBE,b"sensors")
+sub_socket.setsockopt(zmq.SUBSCRIBE,b"sensor_agg")
 
 sub_socket.connect("tcp://127.0.0.1:6767")
 rules_engine = RulesEngine()
@@ -74,18 +62,22 @@ response = engine.evaluate("test.json",{"rpm": 10000, "temperature": 50000})
 print(response)
 
 
+def get_available_sensors(messages:dict) -> set[str]:
+    sensors = set()
+    for msg in messages:
+        sensors.add(msg["sensor_id"])
+    return sensors
+
+
 def handle_message(topic:str,message:dict):
-    match message:
-        case _:
-            pass
+    pass
+
 while True:
     topic, raw_payload = sub_socket.recv_multipart()
     data = json.loads(raw_payload.decode("utf-8"))
-    print(topic)
-    if topic == b"sensors":
-        print(data["unique_sensors"])
-        #rules_engine.synchronize_active_rules()
-    elif topic == b"rules":
+    if topic == b"sensor_agg":
+        available_sensors = get_available_sensors(data)
         handle_message(topic=str(topic),message=data)
 
 # TODO retries - when server is not up yet, we should retry to connect to it.
+# TODO - NO DATA TO CHANGE STATE == OLD STATE
