@@ -1,5 +1,4 @@
-import json
-import time
+import orjson
 from typing import Any
 from enum import Enum, StrEnum
 import zmq
@@ -42,7 +41,7 @@ class BatchedSensorObserver(pw.io.python.ConnectorObserver):
     def _flush(self) -> None:
         batch_to_send = self.buffer.copy()
         self.buffer.clear()
-        payload = json.dumps(batch_to_send).encode("utf-8")
+        payload = orjson.dumps(batch_to_send)
         pub_socket.send_multipart([TOPIC_SENSOR_AGG,payload])
 
 

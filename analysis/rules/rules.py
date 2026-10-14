@@ -1,7 +1,7 @@
 from pathlib import Path
 from collections import  defaultdict
 import zmq
-import json
+import orjson
 import zen
 from pprint import pformat
 
@@ -22,7 +22,7 @@ class RulesEngine:
         bucket = client.bucket("chronoracer-artifacts")
         for blob in client.list_blobs(bucket,prefix="analysis/rules/"):
             if blob.name.endswith(".json"):
-                rule_json = json.loads(blob.download_as_text())
+                rule_json = orjson.loads(blob.download_as_text())
                 sensors = set(self._get_mandatory_sensors(rule_json))
                 rule = RuleObj(
                     rule_json=rule_json,
@@ -70,11 +70,12 @@ def get_available_sensors(messages:dict) -> set[str]:
 
 
 def handle_message(topic:str,message:dict):
+    print(message)
     pass
 
 while True:
     topic, raw_payload = sub_socket.recv_multipart()
-    data = json.loads(raw_payload.decode("utf-8"))
+    data = orjson.loads(raw_payload.decode("utf-8"))
     if topic == b"sensor_agg":
         available_sensors = get_available_sensors(data)
         handle_message(topic=str(topic),message=data)
