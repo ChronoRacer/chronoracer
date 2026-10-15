@@ -93,6 +93,7 @@ if __name__ == '__main__':
             avg=pw.reducers.avg(pw.this.value),
             max=pw.reducers.max(pw.this.value),
             min=pw.reducers.min(pw.this.value),
+            sum=pw.reducers.sum(pw.this.value),
             sample_count=pw.reducers.count()
         )
 

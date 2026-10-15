@@ -13,14 +13,19 @@ class RuleObj(BaseModel):
     rule_json: dict
     sensors : set[str]
 
+class Sensor(BaseModel):
+    id: str
+    min:float | None
+    max:float | None
+    desc : str
 
 class RulesEngine:
     def __init__(self):
         self.rules : dict[str,RuleObj] = defaultdict(RuleObj)
         rules = defaultdict(RuleObj)
-        client = storage.Client("chronoracer")
-        bucket = client.bucket("chronoracer-artifacts")
-        for blob in client.list_blobs(bucket,prefix="analysis/rules/"):
+        self.client = storage.Client("chronoracer")
+        self.bucket = self.client.bucket("chronoracer-artifacts")
+        for blob in self.client.list_blobs(self.bucket,prefix="analysis/rules/"):
             if blob.name.endswith(".json"):
                 rule_json = orjson.loads(blob.download_as_text())
                 sensors = set(self._get_mandatory_sensors(rule_json))
@@ -30,6 +35,21 @@ class RulesEngine:
                 )
                 rules[str(blob.name).split("/")[-1]] = rule
         self.rules = rules
+        self.sensors : dict[str,Sensor] = self.fetch_sensor()
+
+    def fetch_sensor(self):
+        sensors = {}
+        blob = self.bucket.blob("analysis/sensors.json")
+        data_str = blob.download_as_text()
+        json_data = orjson.loads(data_str)
+        for obj in json_data["sensors"]:
+            sensors[obj["name"]] = Sensor(
+                id=obj["name"],
+                min=obj["min"],
+                max=obj["max"],
+                desc=obj["description"]
+            )
+        return sensors
 
     @staticmethod
     def _get_mandatory_sensors(rules:dict):

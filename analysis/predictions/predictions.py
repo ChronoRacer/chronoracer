@@ -10,14 +10,34 @@ import shutil
 import numpy as np
 from loguru import logger
 from onnxruntime import InferenceSession
+from pydantic import BaseModel
 from sklearn.datasets import load_iris
 
+class Sensor(BaseModel):
+    id: str
+    min:float | None
+    max:float | None
+    desc : str
 
 class PredictionsEngine:
     def __init__(self):
         self.client = storage.Client("chronoracer")
         self.bucket = self.client.bucket("chronoracer-artifacts")
         self.local_dir : Path =  Path(tempfile.mkdtemp(prefix="onnx_"))
+        self.sensors  : dict[str,Sensor] = self.fetch_sensor()
+    def fetch_sensor(self):
+        sensors = {}
+        blob = self.bucket.blob("analysis/sensors.json")
+        data_str = blob.download_as_text()
+        json_data = orjson.loads(data_str)
+        for obj in json_data["sensors"]:
+            sensors[obj["name"]] = Sensor(
+                id=obj["name"],
+                min=obj["min"],
+                max=obj["max"],
+                desc=obj["description"]
+            )
+        return sensors
     def import_model(self,model_file:str,prefix : str = "analysis/predictions/models/v1/"):
         for blob in self.client.list_blobs(self.bucket,prefix=prefix):
             if blob.name.endswith(".onnx"):
@@ -28,6 +48,7 @@ class PredictionsEngine:
                 )
         logger.info("There is no model with name {}",model_file)
         return None
+
     def on_stop(self):
         if self.local_dir.exists():
             shutil.rmtree(self.local_dir)
