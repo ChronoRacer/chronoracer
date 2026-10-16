@@ -16,7 +16,7 @@ Terraform GCS backend stores workspace state as `{prefix}/default.tfstate`.
 
 | Prefix | Who             | Contents                                                                             |
 |--------|-----------------|--------------------------------------------------------------------------------------|
-| `base` | Human or CI     | Always-on stack. Object `base/default.tfstate`. Controller never opens this backend. |
+| `base` | Operator or CI  | Always-on stack. Object `base/default.tfstate`. Controller never opens this backend. |
 | `race` | Controller only | Race stack. Object `race/default.tfstate`. Empty after destroy.                      |
 
 `raceId` is a Terraform variable for GCS object paths, Core metadata, and the `race-id` label. It is not a second state
@@ -30,7 +30,7 @@ after a killed build: human/CI unlocks `race/default.tfstate` only, then retry t
 
 | Stack     | Who                       | When                                                               |
 |-----------|---------------------------|--------------------------------------------------------------------|
-| Always-on | Human / CI                | Rare. Platform changes.                                            |
+| Always-on | Operator / CI             | Rare. Platform changes.                                            |
 | Race      | Controller in Cloud Build | Every `apply`, `close_ingest`, `destroy`. Triggered only by Relay. |
 
 ## Always-on stack
@@ -107,14 +107,15 @@ race bucket, image families). Missing resource = plan fail. Adjust names only vi
 
 ### Service accounts
 
-| Account                  | May                                                                                                                                                                                       | Must not                                                                                                                                                                                       |
-|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Relay                    | Firestore; write Core YAML object; read `*/export/**` and issue time-limited download access; trigger Cloud Build; read and list Cloud Build (bind + replay); receive both Pub/Sub pushes | Terraform state; create VMs; Secret Manager payload                                                                                                                                            |
-| Controller (Cloud Build) | Race Terraform (Compute, Telemetry Cloud Run, DNS A in the existing zone, race public firewall); race Firestore fields on `apply` only, token-gated; read Core YAML object; `race/` state prefix | Change VPC, IAM identities, Secret Manager payload, `base/` state prefix; write phase on `close_ingest` / `destroy`; apply Terraform when `runToken` mismatches; force-unlock state |
-| Kafka VM                 | Read TLS secret; write its Ops Agent metrics to Cloud Monitoring                                                                                                                         | GCS; Cloud Build; Firestore; Pub/Sub                                                                                                                                                           |
-| Core VM                  | Read `{raceId}/core-config.yaml`; write `{raceId}/export/**`; publish export-done; read artifacts `core/current.json` and its release; read the Influx token secret payload; write Cloud Monitoring metrics | Firestore; any other Secret Manager payload (TLS cert included); Terraform state; Cloud Build; write `core-config.yaml`; write artifacts                                               |
-| Dashboard                | Read Cloud Monitoring; read the browser Auth0 client secret payload                                                                                                                        | Firestore; GCS; Kafka; InfluxDB; VPC race endpoints; Cloud Build; Terraform state; Relay endpoints; any other Secret Manager payload                                                           |
-| Telemetry                | Read the browser Auth0 client secret payload; private gRPC `Watch` to Core from its dedicated subnet                                                                                       | Firestore; GCS; Kafka; InfluxDB; Cloud Monitoring; Cloud Build; Terraform state; Relay endpoints; any other Secret Manager payload                                                             |
+| Account                  | May only                                                                                                                                                                                                    |
+|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Relay                    | Firestore; write Core YAML object; read `*/export/**` and issue time-limited download access; trigger Cloud Build; read and list Cloud Build (bind + replay); receive both Pub/Sub pushes                   |
+| Controller (Cloud Build) | Race Terraform (Compute, Telemetry Cloud Run, DNS A in the existing zone, race public firewall); race Firestore fields on `apply` only, token-gated; read Core YAML object; `race/` state prefix            |
+| Kafka VM                 | Read TLS secret; write its Ops Agent metrics to Cloud Monitoring                                                                                                                                            |
+| Core VM                  | Read `{raceId}/core-config.yaml`; write `{raceId}/export/**`; publish export-done; read artifacts `core/current.json` and its release; read the Influx token secret payload; write Cloud Monitoring metrics |
+| Dashboard                | Read Cloud Monitoring; read the browser Auth0 client secret payload                                                                                                                                         |
+| Telemetry                | Read the browser Auth0 client secret payload; private gRPC `Watch` to Core from its dedicated subnet                                                                                                        |
+| Car                      | Read Auth0 secret                                                                                                                                                                                           |
 
 Residual (GCP constraints, not project Editor):
 

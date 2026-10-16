@@ -1,6 +1,6 @@
 # Chronoracer documentation
 
-Each concept has one owner. Other docs link it. Do not copy or rephrase the same fact.
+Each concept has one owner. Other docs link it. Do not copy or rephrase the same fact, instead point to the source.
 
 | Concept                                                                                | Owner                                                             |
 |----------------------------------------------------------------------------------------|-------------------------------------------------------------------|
@@ -31,7 +31,9 @@ Each concept has one owner. Other docs link it. Do not copy or rephrase the same
 | Start sequence and ready/unhealthy detection                                           | [Race provisioning](flow-race_provisioning.md)                    |
 | Stop, export, destroy sequence                                                         | [Race destruction](flow-race_destruction.md)                      |
 
-Directory READMEs under `infra/`, `core/`, `kafka/` are how-to for that tree. They must not restate owned facts.
+Directory READMEs under `infra/`, `core/`, `kafka/` are how-to for that tree.
+
+Directory `docs/proposals` contains not implemented proposals that may only be referenced by other proposals, not locked in docs.
 
 ## Infrastructure overview
 
@@ -141,9 +143,9 @@ See graph above for connections.
 
 Procedures humans run outside Terraform apply. Code and Terraform do not replace these.
 
-| Runbook                 | Document                                                                      |
-|-------------------------|-------------------------------------------------------------------------------|
+| Runbook                 | Document                                                                                  |
+|-------------------------|-------------------------------------------------------------------------------------------|
 | Container images        | [Operator — Relay + controller + Dashboard + Telemetry](operator-control-plane-images.md) |
-| Domain + Kafka TLS cert | [Operator — Domain, Cloud Run verify, Kafka TLS](operator-domain-and-tls.md)  |
-| Influx admin token      | [Operator — Influx admin token](operator-influx-token.md)                     |
-| Browser Auth0 login     | [Operator — shared browser Auth0 login](operator-browser-oauth.md)             |
+| Domain + Kafka TLS cert | [Operator — Domain, Cloud Run verify, Kafka TLS](operator-domain-and-tls.md)              |
+| Influx admin token      | [Operator — Influx admin token](operator-influx-token.md)                                 |
+| Browser Auth0 login     | [Operator — shared browser Auth0 login](operator-browser-oauth.md)                        |
