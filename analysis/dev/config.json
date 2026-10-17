@@ -47,7 +47,7 @@
     "start_heading_deg": 45.0
   },
   "debug": {
-    "force_period_s": 1,
+    "force_period_s": null,
     "only_sensors": []
   },
   "sample_rates_hz": {
@@ -78,7 +78,7 @@
     "lambda_cmd": 5.0,
     "o2_current": 5.0,
     "hv_soc": 5.0,
-    "coolant_temp": 1.0,
+    "coolant_temp": 10.0,
     "oil_temp": 1.0,
     "intake_temp": 1.0,
     "batt_volt": 1.0,
@@ -136,7 +136,7 @@
       "at_s": 114.0,
       "duration_s": 20.0,
       "sensors": ["coolant_temp"],
-      "params": { "target_c": 118.0 }
+      "params": { "target_c": 138.0 }
     },
     {
       "kind": "gps_fix_loss",

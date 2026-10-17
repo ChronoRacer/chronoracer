@@ -63,7 +63,7 @@ def publish_sensor_agg(key,row,time,is_addition):
         pub_socket.send_multipart([TOPIC_SENSOR_AGG,payload])
 
 
-SLOW_CELL_NS =250_000_001
+SLOW_CELL_NS =500_000_001
 FAST_CELL_NS =1_000_000_001
 def get_sensor_batch(slow:bool):
     duration = SLOW_CELL_NS if slow else FAST_CELL_NS
