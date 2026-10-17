@@ -28,8 +28,7 @@ class SignalHistory(BaseModel):
 class Signal(BaseModel):
     first_val_ts_ms : int
     last_val_ts_ms : int
-    min_val : float
-    max_val : float
+    samples : int
     history : list[SignalHistory]
 
 class GoRulesSchema(BaseModel):
@@ -72,15 +71,9 @@ class RulesEngine:
         return sensors
 
     @staticmethod
-    def _get_mandatory_sensors(rules:dict):
-        sensors = []
-        nodes = rules["nodes"]
-        for node in nodes:
-            if node["name"] == "Table":
-                inputs = node["content"]["inputs"]
-                for input in inputs:
-                    sensors.append(input["field"])
-        return sensors
+    def _get_mandatory_sensors(rule_obj: dict) -> list[str]:
+        schema = orjson.loads(rule_obj["nodes"][0]["content"]["schema"])
+        return list(schema["properties"]["signals"]["properties"].keys())
 
     def get_rules_files(self) -> dict[str,RuleObj]:
         return self.rules
@@ -94,7 +87,7 @@ class RulesEngine:
     def handle_message(self,message: dict, sensors: set[str]):
         for rule_name in self.rules.keys():
             rule_obj = self.rules[rule_name]
-            if rule_obj.sensors == sensors:
+            if rule_obj.sensors.issubset(sensors):
                 go_rules_schema = GoRulesSchema(
                     unit_id="rule_obj.rule_json[name]", # ??? TODO
                     eval_ts_ms=time.time_ns() // 1_000_000 ,
@@ -109,8 +102,7 @@ class RulesEngine:
             signals[sensor_dct["sensor_id"]] = Signal(
                 first_val_ts_ms=int(sensor_dct["window_min_ts_ns"]) // 1_000_000,
                 last_val_ts_ms=int(sensor_dct["window_max_ts_ns"]) // 1_000_000,
-                min_val=sensor_dct["window_min_val"],
-                max_val=sensor_dct["window_max_val"],
+                samples=len(sensor_dct["vals"]),
                 history=[SignalHistory(ts_ms=int(ts) // 1_000_000 ,val=val) for ts,val in sensor_dct["vals"]]
             )
 
