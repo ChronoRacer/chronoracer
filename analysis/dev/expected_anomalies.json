@@ -1,0 +1,159 @@
+[
+  {
+    "kind": "wheel_lockup",
+    "sensors": [
+      "wheel_fl"
+    ],
+    "start_s": 25.0,
+    "end_s": 31.0,
+    "start_unix_ns": 1792250609526212306,
+    "end_unix_ns": 1792250615526212306,
+    "expect": "one wheel reads near zero while the others and brake pressure stay high"
+  },
+  {
+    "kind": "brake_channel_divergence",
+    "sensors": [
+      "brake_prs_b"
+    ],
+    "start_s": 45.0,
+    "end_s": 55.0,
+    "start_unix_ns": 1792250629526212306,
+    "end_unix_ns": 1792250639526212306,
+    "expect": "the redundant brake channel no longer tracks the main one"
+  },
+  {
+    "kind": "lean_mixture",
+    "sensors": [
+      "lambda",
+      "stft",
+      "ltft"
+    ],
+    "start_s": 70.0,
+    "end_s": 82.0,
+    "start_unix_ns": 1792250654526212306,
+    "end_unix_ns": 1792250666526212306,
+    "expect": "lambda stays lean while both fuel trims run positive"
+  },
+  {
+    "kind": "rpm_flare",
+    "sensors": [
+      "rpm"
+    ],
+    "start_s": 95.0,
+    "end_s": 103.0,
+    "start_unix_ns": 1792250679526212306,
+    "end_unix_ns": 1792250687526212306,
+    "expect": "engine speed jumps with no matching change in road speed"
+  },
+  {
+    "kind": "coolant_overheat",
+    "sensors": [
+      "coolant_temp"
+    ],
+    "start_s": 115.0,
+    "end_s": 135.0,
+    "start_unix_ns": 1792250699526212306,
+    "end_unix_ns": 1792250719526212306,
+    "expect": "coolant holds far above its regulated temperature"
+  },
+  {
+    "kind": "gps_fix_loss",
+    "sensors": [
+      "gps_fix",
+      "gps_sats",
+      "gps_pdop"
+    ],
+    "start_s": 140.0,
+    "end_s": 150.0,
+    "start_unix_ns": 1792250724526212306,
+    "end_unix_ns": 1792250734526212306,
+    "expect": "fix drops to none, satellites collapse and PDOP explodes"
+  },
+  {
+    "kind": "stuck_sensor",
+    "sensors": [
+      "intake_temp"
+    ],
+    "start_s": 160.0,
+    "end_s": 175.0,
+    "start_unix_ns": 1792250744526212306,
+    "end_unix_ns": 1792250759526212306,
+    "expect": "channel keeps publishing one frozen value"
+  },
+  {
+    "kind": "drive_wheel_slip",
+    "sensors": [
+      "wheel_fl",
+      "wheel_fr"
+    ],
+    "start_s": 180.0,
+    "end_s": 192.0,
+    "start_unix_ns": 1792250764526212306,
+    "end_unix_ns": 1792250776526212306,
+    "expect": "driven wheels overspeed the undriven pair under power"
+  },
+  {
+    "kind": "throttle_pedal_mismatch",
+    "sensors": [
+      "throttle"
+    ],
+    "start_s": 200.0,
+    "end_s": 210.0,
+    "start_unix_ns": 1792250784526212306,
+    "end_unix_ns": 1792250794526212306,
+    "expect": "throttle opens while the pedal reads zero"
+  },
+  {
+    "kind": "oil_temp_overheat",
+    "sensors": [
+      "oil_temp"
+    ],
+    "start_s": 215.0,
+    "end_s": 240.0,
+    "start_unix_ns": 1792250799526212306,
+    "end_unix_ns": 1792250824526212306,
+    "expect": "oil temperature holds near the top of its range"
+  },
+  {
+    "kind": "sensor_dropout",
+    "sensors": [
+      "coolant_temp"
+    ],
+    "start_s": 245.0,
+    "end_s": 257.0,
+    "start_unix_ns": 1792250829526212306,
+    "end_unix_ns": 1792250841526212306,
+    "expect": "channel stops publishing entirely, old state must not stay valid"
+  },
+  {
+    "kind": "batt_volt_sag",
+    "sensors": [
+      "batt_volt"
+    ],
+    "start_s": 262.0,
+    "end_s": 270.0,
+    "start_unix_ns": 1792250846526212306,
+    "end_unix_ns": 1792250854526212306,
+    "expect": "12 V rail sits below the charging range with the engine running"
+  },
+  {
+    "kind": "speed_gps_mismatch",
+    "sensors": [
+      "gps_speed"
+    ],
+    "start_s": 275.0,
+    "end_s": 285.0,
+    "start_unix_ns": 1792250859526212306,
+    "end_unix_ns": 1792250869526212306,
+    "expect": "GPS ground speed disagrees with controller speed"
+  },
+  {
+    "kind": "uplink_dropout",
+    "sensors": [],
+    "start_s": 290.0,
+    "end_s": 293.0,
+    "start_unix_ns": 1792250874526212306,
+    "end_unix_ns": 1792250877526212306,
+    "expect": "the whole car stops producing, every channel goes silent at once"
+  }
+]

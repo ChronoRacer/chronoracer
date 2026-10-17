@@ -4,6 +4,7 @@ from enum import Enum, StrEnum
 import zmq
 import pathway as pw
 import grpc
+from panel.pane import media
 from pathway import Pointer
 
 from pathway.stdlib.temporal import inactivity_detection
@@ -56,54 +57,51 @@ pub_socket.bind("tcp://127.0.0.1:6767")
 TOPIC_SENSOR_AGG = b"sensor_agg"
 
 
-"""
 def publish_sensor_agg(key,row,time,is_addition):
     if is_addition:
-        payload = json.dumps(row).encode("utf-8")
+        payload = orjson.dumps(row)
         pub_socket.send_multipart([TOPIC_SENSOR_AGG,payload])
-"""
 
 
 
 
-# EVERY AFTER DELTA I SEND NEW SENSORS LIST
-# AND I RESET IT AND START ONCE AGAIN FROM EMPTY LIST
-DURATION_1_SECONDS_NS = 1 * 1_000_000_000 # 1 SECONDS
-HOP_200_MS_NS = 1 * 200_000_000
+CELL_NS =250_000_001
 if __name__ == '__main__':
     config = Config(CORE_TELEMETRY_URL="127.0.0.1:9470",CLIENT_ID="analysis_id")
     table = pw.io.python.read(
         GRPCSensorStream(config),schema=GRPCSchema,autocommit_duration_ms=100
     )
     logger.info("STARTING PATHWAY STREAMING JOB")
-
+    # i can make other windows for predictions separate from these below
     sensor_agg = (
         table.windowby(
             pw.this.timestamp_nano,
-            window=pw.temporal.sliding(
-                duration=DURATION_1_SECONDS_NS,
-                hop=HOP_200_MS_NS
-            ),
+            window=pw.temporal.tumbling(duration=CELL_NS),
             behavior=pw.temporal.exactly_once_behavior(),
             instance=pw.this.sensor_id
         ).reduce(
             sensor_id=pw.this._pw_instance,
             window_start=pw.this._pw_window_start,
             window_end=pw.this._pw_window_end,
-            avg=pw.reducers.avg(pw.this.value),
-            max=pw.reducers.max(pw.this.value),
-            min=pw.reducers.min(pw.this.value),
-            sum=pw.reducers.sum(pw.this.value),
+            vals=pw.reducers.sorted_tuple(
+                pw.make_tuple(
+                    pw.this.timestamp_nano,
+                    pw.this.value
+                )
+            ),
+            window_min=pw.reducers.min(pw.this.value),
+            window_max=pw.reducers.max(pw.this.value),
+            # MIN AND MAX ARE TO CHECK IF WE HAVE TO SCAN WINDOW-VALUES
+            # BECAUSE WHEN WE COMPARE MIN/MAX AND THERE WILL BE NO RULES VIOLATION
+            # THERE OTHER VALUES BETWEEN ALSO WONT VIOLATE IT
             sample_count=pw.reducers.count()
         )
-
     )
-    #pw.io.subscribe(sensor_agg,on_change=publish_sensor_agg)
     pw.io.python.write(sensor_agg,BatchedSensorObserver())
     pw.run()
 
-
-
+#GRPC ---> PATHWAY ZBIERA ODSZUMIONY SYGNAŁ W PACZKI PO X MS ----> PACZKA IDZIE DO GORULES ---> WYKRYWANIE UTRZYAMNIA WARTOSC DLA PROGU PRZEZ DT
+# napewno też min samples w oknie
 """
 import threading
 import time
@@ -174,3 +172,5 @@ if __name__ == "__main__":
     main()
 
 """
+
+
