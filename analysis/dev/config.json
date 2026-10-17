@@ -46,6 +46,10 @@
     "start_alt_m": 112.0,
     "start_heading_deg": 45.0
   },
+  "debug": {
+    "force_period_s": 1,
+    "only_sensors": []
+  },
   "sample_rates_hz": {
     "wheel_fl": 50.0,
     "wheel_fr": 50.0,

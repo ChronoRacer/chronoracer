@@ -1,25 +1,52 @@
 [
   {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 0.0,
+    "end_s": 30.0,
+    "start_unix_ns": 1792260148217505899,
+    "end_unix_ns": 1792260178217505899,
+    "expect": "ordinary driving, no alert expected"
+  },
+  {
     "kind": "wheel_lockup",
     "sensors": [
       "wheel_fl"
     ],
-    "start_s": 25.0,
-    "end_s": 31.0,
-    "start_unix_ns": 1792250609526212306,
-    "end_unix_ns": 1792250615526212306,
+    "start_s": 30.0,
+    "end_s": 36.0,
+    "start_unix_ns": 1792260178217505899,
+    "end_unix_ns": 1792260184217505899,
     "expect": "one wheel reads near zero while the others and brake pressure stay high"
+  },
+  {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 36.0,
+    "end_s": 48.0,
+    "start_unix_ns": 1792260184217505899,
+    "end_unix_ns": 1792260196217505899,
+    "expect": "ordinary driving, no alert expected"
   },
   {
     "kind": "brake_channel_divergence",
     "sensors": [
       "brake_prs_b"
     ],
-    "start_s": 45.0,
-    "end_s": 55.0,
-    "start_unix_ns": 1792250629526212306,
-    "end_unix_ns": 1792250639526212306,
+    "start_s": 48.0,
+    "end_s": 58.0,
+    "start_unix_ns": 1792260196217505899,
+    "end_unix_ns": 1792260206217505899,
     "expect": "the redundant brake channel no longer tracks the main one"
+  },
+  {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 58.0,
+    "end_s": 70.0,
+    "start_unix_ns": 1792260206217505899,
+    "end_unix_ns": 1792260218217505899,
+    "expect": "ordinary driving, no alert expected"
   },
   {
     "kind": "lean_mixture",
@@ -30,31 +57,58 @@
     ],
     "start_s": 70.0,
     "end_s": 82.0,
-    "start_unix_ns": 1792250654526212306,
-    "end_unix_ns": 1792250666526212306,
+    "start_unix_ns": 1792260218217505899,
+    "end_unix_ns": 1792260230217505899,
     "expect": "lambda stays lean while both fuel trims run positive"
+  },
+  {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 82.0,
+    "end_s": 94.0,
+    "start_unix_ns": 1792260230217505899,
+    "end_unix_ns": 1792260242217505899,
+    "expect": "ordinary driving, no alert expected"
   },
   {
     "kind": "rpm_flare",
     "sensors": [
       "rpm"
     ],
-    "start_s": 95.0,
-    "end_s": 103.0,
-    "start_unix_ns": 1792250679526212306,
-    "end_unix_ns": 1792250687526212306,
+    "start_s": 94.0,
+    "end_s": 102.0,
+    "start_unix_ns": 1792260242217505899,
+    "end_unix_ns": 1792260250217505899,
     "expect": "engine speed jumps with no matching change in road speed"
+  },
+  {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 102.0,
+    "end_s": 114.0,
+    "start_unix_ns": 1792260250217505899,
+    "end_unix_ns": 1792260262217505899,
+    "expect": "ordinary driving, no alert expected"
   },
   {
     "kind": "coolant_overheat",
     "sensors": [
       "coolant_temp"
     ],
-    "start_s": 115.0,
-    "end_s": 135.0,
-    "start_unix_ns": 1792250699526212306,
-    "end_unix_ns": 1792250719526212306,
+    "start_s": 114.0,
+    "end_s": 134.0,
+    "start_unix_ns": 1792260262217505899,
+    "end_unix_ns": 1792260282217505899,
     "expect": "coolant holds far above its regulated temperature"
+  },
+  {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 134.0,
+    "end_s": 146.0,
+    "start_unix_ns": 1792260282217505899,
+    "end_unix_ns": 1792260294217505899,
+    "expect": "ordinary driving, no alert expected"
   },
   {
     "kind": "gps_fix_loss",
@@ -63,22 +117,40 @@
       "gps_sats",
       "gps_pdop"
     ],
-    "start_s": 140.0,
-    "end_s": 150.0,
-    "start_unix_ns": 1792250724526212306,
-    "end_unix_ns": 1792250734526212306,
+    "start_s": 146.0,
+    "end_s": 156.0,
+    "start_unix_ns": 1792260294217505899,
+    "end_unix_ns": 1792260304217505899,
     "expect": "fix drops to none, satellites collapse and PDOP explodes"
+  },
+  {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 156.0,
+    "end_s": 168.0,
+    "start_unix_ns": 1792260304217505899,
+    "end_unix_ns": 1792260316217505899,
+    "expect": "ordinary driving, no alert expected"
   },
   {
     "kind": "stuck_sensor",
     "sensors": [
       "intake_temp"
     ],
-    "start_s": 160.0,
-    "end_s": 175.0,
-    "start_unix_ns": 1792250744526212306,
-    "end_unix_ns": 1792250759526212306,
+    "start_s": 168.0,
+    "end_s": 183.0,
+    "start_unix_ns": 1792260316217505899,
+    "end_unix_ns": 1792260331217505899,
     "expect": "channel keeps publishing one frozen value"
+  },
+  {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 183.0,
+    "end_s": 195.0,
+    "start_unix_ns": 1792260331217505899,
+    "end_unix_ns": 1792260343217505899,
+    "expect": "ordinary driving, no alert expected"
   },
   {
     "kind": "drive_wheel_slip",
@@ -86,74 +158,137 @@
       "wheel_fl",
       "wheel_fr"
     ],
-    "start_s": 180.0,
-    "end_s": 192.0,
-    "start_unix_ns": 1792250764526212306,
-    "end_unix_ns": 1792250776526212306,
+    "start_s": 195.0,
+    "end_s": 207.0,
+    "start_unix_ns": 1792260343217505899,
+    "end_unix_ns": 1792260355217505899,
     "expect": "driven wheels overspeed the undriven pair under power"
+  },
+  {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 207.0,
+    "end_s": 219.0,
+    "start_unix_ns": 1792260355217505899,
+    "end_unix_ns": 1792260367217505899,
+    "expect": "ordinary driving, no alert expected"
   },
   {
     "kind": "throttle_pedal_mismatch",
     "sensors": [
       "throttle"
     ],
-    "start_s": 200.0,
-    "end_s": 210.0,
-    "start_unix_ns": 1792250784526212306,
-    "end_unix_ns": 1792250794526212306,
+    "start_s": 219.0,
+    "end_s": 229.0,
+    "start_unix_ns": 1792260367217505899,
+    "end_unix_ns": 1792260377217505899,
     "expect": "throttle opens while the pedal reads zero"
+  },
+  {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 229.0,
+    "end_s": 241.0,
+    "start_unix_ns": 1792260377217505899,
+    "end_unix_ns": 1792260389217505899,
+    "expect": "ordinary driving, no alert expected"
   },
   {
     "kind": "oil_temp_overheat",
     "sensors": [
       "oil_temp"
     ],
-    "start_s": 215.0,
-    "end_s": 240.0,
-    "start_unix_ns": 1792250799526212306,
-    "end_unix_ns": 1792250824526212306,
+    "start_s": 241.0,
+    "end_s": 266.0,
+    "start_unix_ns": 1792260389217505899,
+    "end_unix_ns": 1792260414217505899,
     "expect": "oil temperature holds near the top of its range"
+  },
+  {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 266.0,
+    "end_s": 278.0,
+    "start_unix_ns": 1792260414217505899,
+    "end_unix_ns": 1792260426217505899,
+    "expect": "ordinary driving, no alert expected"
   },
   {
     "kind": "sensor_dropout",
     "sensors": [
       "coolant_temp"
     ],
-    "start_s": 245.0,
-    "end_s": 257.0,
-    "start_unix_ns": 1792250829526212306,
-    "end_unix_ns": 1792250841526212306,
+    "start_s": 278.0,
+    "end_s": 290.0,
+    "start_unix_ns": 1792260426217505899,
+    "end_unix_ns": 1792260438217505899,
     "expect": "channel stops publishing entirely, old state must not stay valid"
+  },
+  {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 290.0,
+    "end_s": 302.0,
+    "start_unix_ns": 1792260438217505899,
+    "end_unix_ns": 1792260450217505899,
+    "expect": "ordinary driving, no alert expected"
   },
   {
     "kind": "batt_volt_sag",
     "sensors": [
       "batt_volt"
     ],
-    "start_s": 262.0,
-    "end_s": 270.0,
-    "start_unix_ns": 1792250846526212306,
-    "end_unix_ns": 1792250854526212306,
+    "start_s": 302.0,
+    "end_s": 310.0,
+    "start_unix_ns": 1792260450217505899,
+    "end_unix_ns": 1792260458217505899,
     "expect": "12 V rail sits below the charging range with the engine running"
+  },
+  {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 310.0,
+    "end_s": 322.0,
+    "start_unix_ns": 1792260458217505899,
+    "end_unix_ns": 1792260470217505899,
+    "expect": "ordinary driving, no alert expected"
   },
   {
     "kind": "speed_gps_mismatch",
     "sensors": [
       "gps_speed"
     ],
-    "start_s": 275.0,
-    "end_s": 285.0,
-    "start_unix_ns": 1792250859526212306,
-    "end_unix_ns": 1792250869526212306,
+    "start_s": 322.0,
+    "end_s": 332.0,
+    "start_unix_ns": 1792260470217505899,
+    "end_unix_ns": 1792260480217505899,
     "expect": "GPS ground speed disagrees with controller speed"
+  },
+  {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 332.0,
+    "end_s": 344.0,
+    "start_unix_ns": 1792260480217505899,
+    "end_unix_ns": 1792260492217505899,
+    "expect": "ordinary driving, no alert expected"
   },
   {
     "kind": "uplink_dropout",
     "sensors": [],
-    "start_s": 290.0,
-    "end_s": 293.0,
-    "start_unix_ns": 1792250874526212306,
-    "end_unix_ns": 1792250877526212306,
+    "start_s": 344.0,
+    "end_s": 347.0,
+    "start_unix_ns": 1792260492217505899,
+    "end_unix_ns": 1792260495217505899,
     "expect": "the whole car stops producing, every channel goes silent at once"
+  },
+  {
+    "kind": "clean",
+    "sensors": [],
+    "start_s": 347.0,
+    "end_s": 360.0,
+    "start_unix_ns": 1792260495217505899,
+    "end_unix_ns": 1792260508217505899,
+    "expect": "ordinary driving, no alert expected"
   }
 ]

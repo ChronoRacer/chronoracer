@@ -73,7 +73,16 @@ class Anomaly:
 
 
 def load_channels():
-    """Channel metadata from the car's channel file, paired with the configured rates."""
+    """Channel metadata from the car's channel file, paired with the configured rates.
+
+    `debug.force_period_s` replaces every per-channel rate with one fixed period, and
+    `debug.only_sensors` narrows the run to the listed channels. Both together turn the
+    feed into a trickle: one sensor, one reading every few seconds, which is readable by
+    hand while following a single value through Core and into the rules engine.
+
+    Returns every name in the channel file next to the channels this run publishes, so
+    the anomaly script can still be validated against channels debug left out.
+    """
     channels_path = (CONFIG_PATH.parent / CONFIG["channels_file"]).resolve()
     definitions = json.loads(channels_path.read_text(encoding="utf-8"))["sensors"]
     rates = CONFIG["sample_rates_hz"]
@@ -92,19 +101,35 @@ def load_channels():
     if too_long:
         raise ValueError(f"sensor ids too long for the Kafka key: {too_long}")
 
-    return {
-        definition["name"]: Channel(
-            name=definition["name"],
+    debug = CONFIG.get("debug", {})
+    forced_period_s = debug.get("force_period_s")
+    if forced_period_s is not None:
+        forced_period_s = float(forced_period_s)
+        if forced_period_s <= 0.0:
+            raise ValueError("debug.force_period_s must be a positive number of seconds")
+    only_sensors = frozenset(debug.get("only_sensors", ()))
+    unknown_only = sorted(only_sensors - defined)
+    if unknown_only:
+        raise ValueError(f"debug.only_sensors names unknown sensors: {unknown_only}")
+
+    channels = {}
+    for definition in definitions:
+        name = definition["name"]
+        if only_sensors and name not in only_sensors:
+            continue
+        channels[name] = Channel(
+            name=name,
             unit=definition["unit"],
             minimum=definition["min"],
             maximum=definition["max"],
-            period_s=1.0 / float(rates[definition["name"]]),
+            period_s=forced_period_s if forced_period_s is not None else 1.0 / float(rates[name]),
         )
-        for definition in definitions
-    }
+    if not channels:
+        raise ValueError("no channels left to publish, check debug.only_sensors")
+    return defined, channels
 
 
-CHANNELS = load_channels()
+ALL_SENSOR_NAMES, CHANNELS = load_channels()
 
 
 class DriveModel:
@@ -383,8 +408,11 @@ def load_anomalies():
         if kind not in VALUE_ANOMALIES and kind not in PUBLICATION_ANOMALIES:
             raise ValueError(f"unknown anomaly kind {kind!r}")
         for sensor in entry.get("sensors", ()):
-            if sensor not in CHANNELS:
+            if sensor not in ALL_SENSOR_NAMES:
                 raise ValueError(f"anomaly {kind!r} names unknown sensor {sensor!r}")
+            if sensor not in CHANNELS:
+                print(f"[Config] anomaly '{kind}' targets '{sensor}', "
+                      f"which debug.only_sensors leaves out of this run.")
         anomalies.append(
             Anomaly(
                 kind=kind,
@@ -698,10 +726,17 @@ def main():
     chdrv_enabled = CONFIG.get("change_driver", {}).get("enabled", False)
     shutdown_enabled = CONFIG.get("shutdown", {}).get("enabled", False)
     points_per_second = sum(1.0 / channel.period_s for channel in CHANNELS.values())
+    debug = CONFIG.get("debug", {})
+    forced_period_s = debug.get("force_period_s")
 
     print("Starting anomaly test configuration:")
     print(f"- Car: {CONFIG['car_name']}")
-    print(f"- Channels: {len(CHANNELS)} at {points_per_second:.0f} readings/s")
+    print(f"- Channels: {len(CHANNELS)} of {len(ALL_SENSOR_NAMES)} at {points_per_second:.1f} readings/s")
+    if forced_period_s is not None:
+        print(f"- DEBUG rate override: every channel every {float(forced_period_s)}s, "
+              f"declared sample_rates_hz ignored")
+    if debug.get("only_sensors"):
+        print(f"- DEBUG sensor filter: {', '.join(sorted(CHANNELS))}")
     print(f"- Total Time: {CONFIG['run']['duration_s']}s (speed factor {CONFIG['run']['speed_factor']})")
     print(f"- Batch Window: {CONFIG['batch_window_ms']}ms")
     print(f"- Lap Length: {model.lap_duration_s:.1f}s")

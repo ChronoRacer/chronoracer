@@ -63,20 +63,14 @@ def publish_sensor_agg(key,row,time,is_addition):
         pub_socket.send_multipart([TOPIC_SENSOR_AGG,payload])
 
 
-
-
-CELL_NS =250_000_001
-if __name__ == '__main__':
-    config = Config(CORE_TELEMETRY_URL="127.0.0.1:9470",CLIENT_ID="analysis_id")
-    table = pw.io.python.read(
-        GRPCSensorStream(config),schema=GRPCSchema,autocommit_duration_ms=100
-    )
-    logger.info("STARTING PATHWAY STREAMING JOB")
-    # i can make other windows for predictions separate from these below
-    sensor_agg = (
+SLOW_CELL_NS =250_000_001
+FAST_CELL_NS =1_000_000_001
+def get_sensor_batch(slow:bool):
+    duration = SLOW_CELL_NS if slow else FAST_CELL_NS
+    return (
         table.windowby(
             pw.this.timestamp_nano,
-            window=pw.temporal.tumbling(duration=CELL_NS),
+            window=pw.temporal.tumbling(duration=duration),
             behavior=pw.temporal.exactly_once_behavior(),
             instance=pw.this.sensor_id
         ).reduce(
@@ -89,18 +83,39 @@ if __name__ == '__main__':
                     pw.this.value
                 )
             ),
-            window_min=pw.reducers.min(pw.this.value),
-            window_max=pw.reducers.max(pw.this.value),
+            window_min_val=pw.reducers.min(pw.this.value),
+            window_max_val=pw.reducers.max(pw.this.value),
             # MIN AND MAX ARE TO CHECK IF WE HAVE TO SCAN WINDOW-VALUES
             # BECAUSE WHEN WE COMPARE MIN/MAX AND THERE WILL BE NO RULES VIOLATION
             # THERE OTHER VALUES BETWEEN ALSO WONT VIOLATE IT
+
+            window_min_ts=pw.reducers.min(pw.this.timestamp_nano),
+            window_max_ts=pw.reducers.max(pw.this.timestamp_nano),
             sample_count=pw.reducers.count()
+
         )
     )
-    pw.io.python.write(sensor_agg,BatchedSensorObserver())
+
+if __name__ == '__main__':
+    config = Config(CORE_TELEMETRY_URL="127.0.0.1:9470",CLIENT_ID="analysis_id")
+    table = pw.io.python.read(
+        GRPCSensorStream(config),schema=GRPCSchema,autocommit_duration_ms=100
+    )
+    logger.info("STARTING PATHWAY STREAMING JOB")
+    # i can make other windows for predictions separate from these below
+
+
+    # finally i have to get knowledge about slow and fast sensors
+    # so map with sensors and kind ??
+    #fast_sensor = get_sensor_batch(slow=False)
+
+
+
+    slow_sensor = get_sensor_batch(slow=True)
+    pw.io.python.write(slow_sensor,BatchedSensorObserver())
     pw.run()
 
-#GRPC ---> PATHWAY ZBIERA ODSZUMIONY SYGNAŁ W PACZKI PO X MS ----> PACZKA IDZIE DO GORULES ---> WYKRYWANIE UTRZYAMNIA WARTOSC DLA PROGU PRZEZ DT
+#GRPC ---> PATHWAY ZBIERA ODSZUMIONY SYGNAŁ W PACZKI PO X NS ----> PACZKA IDZIE DO GORULES ---> WYKRYWANIE UTRZYAMNIA WARTOSC DLA PROGU PRZEZ DT
 # napewno też min samples w oknie
 """
 import threading
