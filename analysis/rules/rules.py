@@ -22,21 +22,20 @@ class Sensor(BaseModel):
 
 
 class SignalHistory(BaseModel):
-    ts_nano : int
+    ts_ms : int
     val : float
 
 class Signal(BaseModel):
-    sensor_id : str
-    first_val_ts_nano : int
-    last_val_ts_nano : int
+    first_val_ts_ms : int
+    last_val_ts_ms : int
     min_val : float
     max_val : float
     history : list[SignalHistory]
 
 class GoRulesSchema(BaseModel):
     unit_id : str
-    eval_ts_nano : int
-    signals : list[Signal]
+    eval_ts_ms : int
+    signals : dict[str,Signal] # sensor_id - Signal
 
 class RulesEngine:
     def __init__(self):
@@ -95,34 +94,32 @@ class RulesEngine:
     def handle_message(self,message: dict, sensors: set[str]):
         for rule_name in self.rules.keys():
             rule_obj = self.rules[rule_name]
-
             if rule_obj.sensors == sensors:
                 go_rules_schema = GoRulesSchema(
                     unit_id="rule_obj.rule_json[name]", # ??? TODO
-                    eval_ts_nano=time.time_ns(),
+                    eval_ts_ms=time.time_ns() // 1_000_000 ,
                     signals=self._get_signals(message)
                 )
                 decision = self.engine.evaluate(rule_name,go_rules_schema.model_dump())
                 print(decision)
     @staticmethod
-    def _get_signals(message :dict) ->list[Signal]:
-        signals : list[Signal] = []
+    def _get_signals(message :dict) ->dict[str,Signal]:
+        signals : dict[str,Signal] = {}
         for sensor_dct in message:
-            signals.append(Signal(
-                sensor_id=sensor_dct["sensor_id"],
-                first_val_ts_nano=sensor_dct["window_min_ts"],
-                last_val_ts_nano=sensor_dct["window_max_ts"],
+            signals[sensor_dct["sensor_id"]] = Signal(
+                first_val_ts_ms=int(sensor_dct["window_min_ts_ns"]) // 1_000_000,
+                last_val_ts_ms=int(sensor_dct["window_max_ts_ns"]) // 1_000_000,
                 min_val=sensor_dct["window_min_val"],
                 max_val=sensor_dct["window_max_val"],
-                history=[SignalHistory(ts_nano=ts,val=val) for ts,val in sensor_dct["vals"]]
-            ))
+                history=[SignalHistory(ts_ms=int(ts) // 1_000_000 ,val=val) for ts,val in sensor_dct["vals"]]
+            )
 
         return signals
 """
 
             sensor_id=pw.this._pw_instance,
-            window_start=pw.this._pw_window_start,
-            window_end=pw.this._pw_window_end,
+            window_start_ns=pw.this._pw_window_start,
+            window_end_ns=pw.this._pw_window_end,
             vals=pw.reducers.sorted_tuple(
                 pw.make_tuple(
                     pw.this.timestamp_nano,
@@ -131,8 +128,12 @@ class RulesEngine:
             ),
             window_min_val=pw.reducers.min(pw.this.value),
             window_max_val=pw.reducers.max(pw.this.value),
-            window_min_ts=pw.reducers.min(pw.this.timestamp_nano),
-            window_max_ts=pw.reducers.max(pw.this.timestamp_nano),
+            # MIN AND MAX ARE TO CHECK IF WE HAVE TO SCAN WINDOW-VALUES
+            # BECAUSE WHEN WE COMPARE MIN/MAX AND THERE WILL BE NO RULES VIOLATION
+            # THERE OTHER VALUES BETWEEN ALSO WONT VIOLATE IT
+
+            window_min_ts_ns=pw.reducers.min(pw.this.timestamp_nano),
+            window_max_ts_ns=pw.reducers.max(pw.this.timestamp_nano),
             sample_count=pw.reducers.count()
 """
 

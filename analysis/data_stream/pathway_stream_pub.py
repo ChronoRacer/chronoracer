@@ -75,8 +75,8 @@ def get_sensor_batch(slow:bool):
             instance=pw.this.sensor_id
         ).reduce(
             sensor_id=pw.this._pw_instance,
-            window_start=pw.this._pw_window_start,
-            window_end=pw.this._pw_window_end,
+            window_start_ns=pw.this._pw_window_start,
+            window_end_ns=pw.this._pw_window_end,
             vals=pw.reducers.sorted_tuple(
                 pw.make_tuple(
                     pw.this.timestamp_nano,
@@ -89,8 +89,8 @@ def get_sensor_batch(slow:bool):
             # BECAUSE WHEN WE COMPARE MIN/MAX AND THERE WILL BE NO RULES VIOLATION
             # THERE OTHER VALUES BETWEEN ALSO WONT VIOLATE IT
 
-            window_min_ts=pw.reducers.min(pw.this.timestamp_nano),
-            window_max_ts=pw.reducers.max(pw.this.timestamp_nano),
+            window_min_ts_ns=pw.reducers.min(pw.this.timestamp_nano),
+            window_max_ts_ns=pw.reducers.max(pw.this.timestamp_nano),
             sample_count=pw.reducers.count()
 
         )
