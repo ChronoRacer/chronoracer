@@ -1,14 +1,18 @@
 import time
-from pathlib import Path
 from collections import  defaultdict
 import zmq
 import orjson
 import zen
-from pprint import pformat
+import requests
 
 from google.cloud import storage
 from pydantic import BaseModel
 from datetime import timedelta
+
+from analysis.shared.config import load_config
+from analysis.shared.contract import NewAlertJSON, SensorValue
+
+
 class RuleObj(BaseModel):
     is_active : bool = False
     rule_json: dict
@@ -36,8 +40,10 @@ class GoRulesSchema(BaseModel):
     eval_ts_ms : int
     signals : dict[str,Signal] # sensor_id - Signal
 
+TELEMETRY_RULES_ENDPOINT = "/api/rule"
 class RulesEngine:
-    def __init__(self):
+    def __init__(self,config):
+        self.config = config
         self.rules : dict[str,RuleObj] = defaultdict(RuleObj)
         rules = defaultdict(RuleObj)
         self.client = storage.Client("chronoracer")
@@ -94,7 +100,31 @@ class RulesEngine:
                     signals=self._get_signals(message)
                 )
                 decision = self.engine.evaluate(rule_name,go_rules_schema.model_dump())
+                self.send_decision(rule_name,decision)
                 print(decision)
+
+    def send_decision(self,decision:dict):
+        # TODO tu trzeba ją filtrować ze tylko Y/R/B oraz tutaj sprawdzamy stan cyz nie spamujemy w czasię tą samą regule
+        with requests.Session() as s:
+            s.headers.update({"Authorization": "Bearer TOKEN"})
+            req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RULES_ENDPOINT,json=self._prepare_alert_json(decision),timeout=2)
+            try:
+                req.raise_for_status()
+            except Exception as ex:
+                pass # TODO
+
+    @staticmethod
+    def _prepare_alert_json(alert_id,decision:dict):
+        new_alert_json = NewAlertJSON(
+            timestamp=time.time_ns() // 1000,
+            alert_id=alert_id,
+            sensors=[SensorValue(sensor_id="",value=217)],
+            analysis_message=decision["analysis_message"],
+            analysis_reason=decision["analysis_reason"]
+        )
+
+        return orjson.dumps(new_alert_json.model_dump(mode="json"))
+
     @staticmethod
     def _get_signals(message :dict) ->dict[str,Signal]:
         signals : dict[str,Signal] = {}
@@ -107,27 +137,7 @@ class RulesEngine:
             )
 
         return signals
-"""
 
-            sensor_id=pw.this._pw_instance,
-            window_start_ns=pw.this._pw_window_start,
-            window_end_ns=pw.this._pw_window_end,
-            vals=pw.reducers.sorted_tuple(
-                pw.make_tuple(
-                    pw.this.timestamp_nano,
-                    pw.this.value
-                )
-            ),
-            window_min_val=pw.reducers.min(pw.this.value),
-            window_max_val=pw.reducers.max(pw.this.value),
-            # MIN AND MAX ARE TO CHECK IF WE HAVE TO SCAN WINDOW-VALUES
-            # BECAUSE WHEN WE COMPARE MIN/MAX AND THERE WILL BE NO RULES VIOLATION
-            # THERE OTHER VALUES BETWEEN ALSO WONT VIOLATE IT
-
-            window_min_ts_ns=pw.reducers.min(pw.this.timestamp_nano),
-            window_max_ts_ns=pw.reducers.max(pw.this.timestamp_nano),
-            sample_count=pw.reducers.count()
-"""
 
 
 context = zmq.Context()
@@ -135,7 +145,10 @@ sub_socket = context.socket(zmq.SUB)
 sub_socket.setsockopt(zmq.SUBSCRIBE,b"sensor_agg")
 
 sub_socket.connect("tcp://127.0.0.1:6767")
-rules_engine = RulesEngine()
+config = load_config()
+if config is None:
+    pass
+rules_engine = RulesEngine(config)
 
 
 
