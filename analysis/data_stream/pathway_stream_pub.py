@@ -18,7 +18,7 @@ from analysis.shared.connector import GRPCSensorStream
 
 import os
 
-from shared.config import load_config
+from analysis.shared.config import load_config
 
 
 class GRPCSchema(pw.Schema):

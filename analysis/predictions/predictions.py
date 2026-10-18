@@ -13,18 +13,26 @@ from onnxruntime import InferenceSession
 from pydantic import BaseModel
 from sklearn.datasets import load_iris
 
+from shared.config import load_config
+
+
 class Sensor(BaseModel):
     id: str
     min:float | None
     max:float | None
     desc : str
 
+
+TELEMETRY_PREDICTIONS_ENDPOINT = "/api/prediction"
+
 class PredictionsEngine:
-    def __init__(self):
+    def __init__(self,config):
         self.client = storage.Client("chronoracer")
         self.bucket = self.client.bucket("chronoracer-artifacts")
         self.local_dir : Path =  Path(tempfile.mkdtemp(prefix="onnx_"))
         self.sensors  : dict[str,Sensor] = self.fetch_sensor()
+        self.config = config
+
     def fetch_sensor(self):
         sensors = {}
         blob = self.bucket.blob("analysis/sensors.json")
@@ -60,7 +68,11 @@ def use_model(model_name: str):
         logger.error("STH")
         return
 
-pred_engine = PredictionsEngine()
+config = load_config()
+if config is None:
+    pass
+#TODO main func
+pred_engine = PredictionsEngine(config)
 
 context = zmq.Context()
 sub_socket = context.socket(zmq.SUB)
