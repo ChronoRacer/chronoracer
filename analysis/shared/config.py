@@ -6,6 +6,7 @@ from pydantic import  BaseModel
 REQUIRED_ENV = (
     "CORE_TELEMETRY_URL",
     #CLIENT_ID
+    "TELEMETRY_URL"
 )
 
 
@@ -15,6 +16,7 @@ REQUIRED_ENV = (
 # this is not place to define default value for rules config !!!
 class Config(BaseModel):
     CORE_TELEMETRY_URL: str
+    TELEMETRY_URL : str
     CLIENT_ID : str
 
 def load_config() -> Config | None:
@@ -27,5 +29,6 @@ def load_config() -> Config | None:
 
     return Config(
         CORE_TELEMETRY_URL=os.environ["CORE_TELEMETRY_URL"],
-        CLIENT_ID=""
+        CLIENT_ID="",
+        TELEMETRY_URL=os.environ["TELEMETRY_URL"]
     )

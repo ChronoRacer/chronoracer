@@ -18,6 +18,9 @@ from analysis.shared.connector import GRPCSensorStream
 
 import os
 
+from shared.config import load_config
+
+
 class GRPCSchema(pw.Schema):
     sensor_id: str = pw.column_definition(primary_key=True)
     timestamp_nano: int
@@ -65,7 +68,7 @@ def publish_sensor_agg(key,row,time,is_addition):
 
 SLOW_CELL_NS =500_000_001
 FAST_CELL_NS =1_000_000_001
-def get_sensor_batch(slow:bool):
+def get_sensor_batch(table,slow:bool):
     duration = SLOW_CELL_NS if slow else FAST_CELL_NS
     return (
         table.windowby(
@@ -96,8 +99,13 @@ def get_sensor_batch(slow:bool):
         )
     )
 
-if __name__ == '__main__':
-    config = Config(CORE_TELEMETRY_URL="127.0.0.1:9470",CLIENT_ID="analysis_id")
+def main():
+    config = Config(CORE_TELEMETRY_URL="127.0.0.1:9470",CLIENT_ID="analysis_id",TELEMETRY_URL="127.0.0.1:8080")
+    #config = load_config()
+    if config is None:
+        logger.error("Config is NONE")
+        return
+
     table = pw.io.python.read(
         GRPCSensorStream(config),schema=GRPCSchema,autocommit_duration_ms=100
     )
@@ -111,9 +119,12 @@ if __name__ == '__main__':
 
 
 
-    slow_sensor = get_sensor_batch(slow=True)
+    slow_sensor = get_sensor_batch(table,slow=True)
     pw.io.python.write(slow_sensor,BatchedSensorObserver())
     pw.run()
+
+if __name__ == '__main__':
+    main()
 
 #GRPC ---> PATHWAY ZBIERA ODSZUMIONY SYGNAŁ W PACZKI PO X NS ----> PACZKA IDZIE DO GORULES ---> WYKRYWANIE UTRZYAMNIA WARTOSC DLA PROGU PRZEZ DT
 # napewno też min samples w oknie
