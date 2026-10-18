@@ -146,12 +146,18 @@ def get_available_sensors(messages:dict) -> set[str]:
         sensors.add(msg["sensor_id"])
     return sensors
 
-while True:
-    topic, raw_payload = sub_socket.recv_multipart()
-    data = orjson.loads(raw_payload.decode("utf-8"))
-    if topic == b"sensor_agg":
-        available_sensors = get_available_sensors(data)
-        rules_engine.handle_message(message=data,sensors=available_sensors)
+def main():
+    while True:
+        topic, raw_payload = sub_socket.recv_multipart()
+        data = orjson.loads(raw_payload.decode("utf-8"))
+        if topic == b"sensor_agg":
+            available_sensors = get_available_sensors(data)
+            rules_engine.handle_message(message=data,sensors=available_sensors)
+
+if __name__ == "__main__":
+    main()
 
 # TODO retries - when server is not up yet, we should retry to connect to it.
 # TODO - NO DATA TO CHANGE STATE == OLD STATE
+
+
