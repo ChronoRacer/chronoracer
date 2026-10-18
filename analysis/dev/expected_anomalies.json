@@ -4,8 +4,8 @@
     "sensors": [],
     "start_s": 0.0,
     "end_s": 30.0,
-    "start_unix_ns": 1792334648767379792,
-    "end_unix_ns": 1792334678767379792,
+    "start_unix_ns": 1792338049614092191,
+    "end_unix_ns": 1792338079614092191,
     "expect": "ordinary driving, no alert expected"
   },
   {
@@ -15,8 +15,8 @@
     ],
     "start_s": 30.0,
     "end_s": 36.0,
-    "start_unix_ns": 1792334678767379792,
-    "end_unix_ns": 1792334684767379792,
+    "start_unix_ns": 1792338079614092191,
+    "end_unix_ns": 1792338085614092191,
     "expect": "one wheel reads near zero while the others and brake pressure stay high"
   },
   {
@@ -24,8 +24,8 @@
     "sensors": [],
     "start_s": 36.0,
     "end_s": 48.0,
-    "start_unix_ns": 1792334684767379792,
-    "end_unix_ns": 1792334696767379792,
+    "start_unix_ns": 1792338085614092191,
+    "end_unix_ns": 1792338097614092191,
     "expect": "ordinary driving, no alert expected"
   },
   {
@@ -35,8 +35,8 @@
     ],
     "start_s": 48.0,
     "end_s": 58.0,
-    "start_unix_ns": 1792334696767379792,
-    "end_unix_ns": 1792334706767379792,
+    "start_unix_ns": 1792338097614092191,
+    "end_unix_ns": 1792338107614092191,
     "expect": "the redundant brake channel no longer tracks the main one"
   },
   {
@@ -44,8 +44,8 @@
     "sensors": [],
     "start_s": 58.0,
     "end_s": 70.0,
-    "start_unix_ns": 1792334706767379792,
-    "end_unix_ns": 1792334718767379792,
+    "start_unix_ns": 1792338107614092191,
+    "end_unix_ns": 1792338119614092191,
     "expect": "ordinary driving, no alert expected"
   },
   {
@@ -57,8 +57,8 @@
     ],
     "start_s": 70.0,
     "end_s": 82.0,
-    "start_unix_ns": 1792334718767379792,
-    "end_unix_ns": 1792334730767379792,
+    "start_unix_ns": 1792338119614092191,
+    "end_unix_ns": 1792338131614092191,
     "expect": "lambda stays lean while both fuel trims run positive"
   },
   {
@@ -66,8 +66,8 @@
     "sensors": [],
     "start_s": 82.0,
     "end_s": 94.0,
-    "start_unix_ns": 1792334730767379792,
-    "end_unix_ns": 1792334742767379792,
+    "start_unix_ns": 1792338131614092191,
+    "end_unix_ns": 1792338143614092191,
     "expect": "ordinary driving, no alert expected"
   },
   {
@@ -77,8 +77,8 @@
     ],
     "start_s": 94.0,
     "end_s": 102.0,
-    "start_unix_ns": 1792334742767379792,
-    "end_unix_ns": 1792334750767379792,
+    "start_unix_ns": 1792338143614092191,
+    "end_unix_ns": 1792338151614092191,
     "expect": "engine speed jumps with no matching change in road speed"
   },
   {
@@ -86,8 +86,8 @@
     "sensors": [],
     "start_s": 102.0,
     "end_s": 114.0,
-    "start_unix_ns": 1792334750767379792,
-    "end_unix_ns": 1792334762767379792,
+    "start_unix_ns": 1792338151614092191,
+    "end_unix_ns": 1792338163614092191,
     "expect": "ordinary driving, no alert expected"
   },
   {
@@ -97,8 +97,8 @@
     ],
     "start_s": 114.0,
     "end_s": 134.0,
-    "start_unix_ns": 1792334762767379792,
-    "end_unix_ns": 1792334782767379792,
+    "start_unix_ns": 1792338163614092191,
+    "end_unix_ns": 1792338183614092191,
     "expect": "coolant holds far above its regulated temperature"
   },
   {
@@ -106,8 +106,8 @@
     "sensors": [],
     "start_s": 134.0,
     "end_s": 146.0,
-    "start_unix_ns": 1792334782767379792,
-    "end_unix_ns": 1792334794767379792,
+    "start_unix_ns": 1792338183614092191,
+    "end_unix_ns": 1792338195614092191,
     "expect": "ordinary driving, no alert expected"
   },
   {
@@ -119,8 +119,8 @@
     ],
     "start_s": 146.0,
     "end_s": 156.0,
-    "start_unix_ns": 1792334794767379792,
-    "end_unix_ns": 1792334804767379792,
+    "start_unix_ns": 1792338195614092191,
+    "end_unix_ns": 1792338205614092191,
     "expect": "fix drops to none, satellites collapse and PDOP explodes"
   },
   {
@@ -128,8 +128,8 @@
     "sensors": [],
     "start_s": 156.0,
     "end_s": 168.0,
-    "start_unix_ns": 1792334804767379792,
-    "end_unix_ns": 1792334816767379792,
+    "start_unix_ns": 1792338205614092191,
+    "end_unix_ns": 1792338217614092191,
     "expect": "ordinary driving, no alert expected"
   },
   {
@@ -139,8 +139,8 @@
     ],
     "start_s": 168.0,
     "end_s": 183.0,
-    "start_unix_ns": 1792334816767379792,
-    "end_unix_ns": 1792334831767379792,
+    "start_unix_ns": 1792338217614092191,
+    "end_unix_ns": 1792338232614092191,
     "expect": "channel keeps publishing one frozen value"
   },
   {
@@ -148,8 +148,8 @@
     "sensors": [],
     "start_s": 183.0,
     "end_s": 195.0,
-    "start_unix_ns": 1792334831767379792,
-    "end_unix_ns": 1792334843767379792,
+    "start_unix_ns": 1792338232614092191,
+    "end_unix_ns": 1792338244614092191,
     "expect": "ordinary driving, no alert expected"
   },
   {
@@ -160,8 +160,8 @@
     ],
     "start_s": 195.0,
     "end_s": 207.0,
-    "start_unix_ns": 1792334843767379792,
-    "end_unix_ns": 1792334855767379792,
+    "start_unix_ns": 1792338244614092191,
+    "end_unix_ns": 1792338256614092191,
     "expect": "driven wheels overspeed the undriven pair under power"
   },
   {
@@ -169,8 +169,8 @@
     "sensors": [],
     "start_s": 207.0,
     "end_s": 219.0,
-    "start_unix_ns": 1792334855767379792,
-    "end_unix_ns": 1792334867767379792,
+    "start_unix_ns": 1792338256614092191,
+    "end_unix_ns": 1792338268614092191,
     "expect": "ordinary driving, no alert expected"
   },
   {
@@ -180,8 +180,8 @@
     ],
     "start_s": 219.0,
     "end_s": 229.0,
-    "start_unix_ns": 1792334867767379792,
-    "end_unix_ns": 1792334877767379792,
+    "start_unix_ns": 1792338268614092191,
+    "end_unix_ns": 1792338278614092191,
     "expect": "throttle opens while the pedal reads zero"
   },
   {
@@ -189,8 +189,8 @@
     "sensors": [],
     "start_s": 229.0,
     "end_s": 241.0,
-    "start_unix_ns": 1792334877767379792,
-    "end_unix_ns": 1792334889767379792,
+    "start_unix_ns": 1792338278614092191,
+    "end_unix_ns": 1792338290614092191,
     "expect": "ordinary driving, no alert expected"
   },
   {
@@ -200,8 +200,8 @@
     ],
     "start_s": 241.0,
     "end_s": 266.0,
-    "start_unix_ns": 1792334889767379792,
-    "end_unix_ns": 1792334914767379792,
+    "start_unix_ns": 1792338290614092191,
+    "end_unix_ns": 1792338315614092191,
     "expect": "oil temperature holds near the top of its range"
   },
   {
@@ -209,8 +209,8 @@
     "sensors": [],
     "start_s": 266.0,
     "end_s": 278.0,
-    "start_unix_ns": 1792334914767379792,
-    "end_unix_ns": 1792334926767379792,
+    "start_unix_ns": 1792338315614092191,
+    "end_unix_ns": 1792338327614092191,
     "expect": "ordinary driving, no alert expected"
   },
   {
@@ -220,8 +220,8 @@
     ],
     "start_s": 278.0,
     "end_s": 290.0,
-    "start_unix_ns": 1792334926767379792,
-    "end_unix_ns": 1792334938767379792,
+    "start_unix_ns": 1792338327614092191,
+    "end_unix_ns": 1792338339614092191,
     "expect": "channel stops publishing entirely, old state must not stay valid"
   },
   {
@@ -229,8 +229,8 @@
     "sensors": [],
     "start_s": 290.0,
     "end_s": 302.0,
-    "start_unix_ns": 1792334938767379792,
-    "end_unix_ns": 1792334950767379792,
+    "start_unix_ns": 1792338339614092191,
+    "end_unix_ns": 1792338351614092191,
     "expect": "ordinary driving, no alert expected"
   },
   {
@@ -240,8 +240,8 @@
     ],
     "start_s": 302.0,
     "end_s": 310.0,
-    "start_unix_ns": 1792334950767379792,
-    "end_unix_ns": 1792334958767379792,
+    "start_unix_ns": 1792338351614092191,
+    "end_unix_ns": 1792338359614092191,
     "expect": "12 V rail sits below the charging range with the engine running"
   },
   {
@@ -249,8 +249,8 @@
     "sensors": [],
     "start_s": 310.0,
     "end_s": 322.0,
-    "start_unix_ns": 1792334958767379792,
-    "end_unix_ns": 1792334970767379792,
+    "start_unix_ns": 1792338359614092191,
+    "end_unix_ns": 1792338371614092191,
     "expect": "ordinary driving, no alert expected"
   },
   {
@@ -260,8 +260,8 @@
     ],
     "start_s": 322.0,
     "end_s": 332.0,
-    "start_unix_ns": 1792334970767379792,
-    "end_unix_ns": 1792334980767379792,
+    "start_unix_ns": 1792338371614092191,
+    "end_unix_ns": 1792338381614092191,
     "expect": "GPS ground speed disagrees with controller speed"
   },
   {
@@ -269,8 +269,8 @@
     "sensors": [],
     "start_s": 332.0,
     "end_s": 344.0,
-    "start_unix_ns": 1792334980767379792,
-    "end_unix_ns": 1792334992767379792,
+    "start_unix_ns": 1792338381614092191,
+    "end_unix_ns": 1792338393614092191,
     "expect": "ordinary driving, no alert expected"
   },
   {
@@ -278,8 +278,8 @@
     "sensors": [],
     "start_s": 344.0,
     "end_s": 347.0,
-    "start_unix_ns": 1792334992767379792,
-    "end_unix_ns": 1792334995767379792,
+    "start_unix_ns": 1792338393614092191,
+    "end_unix_ns": 1792338396614092191,
     "expect": "the whole car stops producing, every channel goes silent at once"
   },
   {
@@ -287,8 +287,8 @@
     "sensors": [],
     "start_s": 347.0,
     "end_s": 360.0,
-    "start_unix_ns": 1792334995767379792,
-    "end_unix_ns": 1792335008767379792,
+    "start_unix_ns": 1792338396614092191,
+    "end_unix_ns": 1792338409614092191,
     "expect": "ordinary driving, no alert expected"
   }
 ]
