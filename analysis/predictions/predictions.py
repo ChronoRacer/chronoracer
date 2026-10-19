@@ -1,8 +1,6 @@
 import tempfile
 from pathlib import Path
-
 import orjson
-
 import zmq
 from google.cloud import storage
 import onnxruntime as ort
@@ -12,7 +10,6 @@ from loguru import logger
 from onnxruntime import InferenceSession
 from pydantic import BaseModel
 from sklearn.datasets import load_iris
-
 from shared.config import load_config
 
 
@@ -62,27 +59,25 @@ class PredictionsEngine:
             shutil.rmtree(self.local_dir)
 
 
-def use_model(model_name: str):
-    model_session = pred_engine.import_model(model_name)
-    if model_session is None:
-        logger.error("STH")
+
+
+def main():
+    config = load_config()
+    if config is None:
+        logger.error("Missing config, exiting")
         return
+    pred_engine = PredictionsEngine(config)
 
-config = load_config()
-if config is None:
-    pass
-#TODO main func
-pred_engine = PredictionsEngine(config)
+    context = zmq.Context()
+    sub_socket = context.socket(zmq.SUB)
+    sub_socket.setsockopt(zmq.SUBSCRIBE, b"sensor_agg")
+    sub_socket.connect("tcp://127.0.0.1:6767")
 
-context = zmq.Context()
-sub_socket = context.socket(zmq.SUB)
-sub_socket.setsockopt(zmq.SUBSCRIBE,b"sensor_agg")
-sub_socket.connect("tcp://127.0.0.1:6767")
+    pred_engine.on_stop()
 
 
-pred_engine.on_stop()
-
-
+if __name__ == "__main__":
+    main()
 
 
 """
