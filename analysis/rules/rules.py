@@ -4,17 +4,14 @@ import zmq
 import orjson
 import zen
 import requests
-
 from google.cloud import storage
+from loguru import logger
 from pydantic import BaseModel
-from datetime import timedelta
-
 from analysis.shared.config import load_config
 from analysis.shared.contract import NewAlertJSON, SensorValue
 
 
 class RuleObj(BaseModel):
-    is_active : bool = False
     rule_json: dict
     sensors : set[str]
 
@@ -30,13 +27,10 @@ class SignalHistory(BaseModel):
     val : float
 
 class Signal(BaseModel):
-    first_val_ts_ms : int
-    last_val_ts_ms : int
     samples : int
     history : list[SignalHistory]
 
 class GoRulesSchema(BaseModel):
-    unit_id : str
     eval_ts_ms : int
     signals : dict[str,Signal] # sensor_id - Signal
 
@@ -44,12 +38,11 @@ TELEMETRY_RULES_ENDPOINT = "/api/rule"
 class RulesEngine:
     def __init__(self,config):
         self.config = config
-        self.rules : dict[str,RuleObj] = defaultdict(RuleObj)
-        rules = defaultdict(RuleObj)
         self.client = storage.Client("chronoracer")
         self.bucket = self.client.bucket("chronoracer-artifacts")
         self.engine = zen.ZenEngine({"loader": self.loader})
 
+        self.rules : dict[str,RuleObj] = {}
         for blob in self.client.list_blobs(self.bucket,prefix="analysis/rules/"):
             if blob.name.endswith(".json"):
                 rule_json = orjson.loads(blob.download_as_text())
@@ -58,8 +51,7 @@ class RulesEngine:
                     rule_json=rule_json,
                     sensors=sensors
                 )
-                rules[str(blob.name).split("/")[-1]] = rule
-        self.rules = rules
+                self.rules[str(blob.name).split("/")[-1]] = rule
         self.sensors : dict[str,Sensor] = self.fetch_sensor()
 
     def fetch_sensor(self):
@@ -81,9 +73,6 @@ class RulesEngine:
         schema = orjson.loads(rule_obj["nodes"][0]["content"]["schema"])
         return list(schema["properties"]["signals"]["properties"].keys())
 
-    def get_rules_files(self) -> dict[str,RuleObj]:
-        return self.rules
-
 
     def loader(self,key:str):
         return self.rules[key].rule_json
@@ -95,13 +84,11 @@ class RulesEngine:
             rule_obj = self.rules[rule_name]
             if rule_obj.sensors.issubset(sensors):
                 go_rules_schema = GoRulesSchema(
-                    unit_id="rule_obj.rule_json[name]", # ??? TODO
                     eval_ts_ms=time.time_ns() // 1_000_000 ,
-                    signals=self._get_signals(message)
+                    signals=self._get_signals(message,sensors)
                 )
                 decision = self.engine.evaluate(rule_name,go_rules_schema.model_dump())
                 self.send_decision(rule_name,decision)
-                #print(decision)
 
     def send_decision(self,alert_id:str,decision:dict):
         # TODO tu trzeba ją filtrować ze tylko Y/R/B oraz tutaj sprawdzamy stan cyz nie spamujemy w czasię tą samą regule
@@ -110,6 +97,7 @@ class RulesEngine:
         with requests.Session() as s:
             s.headers.update({"Authorization": "Bearer TOKEN"})
             payload = self._prepare_alert_json(alert_id,decision)
+            print(payload)
             #req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RULES_ENDPOINT,json=payload,timeout=2)
             #try:
             #    req.raise_for_status()
@@ -122,7 +110,6 @@ class RulesEngine:
             res = []
             for dct in decision["result"]["sensors"]:
                 for k, v in dct.items():
-                    print("KV:", k,v)
                     res.append(SensorValue(sensor_id=k,value=v))
             return res
         new_alert_json = NewAlertJSON(
@@ -133,49 +120,37 @@ class RulesEngine:
             analysis_message=decision["result"]["analysis_message"],
             analysis_reason=decision["result"]["analysis_reason"]
         )
-        print(new_alert_json)
         return new_alert_json.model_dump(mode="json")
 
     @staticmethod
-    def _get_signals(message :dict) ->dict[str,Signal]:
+    def _get_signals(message :dict,sensors :set[str]) ->dict[str,Signal]:
         signals : dict[str,Signal] = {}
         for sensor_dct in message:
-            signals[sensor_dct["sensor_id"]] = Signal(
-                first_val_ts_ms=int(sensor_dct["window_min_ts_ns"]) // 1_000_000,
-                last_val_ts_ms=int(sensor_dct["window_max_ts_ns"]) // 1_000_000,
-                samples=len(sensor_dct["vals"]),
-                history=[SignalHistory(ts_ms=int(ts) // 1_000_000 ,val=val) for ts,val in sensor_dct["vals"]]
-            )
-
+            if sensor_dct["sensor_id"] in sensors:
+                signals[sensor_dct["sensor_id"]] = Signal(
+                    samples=len(sensor_dct["vals"]),
+                    history=[SignalHistory(ts_ms=int(ts) // 1_000_000 ,val=val) for ts,val in sensor_dct["vals"]]
+                )
         return signals
 
-
-
-context = zmq.Context()
-sub_socket = context.socket(zmq.SUB)
-sub_socket.setsockopt(zmq.SUBSCRIBE,b"sensor_agg")
-
-sub_socket.connect("tcp://127.0.0.1:6767")
-config = load_config()
-if config is None:
-    pass
-rules_engine = RulesEngine(config)
-
-
-
-
-def get_available_sensors(messages:dict) -> set[str]:
-    sensors = set()
-    for msg in messages:
-        sensors.add(msg["sensor_id"])
-    return sensors
-
 def main():
+    config = load_config()
+    if config is None:
+        logger.error("Missing config, exiting")
+        return
+    rules_engine = RulesEngine(config)
+
+    context = zmq.Context()
+    sub_socket = context.socket(zmq.SUB)
+    sub_socket.setsockopt(zmq.SUBSCRIBE, b"sensor_agg")
+
+    sub_socket.connect("tcp://127.0.0.1:6767")
+
     while True:
         topic, raw_payload = sub_socket.recv_multipart()
         data = orjson.loads(raw_payload.decode("utf-8"))
         if topic == b"sensor_agg":
-            available_sensors = get_available_sensors(data)
+            available_sensors = set([msg["sensor_id"] for msg in data])
             rules_engine.handle_message(message=data,sensors=available_sensors)
 
 if __name__ == "__main__":
