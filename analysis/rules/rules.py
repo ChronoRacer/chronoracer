@@ -101,29 +101,40 @@ class RulesEngine:
                 )
                 decision = self.engine.evaluate(rule_name,go_rules_schema.model_dump())
                 self.send_decision(rule_name,decision)
-                print(decision)
+                #print(decision)
 
-    def send_decision(self,decision:dict):
+    def send_decision(self,alert_id:str,decision:dict):
         # TODO tu trzeba ją filtrować ze tylko Y/R/B oraz tutaj sprawdzamy stan cyz nie spamujemy w czasię tą samą regule
+        if decision["result"]["state"] not in ("YELLOW","RED","BLACK"):
+            return
         with requests.Session() as s:
             s.headers.update({"Authorization": "Bearer TOKEN"})
-            req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RULES_ENDPOINT,json=self._prepare_alert_json(decision),timeout=2)
-            try:
-                req.raise_for_status()
-            except Exception as ex:
-                pass # TODO
+            payload = self._prepare_alert_json(alert_id,decision)
+            #req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RULES_ENDPOINT,json=payload,timeout=2)
+            #try:
+            #    req.raise_for_status()
+            #except Exception as ex:
+            #    pass # TODO
 
     @staticmethod
     def _prepare_alert_json(alert_id,decision:dict):
+        def _get_sensors_pair() -> list[SensorValue]:
+            res = []
+            for dct in decision["result"]["sensors"]:
+                for k, v in dct.items():
+                    print("KV:", k,v)
+                    res.append(SensorValue(sensor_id=k,value=v))
+            return res
         new_alert_json = NewAlertJSON(
             timestamp=time.time_ns() // 1000,
             alert_id=alert_id,
-            sensors=[SensorValue(sensor_id="",value=217)],
-            analysis_message=decision["analysis_message"],
-            analysis_reason=decision["analysis_reason"]
+            sensors=_get_sensors_pair(),
+            # TODO MOZNA DODAĆ CZAS WYSTĄPIENIA JAKO W JS CZAS PRÓBKI (CURRENTVAL - X) W SENSIE POCZĄTEK CIĄGU
+            analysis_message=decision["result"]["analysis_message"],
+            analysis_reason=decision["result"]["analysis_reason"]
         )
-
-        return orjson.dumps(new_alert_json.model_dump(mode="json"))
+        print(new_alert_json)
+        return new_alert_json.model_dump(mode="json")
 
     @staticmethod
     def _get_signals(message :dict) ->dict[str,Signal]:
@@ -173,4 +184,4 @@ if __name__ == "__main__":
 # TODO retries - when server is not up yet, we should retry to connect to it.
 # TODO - NO DATA TO CHANGE STATE == OLD STATE
 
-
+# TODO co jeśl dostane paiety z przeszłości bo byly byforowane ???
