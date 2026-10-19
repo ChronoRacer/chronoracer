@@ -529,6 +529,12 @@ def finish_value(name, value):
     return float(round(value)) if name in INTEGER_CHANNELS else value
 
 
+def random_value(name, rng, low, high):
+    """Uniform reading that ignores the drive model and the channel's declared range."""
+    value = rng.uniform(low, high)
+    return float(round(value)) if name in INTEGER_CHANNELS else value
+
+
 def publication_state(active):
     """Which channels are frozen, which are silent, and whether the uplink is down."""
     frozen = set()
@@ -544,11 +550,14 @@ def publication_state(active):
     return frozen, suppressed, uplink_down
 
 
-def build_manifest(anomalies, started_unix_ns):
+def build_manifest(anomalies):
     """Scripted windows in run order, so a run can be scored against what it should find.
 
     Clean windows are part of the expectation: an alert raised inside one is a false
     positive, which matters as much as a fault the rules engine missed.
+
+    Times are seconds from run start, so the file depends only on the config. A run's
+    absolute window is its printed start in Unix nanoseconds plus these offsets.
     """
     def window(kind, start_s, end_s, sensors):
         return {
@@ -556,8 +565,6 @@ def build_manifest(anomalies, started_unix_ns):
             "sensors": sensors,
             "start_s": start_s,
             "end_s": end_s,
-            "start_unix_ns": started_unix_ns + int(start_s * 1e9),
-            "end_unix_ns": started_unix_ns + int(end_s * 1e9),
             "expect": EXPECTATIONS.get(kind, ""),
         }
 
@@ -591,6 +598,12 @@ def produce_sensor_messages(producer, model, anomalies, started_unix_ns):
     window_ns = int(CONFIG["batch_window_ms"]) * 1_000_000
     if window_ns > MAX_DELTA_NS:
         raise ValueError("batch_window_ms must not exceed 2000, the delta cap on `data`")
+    random_range = CONFIG.get("debug", {}).get("random_range")
+    if random_range is not None:
+        random_low, random_high = (float(bound) for bound in random_range)
+        if not random_low < random_high:
+            raise ValueError("debug.random_range must be [low, high] with low < high")
+    value_rng = random.Random(int(run["seed"]))
 
     buffers = defaultdict(list)
     next_due_s = {name: 0.0 for name in CHANNELS}
@@ -640,6 +653,8 @@ def produce_sensor_messages(producer, model, anomalies, started_unix_ns):
                     continue
                 if name in frozen and name in frozen_values:
                     value = frozen_values[name]
+                elif random_range is not None:
+                    value = random_value(name, value_rng, random_low, random_high)
                 else:
                     value = finish_value(name, sample[name])
                 frozen_values[name] = value
@@ -735,6 +750,10 @@ def main():
     if forced_period_s is not None:
         print(f"- DEBUG rate override: every channel every {float(forced_period_s)}s, "
               f"declared sample_rates_hz ignored")
+    if debug.get("random_range") is not None:
+        low, high = debug["random_range"]
+        print(f"- DEBUG random values: every reading uniform in [{low}, {high}], "
+              f"drive model and value anomalies ignored")
     if debug.get("only_sensors"):
         print(f"- DEBUG sensor filter: {', '.join(sorted(CHANNELS))}")
     print(f"- Total Time: {CONFIG['run']['duration_s']}s (speed factor {CONFIG['run']['speed_factor']})")
@@ -748,14 +767,18 @@ def main():
     start_time = time.monotonic()
     started_unix_ns = time.time_ns()
 
-    manifest = build_manifest(anomalies, started_unix_ns)
+    manifest = build_manifest(anomalies)
     manifest_path = CONFIG_PATH.parent / CONFIG["run"]["manifest_path"]
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print("Scripted timeline:")
     for entry in manifest:
         print(f"- {entry['start_s']:>6.1f}s to {entry['end_s']:>6.1f}s  "
               f"{entry['kind']:<26} {entry['expect']}")
-    print(f"Expected timeline written to {manifest_path.name}")
+    if manifest_path.exists() and json.loads(manifest_path.read_text(encoding="utf-8")) == manifest:
+        print(f"Expected timeline unchanged in {manifest_path.name}")
+    else:
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        print(f"Expected timeline written to {manifest_path.name}")
+    print(f"Run start: {started_unix_ns} Unix ns (add start_s/end_s for absolute windows)")
 
     sensor_thread = threading.Thread(
         target=produce_sensor_messages, args=(producer, model, anomalies, started_unix_ns)
