@@ -66,8 +66,8 @@ def publish_sensor_agg(key,row,time,is_addition):
         pub_socket.send_multipart([TOPIC_SENSOR_AGG,payload])
 
 
-SLOW_CELL_NS =500_000_001
-FAST_CELL_NS =1_000_000_001
+FAST_CELL_NS =500_000_001
+SLOW_CELL_NS =1_000_000_001
 def get_sensor_batch(table,slow:bool):
     duration = SLOW_CELL_NS if slow else FAST_CELL_NS
     return (
@@ -100,8 +100,9 @@ def get_sensor_batch(table,slow:bool):
     )
 
 def main():
-    config = Config(CORE_TELEMETRY_URL="127.0.0.1:9470",CLIENT_ID="analysis_id",TELEMETRY_URL="127.0.0.1:8080")
-    #config = load_config()
+    config = load_config()
+    logger.info(config.CORE_TELEMETRY_URL.removeprefix("http://"))
+
     if config is None:
         logger.error("Config is NONE")
         return
