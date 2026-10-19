@@ -48,7 +48,8 @@
   },
   "debug": {
     "force_period_s": null,
-    "only_sensors": []
+    "only_sensors": [],
+    "random_range": [0.0, 200.0]
   },
   "sample_rates_hz": {
     "wheel_fl": 50.0,
