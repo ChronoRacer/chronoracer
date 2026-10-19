@@ -56,7 +56,6 @@ class RulesEngine:
         self.sensors : dict[str,Sensor] = self.fetch_sensor()
         self.time_cache : dict[str,int] = {} # (rule_id) ---> time in ns
         # maybe cache made by tuple alert_id, state
-
     def fetch_sensor(self):
         sensors = {}
         blob = self.bucket.blob("analysis/sensors.json")

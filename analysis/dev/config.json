@@ -47,7 +47,7 @@
     "start_heading_deg": 45.0
   },
   "debug": {
-    "force_period_s": null,
+    "force_period_s": 0.02,
     "only_sensors": [],
     "random_range": [0.0, 200.0]
   },

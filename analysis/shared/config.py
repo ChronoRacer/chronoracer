@@ -1,4 +1,5 @@
 import os
+import uuid
 
 from dotenv import load_dotenv, find_dotenv
 from loguru import logger
@@ -31,6 +32,6 @@ def load_config() -> Config | None:
 
     return Config(
         CORE_TELEMETRY_URL=os.environ["CORE_TELEMETRY_URL"],
-        CLIENT_ID="",
+        CLIENT_ID="analysis_" + uuid.uuid7().hex,
         TELEMETRY_URL=os.environ["TELEMETRY_URL"]
     )
