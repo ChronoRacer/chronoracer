@@ -1,5 +1,6 @@
 import os
 
+from dotenv import load_dotenv, find_dotenv
 from loguru import logger
 from pydantic import  BaseModel
 
@@ -20,6 +21,7 @@ class Config(BaseModel):
     CLIENT_ID : str
 
 def load_config() -> Config | None:
+    load_dotenv(find_dotenv())
     for required in REQUIRED_ENV:
         if required not in os.environ:
             logger.error("Missing env: {}", required)
