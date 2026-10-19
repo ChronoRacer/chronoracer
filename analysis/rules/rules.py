@@ -54,7 +54,8 @@ class RulesEngine:
                 )
                 self.rules[str(blob.name).split("/")[-1]] = rule
         self.sensors : dict[str,Sensor] = self.fetch_sensor()
-        self.time_cache : dict[str,int] = {} # rule_id ---> time in ns
+        self.time_cache : dict[str,int] = {} # (rule_id) ---> time in ns
+        # maybe cache made by tuple alert_id, state
 
     def fetch_sensor(self):
         sensors = {}
@@ -95,7 +96,6 @@ class RulesEngine:
     def send_decision(self,alert_id:str,decision:dict):
         if decision["result"]["state"] not in ("YELLOW","RED","BLACK"):
             return
-
         send_decision = False
         time_now = time.time_ns()
         if alert_id in self.time_cache:
