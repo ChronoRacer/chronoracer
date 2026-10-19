@@ -35,6 +35,7 @@ class GoRulesSchema(BaseModel):
     signals : dict[str,Signal] # sensor_id - Signal
 
 TELEMETRY_RULES_ENDPOINT = "/api/rule"
+TIME_CACHE_NS = 3 * 1_000_000_000
 class RulesEngine:
     def __init__(self,config):
         self.config = config
@@ -53,6 +54,7 @@ class RulesEngine:
                 )
                 self.rules[str(blob.name).split("/")[-1]] = rule
         self.sensors : dict[str,Sensor] = self.fetch_sensor()
+        self.time_cache : dict[str,int] = {} # rule_id ---> time in ns
 
     def fetch_sensor(self):
         sensors = {}
@@ -91,18 +93,31 @@ class RulesEngine:
                 self.send_decision(rule_name,decision)
 
     def send_decision(self,alert_id:str,decision:dict):
-        # TODO tu trzeba ją filtrować ze tylko Y/R/B oraz tutaj sprawdzamy stan cyz nie spamujemy w czasię tą samą regule
         if decision["result"]["state"] not in ("YELLOW","RED","BLACK"):
             return
-        with requests.Session() as s:
-            s.headers.update({"Authorization": "Bearer TOKEN"})
-            payload = self._prepare_alert_json(alert_id,decision)
-            print(payload)
-            #req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RULES_ENDPOINT,json=payload,timeout=2)
-            #try:
-            #    req.raise_for_status()
-            #except Exception as ex:
-            #    pass # TODO
+
+        send_decision = False
+        time_now = time.time_ns()
+        if alert_id in self.time_cache:
+            if (time_now - self.time_cache[alert_id]) < TIME_CACHE_NS:
+                return
+            else:
+                self.time_cache[alert_id] = time_now
+                send_decision = True
+        else:
+            send_decision = True
+            self.time_cache[alert_id] = time_now
+
+        if send_decision:
+            with requests.Session() as s:
+                s.headers.update({"Authorization": "Bearer TOKEN"})
+                payload = self._prepare_alert_json(alert_id,decision)
+                print(payload)
+                #req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RULES_ENDPOINT,json=payload,timeout=2)
+                #try:
+                #    req.raise_for_status()
+                #except Exception as ex:
+                #    pass # TODO
 
     @staticmethod
     def _prepare_alert_json(alert_id,decision:dict):
