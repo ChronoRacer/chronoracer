@@ -48,7 +48,6 @@ resource "google_cloud_run_v2_service" "telemetry" {
         timeout_seconds   = 1
       }
 
-      # TODO: [IMPORTANT!] This should be bumped after testing
       resources {
         limits = {
           cpu    = "1"

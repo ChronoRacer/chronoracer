@@ -32,6 +32,6 @@ def load_config() -> Config | None:
 
     return Config(
         CORE_TELEMETRY_URL=os.environ["CORE_TELEMETRY_URL"],
-        CLIENT_ID="analysis_" + uuid.uuid7().hex,
+        CLIENT_ID="analysis_",
         TELEMETRY_URL=os.environ["TELEMETRY_URL"]
     )

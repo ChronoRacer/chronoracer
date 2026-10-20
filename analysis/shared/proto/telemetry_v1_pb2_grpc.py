@@ -25,7 +25,7 @@ if _version_not_supported:
     )
 
 
-class TelemetryStub:
+class TelemetryServiceStub:
     """One server stream. Behavioral rules live in docs/component-core.md.
     """
 
@@ -36,13 +36,13 @@ class TelemetryStub:
             channel: A grpc.Channel.
         """
         self.Watch = channel.unary_stream(
-                '/chronoracer.telemetry.v1.Telemetry/Watch',
+                '/chronoracer.telemetry.v1.TelemetryService/Watch',
                 request_serializer=telemetry__v1__pb2.WatchRequest.SerializeToString,
-                response_deserializer=telemetry__v1__pb2.StreamEvent.FromString,
+                response_deserializer=telemetry__v1__pb2.WatchResponse.FromString,
                 _registered_method=True)
 
 
-class TelemetryServicer:
+class TelemetryServiceServicer:
     """One server stream. Behavioral rules live in docs/component-core.md.
     """
 
@@ -53,22 +53,22 @@ class TelemetryServicer:
         raise NotImplementedError('Method not implemented!')
 
 
-def add_TelemetryServicer_to_server(servicer, server):
+def add_TelemetryServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Watch': grpc.unary_stream_rpc_method_handler(
                     servicer.Watch,
                     request_deserializer=telemetry__v1__pb2.WatchRequest.FromString,
-                    response_serializer=telemetry__v1__pb2.StreamEvent.SerializeToString,
+                    response_serializer=telemetry__v1__pb2.WatchResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'chronoracer.telemetry.v1.Telemetry', rpc_method_handlers)
+            'chronoracer.telemetry.v1.TelemetryService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('chronoracer.telemetry.v1.Telemetry', rpc_method_handlers)
+    server.add_registered_method_handlers('chronoracer.telemetry.v1.TelemetryService', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
-class Telemetry:
+class TelemetryService:
     """One server stream. Behavioral rules live in docs/component-core.md.
     """
 
@@ -86,9 +86,9 @@ class Telemetry:
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/chronoracer.telemetry.v1.Telemetry/Watch',
+            '/chronoracer.telemetry.v1.TelemetryService/Watch',
             telemetry__v1__pb2.WatchRequest.SerializeToString,
-            telemetry__v1__pb2.StreamEvent.FromString,
+            telemetry__v1__pb2.WatchResponse.FromString,
             options,
             channel_credentials,
             insecure,

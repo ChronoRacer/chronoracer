@@ -19,7 +19,7 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
         while self.max_retries >= 0:
             address_without_prefix = self.config.CORE_TELEMETRY_URL.removeprefix("http://")
             channel = grpc.insecure_channel(address_without_prefix)
-            stub = telemetry_v1_pb2_grpc.TelemetryStub(channel)
+            stub = telemetry_v1_pb2_grpc.TelemetryServiceStub(channel)
             try:
                 req = telemetry_v1_pb2.WatchRequest(
                     client_id=self.config.CLIENT_ID,

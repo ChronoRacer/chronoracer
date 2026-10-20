@@ -112,11 +112,11 @@ class RulesEngine:
                 s.headers.update({"Authorization": "Bearer TOKEN"})
                 payload = self._prepare_alert_json(alert_id,decision)
                 print(payload)
-                #req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RULES_ENDPOINT,json=payload,timeout=2)
-                #try:
-                #    req.raise_for_status()
-                #except Exception as ex:
-                #    pass # TODO
+                req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RULES_ENDPOINT,json=payload,timeout=2)
+                try:
+                    req.raise_for_status()
+                except Exception as ex:
+                    pass # TODO
 
     @staticmethod
     def _prepare_alert_json(alert_id,decision:dict):

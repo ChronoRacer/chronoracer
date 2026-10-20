@@ -280,6 +280,18 @@ resource "google_storage_bucket_iam_member" "core_artifacts_list" {
   member = "serviceAccount:${google_service_account.core.email}"
 }
 
+resource "google_storage_bucket_iam_member" "analysis_artifacts_read" {
+  bucket = google_storage_bucket.artifacts.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.analysis.email}"
+}
+
+resource "google_storage_bucket_iam_member" "analysis_artifacts_list" {
+  bucket = google_storage_bucket.artifacts.name
+  role   = "roles/storage.legacyBucketReader"
+  member = "serviceAccount:${google_service_account.analysis.email}"
+}
+
 resource "google_storage_bucket_iam_member" "core_export_write" {
   bucket = google_storage_bucket.race.name
   role   = "roles/storage.objectAdmin"

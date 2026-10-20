@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12telemetry_v1.proto\x12\x18\x63hronoracer.telemetry.v1\"\x9c\x01\n\x0cWatchRequest\x12\x11\n\tclient_id\x18\x01 \x01(\t\x12\x33\n\x03\x61ll\x18\x02 \x01(\x0b\x32$.chronoracer.telemetry.v1.AllSensorsH\x00\x12\x37\n\x07sensors\x18\x03 \x01(\x0b\x32$.chronoracer.telemetry.v1.SensorListH\x00\x42\x0b\n\tselection\"\x0c\n\nAllSensors\" \n\nSensorList\x12\x12\n\nsensor_ids\x18\x01 \x03(\t\"\xb5\x01\n\x0bStreamEvent\x12\x30\n\x05hello\x18\x01 \x01(\x0b\x32\x1f.chronoracer.telemetry.v1.HelloH\x00\x12;\n\x0bpoint_batch\x18\x02 \x01(\x0b\x32$.chronoracer.telemetry.v1.PointBatchH\x00\x12,\n\x03gap\x18\x03 \x01(\x0b\x32\x1d.chronoracer.telemetry.v1.GapH\x00\x42\t\n\x07payload\"{\n\x05Hello\x12\x18\n\x10protocol_version\x18\x01 \x01(\r\x12\x0f\n\x07race_id\x18\x02 \x01(\t\x12\x11\n\tstream_id\x18\x03 \x01(\t\x12\x15\n\rnext_sequence\x18\x04 \x01(\x04\x12\x1d\n\x15selected_sensor_count\x18\x05 \x01(\r\"U\n\nPointBatch\x12\x16\n\x0e\x66irst_sequence\x18\x01 \x01(\x04\x12/\n\x06points\x18\x02 \x03(\x0b\x32\x1f.chronoracer.telemetry.v1.Point\"U\n\x05Point\x12\x11\n\tsensor_id\x18\x01 \x01(\t\x12\x17\n\x0ftimestamp_nanos\x18\x02 \x01(\x04\x12\r\n\x05value\x18\x03 \x01(\x01\x12\x11\n\tdriver_id\x18\x04 \x01(\t\":\n\x03Gap\x12\x16\n\x0e\x66irst_sequence\x18\x01 \x01(\x04\x12\x1b\n\x13\x64ropped_point_count\x18\x02 \x01(\x04\x32\x65\n\tTelemetry\x12X\n\x05Watch\x12&.chronoracer.telemetry.v1.WatchRequest\x1a%.chronoracer.telemetry.v1.StreamEvent0\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12telemetry_v1.proto\x12\x18\x63hronoracer.telemetry.v1\"\x9c\x01\n\x0cWatchRequest\x12\x11\n\tclient_id\x18\x01 \x01(\t\x12\x33\n\x03\x61ll\x18\x02 \x01(\x0b\x32$.chronoracer.telemetry.v1.AllSensorsH\x00\x12\x37\n\x07sensors\x18\x03 \x01(\x0b\x32$.chronoracer.telemetry.v1.SensorListH\x00\x42\x0b\n\tselection\"\x0c\n\nAllSensors\" \n\nSensorList\x12\x12\n\nsensor_ids\x18\x01 \x03(\t\"\xb7\x01\n\rWatchResponse\x12\x30\n\x05hello\x18\x01 \x01(\x0b\x32\x1f.chronoracer.telemetry.v1.HelloH\x00\x12;\n\x0bpoint_batch\x18\x02 \x01(\x0b\x32$.chronoracer.telemetry.v1.PointBatchH\x00\x12,\n\x03gap\x18\x03 \x01(\x0b\x32\x1d.chronoracer.telemetry.v1.GapH\x00\x42\t\n\x07payload\"{\n\x05Hello\x12\x18\n\x10protocol_version\x18\x01 \x01(\r\x12\x0f\n\x07race_id\x18\x02 \x01(\t\x12\x11\n\tstream_id\x18\x03 \x01(\t\x12\x15\n\rnext_sequence\x18\x04 \x01(\x04\x12\x1d\n\x15selected_sensor_count\x18\x05 \x01(\r\"U\n\nPointBatch\x12\x16\n\x0e\x66irst_sequence\x18\x01 \x01(\x04\x12/\n\x06points\x18\x02 \x03(\x0b\x32\x1f.chronoracer.telemetry.v1.Point\"U\n\x05Point\x12\x11\n\tsensor_id\x18\x01 \x01(\t\x12\x17\n\x0ftimestamp_nanos\x18\x02 \x01(\x04\x12\r\n\x05value\x18\x03 \x01(\x01\x12\x11\n\tdriver_id\x18\x04 \x01(\t\":\n\x03Gap\x12\x16\n\x0e\x66irst_sequence\x18\x01 \x01(\x04\x12\x1b\n\x13\x64ropped_point_count\x18\x02 \x01(\x04\x32n\n\x10TelemetryService\x12Z\n\x05Watch\x12&.chronoracer.telemetry.v1.WatchRequest\x1a\'.chronoracer.telemetry.v1.WatchResponse0\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -37,16 +37,16 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_ALLSENSORS']._serialized_end=219
   _globals['_SENSORLIST']._serialized_start=221
   _globals['_SENSORLIST']._serialized_end=253
-  _globals['_STREAMEVENT']._serialized_start=256
-  _globals['_STREAMEVENT']._serialized_end=437
-  _globals['_HELLO']._serialized_start=439
-  _globals['_HELLO']._serialized_end=562
-  _globals['_POINTBATCH']._serialized_start=564
-  _globals['_POINTBATCH']._serialized_end=649
-  _globals['_POINT']._serialized_start=651
-  _globals['_POINT']._serialized_end=736
-  _globals['_GAP']._serialized_start=738
-  _globals['_GAP']._serialized_end=796
-  _globals['_TELEMETRY']._serialized_start=798
-  _globals['_TELEMETRY']._serialized_end=899
+  _globals['_WATCHRESPONSE']._serialized_start=256
+  _globals['_WATCHRESPONSE']._serialized_end=439
+  _globals['_HELLO']._serialized_start=441
+  _globals['_HELLO']._serialized_end=564
+  _globals['_POINTBATCH']._serialized_start=566
+  _globals['_POINTBATCH']._serialized_end=651
+  _globals['_POINT']._serialized_start=653
+  _globals['_POINT']._serialized_end=738
+  _globals['_GAP']._serialized_start=740
+  _globals['_GAP']._serialized_end=798
+  _globals['_TELEMETRYSERVICE']._serialized_start=800
+  _globals['_TELEMETRYSERVICE']._serialized_end=910
 # @@protoc_insertion_point(module_scope)

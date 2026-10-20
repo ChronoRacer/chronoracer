@@ -10,7 +10,7 @@ from loguru import logger
 from onnxruntime import InferenceSession
 from pydantic import BaseModel
 from sklearn.datasets import load_iris
-from shared.config import load_config
+from analysis.shared.config import load_config
 
 
 class Sensor(BaseModel):
