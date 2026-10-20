@@ -53,7 +53,9 @@ class RulesEngine:
                     sensors=sensors
                 )
                 self.rules[str(blob.name).split("/")[-1]] = rule
+        logger.info("Loaded {} rules: {}", len(self.rules), list(self.rules.keys()))
         self.sensors : dict[str,Sensor] = self.fetch_sensor()
+        logger.info("Loaded {} sensors", len(self.sensors))
         self.time_cache : dict[str,int] = {} # (rule_id) ---> time in ns
         # maybe cache made by tuple alert_id, state
     def fetch_sensor(self):
@@ -111,7 +113,7 @@ class RulesEngine:
             with requests.Session() as s:
                 s.headers.update({"Authorization": "Bearer TOKEN"})
                 payload = self._prepare_alert_json(alert_id,decision)
-                print(payload)
+                logger.info("Alert {} state {}: {}", alert_id, decision["result"]["state"], payload)
                 #req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RULES_ENDPOINT,json=payload,timeout=2)
                 #try:
                 #    req.raise_for_status()
@@ -148,6 +150,7 @@ class RulesEngine:
         return signals
 
 def main():
+    logger.info("Rules engine starting")
     config = load_config()
     if config is None:
         logger.error("Missing config, exiting")
@@ -159,6 +162,8 @@ def main():
     sub_socket.setsockopt(zmq.SUBSCRIBE, b"sensor_agg")
 
     sub_socket.connect("tcp://127.0.0.1:6767")
+    logger.info("Rules engine subscribed to sensor_agg on tcp://127.0.0.1:6767")
+    logger.info("Rules engine running")
 
     while True:
         topic, raw_payload = sub_socket.recv_multipart()

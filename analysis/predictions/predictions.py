@@ -28,6 +28,7 @@ class PredictionsEngine:
         self.bucket = self.client.bucket("chronoracer-artifacts")
         self.local_dir : Path =  Path(tempfile.mkdtemp(prefix="onnx_"))
         self.sensors  : dict[str,Sensor] = self.fetch_sensor()
+        logger.info("Loaded {} sensors", len(self.sensors))
         self.config = config
 
     def fetch_sensor(self):
@@ -47,6 +48,7 @@ class PredictionsEngine:
         for blob in self.client.list_blobs(self.bucket,prefix=prefix):
             if blob.name.endswith(".onnx"):
                 blob.download_to_filename(str(self.local_dir / Path(blob.name).name))
+                logger.info("Downloaded model {}", blob.name)
                 return ort.InferenceSession(
                     str(self.local_dir / model_file ),
                     providers=["CPUExecutionProvider"]
@@ -62,6 +64,7 @@ class PredictionsEngine:
 
 
 def main():
+    logger.info("Predictions engine starting")
     config = load_config()
     if config is None:
         logger.error("Missing config, exiting")
@@ -72,8 +75,11 @@ def main():
     sub_socket = context.socket(zmq.SUB)
     sub_socket.setsockopt(zmq.SUBSCRIBE, b"sensor_agg")
     sub_socket.connect("tcp://127.0.0.1:6767")
+    logger.info("Predictions engine subscribed to sensor_agg on tcp://127.0.0.1:6767")
+    logger.info("Predictions engine running")
 
     pred_engine.on_stop()
+    logger.info("Predictions engine stopped")
 
 
 if __name__ == "__main__":

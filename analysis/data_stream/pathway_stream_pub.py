@@ -55,6 +55,7 @@ context = zmq.Context()
 pub_socket = context.socket(zmq.PUB)
 pub_socket.setsockopt(zmq.SNDHWM,10_000)
 pub_socket.bind("tcp://127.0.0.1:6767")
+logger.info("ZMQ PUB bound on tcp://127.0.0.1:6767")
 
 # MOVE IT TO CONSTANTS
 TOPIC_SENSOR_AGG = b"sensor_agg"
@@ -100,12 +101,12 @@ def get_sensor_batch(table,slow:bool):
     )
 
 def main():
+    logger.info("Data stream starting")
     config = load_config()
-    logger.info(config.CORE_TELEMETRY_URL.removeprefix("http://"))
-
     if config is None:
         logger.error("Config is NONE")
         return
+    logger.info("Connecting to Core gRPC at {}", config.CORE_TELEMETRY_URL)
 
     table = pw.io.python.read(
         GRPCSensorStream(config),schema=GRPCSchema,autocommit_duration_ms=100
@@ -122,6 +123,7 @@ def main():
 
     slow_sensor = get_sensor_batch(table,slow=True)
     pw.io.python.write(slow_sensor,BatchedSensorObserver())
+    logger.info("Data stream running")
     pw.run()
 
 if __name__ == '__main__':
