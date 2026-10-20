@@ -47,7 +47,11 @@ impl OffsetLedger {
     #[must_use]
     pub fn new(name: &'static str, tracker: SharedTracker, sink: Box<dyn OffsetSink>) -> Self {
         Self {
-            inner: Arc::new(LedgerInner { name, tracker, sink }),
+            inner: Arc::new(LedgerInner {
+                name,
+                tracker,
+                sink,
+            }),
         }
     }
 
@@ -107,17 +111,29 @@ impl OffsetLedger {
         let lag = self.lag();
         let stalled = stalled_partitions(previous, &lag);
         if !stalled.is_empty() {
-            warn!(consumer = self.inner.name, ?stalled, "Commit position has not advanced since the last report");
+            warn!(
+                consumer = self.inner.name,
+                ?stalled,
+                "Commit position has not advanced since the last report"
+            );
         }
         if lag.iter().all(|entry| entry.pending == 0) {
             debug!(consumer = self.inner.name, "No unsettled offsets");
         } else {
             let partitions = lag
                 .iter()
-                .map(|entry| format!("p{}: pending={} position={}", entry.partition, entry.pending, entry.position))
+                .map(|entry| {
+                    format!(
+                        "p{}: pending={} position={}",
+                        entry.partition, entry.pending, entry.position
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
-            info!(consumer = self.inner.name, "Unsettled offsets ({partitions})");
+            info!(
+                consumer = self.inner.name,
+                "Unsettled offsets ({partitions})"
+            );
         }
         *previous = lag;
     }
@@ -147,16 +163,26 @@ impl OffsetLedger {
                 false
             }
             Ok(Err(_)) => {
-                warn!(consumer = self.inner.name, "Final offset commit thread failed");
+                warn!(
+                    consumer = self.inner.name,
+                    "Final offset commit thread failed"
+                );
                 false
             }
             Err(_) => {
-                warn!(consumer = self.inner.name, ?timeout, "Final offset commit timed out; uncommitted messages are replayed after a restart");
+                warn!(
+                    consumer = self.inner.name,
+                    ?timeout,
+                    "Final offset commit timed out; uncommitted messages are replayed after a restart"
+                );
                 false
             }
         };
         if committed {
-            info!(consumer = self.inner.name, unsettled, "Final offset commit done");
+            info!(
+                consumer = self.inner.name,
+                unsettled, "Final offset commit done"
+            );
         }
         committed
     }
@@ -167,9 +193,9 @@ fn stalled_partitions(previous: &[PartitionLag], current: &[PartitionLag]) -> Ve
         .iter()
         .filter(|entry| {
             entry.pending > 0
-                && previous
-                    .iter()
-                    .any(|last| last.partition == entry.partition && last.position == entry.position)
+                && previous.iter().any(|last| {
+                    last.partition == entry.partition && last.position == entry.position
+                })
         })
         .map(|entry| entry.partition)
         .collect()
@@ -211,7 +237,11 @@ pub mod testing {
 
         fn commit(&self) -> Result<(), String> {
             self.commits.fetch_add(1, Ordering::SeqCst);
-            if self.fail_commit { Err("broker unavailable".into()) } else { Ok(()) }
+            if self.fail_commit {
+                Err("broker unavailable".into())
+            } else {
+                Ok(())
+            }
         }
     }
 
@@ -266,17 +296,37 @@ mod tests {
             ledger.register(1, offset);
         }
         // Odd offsets went the other path and are already settled: each even offset is its own range.
-        ledger.settle(&set(&[(0, 1), (0, 3), (0, 5), (0, 7), (0, 9), (1, 1), (1, 3)]));
+        ledger.settle(&set(&[
+            (0, 1),
+            (0, 3),
+            (0, 5),
+            (0, 7),
+            (0, 9),
+            (1, 1),
+            (1, 3),
+        ]));
         assert!(sink.stored().is_empty());
 
-        ledger.settle(&set(&[(0, 0), (0, 2), (0, 4), (1, 0), (1, 2), (0, 6), (0, 8)]));
+        ledger.settle(&set(&[
+            (0, 0),
+            (0, 2),
+            (0, 4),
+            (1, 0),
+            (1, 2),
+            (0, 6),
+            (0, 8),
+        ]));
 
         assert_eq!(sink.stored(), [(0, 6), (1, 4), (0, 10)]);
     }
 
     #[test]
     fn a_partition_is_stalled_when_its_position_holds_while_messages_are_pending() {
-        let lag = |partition, pending, position| PartitionLag { partition, pending, position };
+        let lag = |partition, pending, position| PartitionLag {
+            partition,
+            pending,
+            position,
+        };
         let previous = [lag(0, 3, 10), lag(1, 3, 20), lag(2, 0, 30)];
 
         let current = [lag(0, 9, 10), lag(1, 3, 21), lag(2, 0, 30), lag(3, 1, 0)];
@@ -332,7 +382,10 @@ mod tests {
         assert!(ledger.commit_final(Duration::from_secs(1)).await);
         assert_eq!(sink.commits.load(Ordering::SeqCst), 1);
 
-        let failing = Arc::new(RecordingSink { fail_commit: true, ..RecordingSink::default() });
+        let failing = Arc::new(RecordingSink {
+            fail_commit: true,
+            ..RecordingSink::default()
+        });
         let ledger = OffsetLedger::new("test", SharedTracker::default(), Box::new(failing));
         assert!(!ledger.commit_final(Duration::from_secs(1)).await);
     }

@@ -31,7 +31,7 @@
                         "filters": [
                           "metric.type",
                           "=",
-                          "compute.googleapis.com/instance/uptime",
+                          "compute.googleapis.com/instance/uptime_total",
                           "AND",
                           "metadata.system_labels.name",
                           "=",
@@ -40,7 +40,7 @@
                         "groupBys": [
                           "resource.label.instance_id"
                         ],
-                        "perSeriesAligner": "ALIGN_DELTA",
+                        "perSeriesAligner": "ALIGN_MAX",
                         "preprocessor": "none",
                         "projectName": "$project",
                         "view": "FULL"
@@ -76,11 +76,11 @@
                   "steps": [
                     {
                       "color": "red",
-                      "value": 999999
+                      "value": 0
                     },
                     {
                       "color": "green",
-                      "value": 0
+                      "value": 60
                     }
                   ]
                 },
@@ -132,7 +132,7 @@
                         "filters": [
                           "metric.type",
                           "=",
-                          "compute.googleapis.com/instance/uptime",
+                          "compute.googleapis.com/instance/uptime_total",
                           "AND",
                           "metadata.system_labels.name",
                           "=",
@@ -141,7 +141,7 @@
                         "groupBys": [
                           "resource.label.instance_id"
                         ],
-                        "perSeriesAligner": "ALIGN_DELTA",
+                        "perSeriesAligner": "ALIGN_MAX",
                         "preprocessor": "none",
                         "projectName": "$project",
                         "view": "FULL"
@@ -177,11 +177,11 @@
                   "steps": [
                     {
                       "color": "red",
-                      "value": 9999999
+                      "value": 0
                     },
                     {
                       "color": "green",
-                      "value": 0
+                      "value": 60
                     }
                   ]
                 },
@@ -430,7 +430,7 @@
                         "filters": [
                           "metric.type",
                           "=",
-                          "agent.googleapis.com/cpu/utilization",
+                          "compute.googleapis.com/instance/cpu/utilization",
                           "AND",
                           "metadata.system_labels.name",
                           "=",

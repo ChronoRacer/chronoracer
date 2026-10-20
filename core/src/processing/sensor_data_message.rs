@@ -93,8 +93,8 @@ impl UnwoundSensorDataMessage {
             }
 
             for _ in 0..count {
-                let delta = u32::try_from(reader.read_int()?)
-                    .map_err(|_| DecodeError::NegativeDelta)?;
+                let delta =
+                    u32::try_from(reader.read_int()?).map_err(|_| DecodeError::NegativeDelta)?;
                 let value = reader.read_double()?;
                 readings.push(AbsoluteSensorReading {
                     value,
@@ -118,10 +118,10 @@ impl UnwoundSensorDataMessage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use apache_avro::Schema;
     use apache_avro::reader::datum::GenericDatumReader;
     use apache_avro::types::Value;
     use apache_avro::writer::datum::GenericDatumWriter;
-    use apache_avro::Schema;
     use serde::Deserialize;
     use std::io::Cursor;
 
@@ -148,8 +148,12 @@ mod tests {
     }
 
     fn decode(bytes: &[u8]) -> Result<Plain, DecodeError> {
-        UnwoundSensorDataMessage::decode(Some(bytes), SourceOffset::default(), &mut SensorIdInterner::default())
-            .map(|message| plain(&message))
+        UnwoundSensorDataMessage::decode(
+            Some(bytes),
+            SourceOffset::default(),
+            &mut SensorIdInterner::default(),
+        )
+        .map(|message| plain(&message))
     }
 
     /// The previous implementation: generic `apache-avro` value tree, then serde into the
@@ -189,7 +193,10 @@ mod tests {
         readings: &[(i32, f64)],
     ) -> Vec<u8> {
         let record = Value::Record(vec![
-            ("sensor_id".to_string(), Value::String(sensor_id.to_string())),
+            (
+                "sensor_id".to_string(),
+                Value::String(sensor_id.to_string()),
+            ),
             ("timestamp".to_string(), Value::TimestampNanos(timestamp)),
             (
                 "readings".to_string(),
@@ -344,9 +351,12 @@ mod tests {
             1_000_000_000,
             &[(12, 21.5), (345, -4.25)],
         );
-        let message =
-            UnwoundSensorDataMessage::decode(Some(&bytes), SourceOffset::default(), &mut SensorIdInterner::default())
-                .expect("valid sensor data should decode");
+        let message = UnwoundSensorDataMessage::decode(
+            Some(&bytes),
+            SourceOffset::default(),
+            &mut SensorIdInterner::default(),
+        )
+        .expect("valid sensor data should decode");
 
         assert_eq!(message.sensor_id.as_ref(), "sensor-42");
         assert_eq!(
@@ -368,9 +378,12 @@ mod tests {
     #[test]
     fn decodes_an_empty_message_and_preserves_sensor_id() {
         let bytes = apache_avro_encode(&sensor_data_schema(), "empty-sensor", i64::MAX, &[]);
-        let message =
-            UnwoundSensorDataMessage::decode(Some(&bytes), SourceOffset::default(), &mut SensorIdInterner::default())
-                .unwrap();
+        let message = UnwoundSensorDataMessage::decode(
+            Some(&bytes),
+            SourceOffset::default(),
+            &mut SensorIdInterner::default(),
+        )
+        .unwrap();
 
         assert_eq!(message.sensor_id.as_ref(), "empty-sensor");
         assert!(message.readings.is_empty());
@@ -384,9 +397,12 @@ mod tests {
             i64::MAX,
             &[(i32::MAX, f64::MIN)],
         );
-        let message =
-            UnwoundSensorDataMessage::decode(Some(&bytes), SourceOffset::default(), &mut SensorIdInterner::default())
-                .unwrap();
+        let message = UnwoundSensorDataMessage::decode(
+            Some(&bytes),
+            SourceOffset::default(),
+            &mut SensorIdInterner::default(),
+        )
+        .unwrap();
 
         assert_eq!(message.readings[0].value, f64::MIN);
         assert_eq!(
@@ -397,8 +413,12 @@ mod tests {
 
     #[test]
     fn rejects_missing_payload() {
-        let error = UnwoundSensorDataMessage::decode(None, SourceOffset::default(), &mut SensorIdInterner::default())
-            .expect_err("missing payload should fail");
+        let error = UnwoundSensorDataMessage::decode(
+            None,
+            SourceOffset::default(),
+            &mut SensorIdInterner::default(),
+        )
+        .expect_err("missing payload should fail");
 
         assert_eq!(
             error.to_string(),
@@ -435,7 +455,11 @@ mod tests {
                 vec![0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f],
                 DecodeError::VarintOverflow,
             ),
-            ("negative string length", vec![0x01], DecodeError::NegativeLength),
+            (
+                "negative string length",
+                vec![0x01],
+                DecodeError::NegativeLength,
+            ),
             ("huge string length", huge.to_vec(), DecodeError::Truncated),
             (
                 "string length past the end",
@@ -447,7 +471,11 @@ mod tests {
                 vec![0x04, 0xc3, 0x28, 0x00],
                 DecodeError::InvalidUtf8,
             ),
-            ("missing timestamp", vec![0x02, b's'], DecodeError::Truncated),
+            (
+                "missing timestamp",
+                vec![0x02, b's'],
+                DecodeError::Truncated,
+            ),
             (
                 "negative timestamp",
                 with_tail(header(-1), &[0x00]),
@@ -501,7 +529,10 @@ mod tests {
             ),
             (
                 "delta past i32",
-                with_tail(header(10), &[0x02, 0x80, 0x80, 0x80, 0x80, 0x10, 0, 0, 0, 0, 0, 0, 0, 0]),
+                with_tail(
+                    header(10),
+                    &[0x02, 0x80, 0x80, 0x80, 0x80, 0x10, 0, 0, 0, 0, 0, 0, 0, 0],
+                ),
                 DecodeError::IntOutOfRange,
             ),
             (
@@ -582,9 +613,12 @@ mod tests {
         };
         let bytes = hand_encode("s", 7, &[Block::Counted(&[(1, 1.5)])]);
 
-        let message =
-            UnwoundSensorDataMessage::decode(Some(&bytes), source, &mut SensorIdInterner::default())
-                .unwrap();
+        let message = UnwoundSensorDataMessage::decode(
+            Some(&bytes),
+            source,
+            &mut SensorIdInterner::default(),
+        )
+        .unwrap();
 
         assert_eq!(message.source, source);
     }
@@ -657,8 +691,12 @@ mod tests {
         let mut rng = Rng(0xdead_beef_cafe_f00d);
         for round in 0..3000 {
             let readings = rng.some_readings(6);
-            let mut bytes =
-                apache_avro_encode(&schema, rng.pick(&SENSOR_IDS[..5]), rng.timestamp(), &readings);
+            let mut bytes = apache_avro_encode(
+                &schema,
+                rng.pick(&SENSOR_IDS[..5]),
+                rng.timestamp(),
+                &readings,
+            );
             for _ in 0..=rng.below(3) {
                 let at = usize::try_from(rng.below(bytes.len() as u64)).unwrap();
                 #[allow(clippy::cast_possible_truncation)]

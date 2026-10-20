@@ -1,3 +1,4 @@
+import asyncio
 import jwt
 from fastapi import HTTPException, Request
 from jwt import PyJWKClient
@@ -49,7 +50,7 @@ async def okta_user(request: Request) -> OktaUser:
     authorization = request.headers.get("authorization", "")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() == "bearer" and token:
-        valid = okta.validate_token(token)
+        valid = await asyncio.to_thread(okta.validate_token, token)
         return _user_from_okta_dict(valid)
     raise HTTPException(status_code=401, detail="Bearer token required")
 
@@ -89,4 +90,4 @@ async def pubsub_push(request: Request, audience: str, service_account: str) -> 
     if authenticator is None:
         authenticator = OIDCAuthenticator(audience, service_account)
         request.app.state.pubsub_auth[cache_key] = authenticator
-    return authenticator.validate(token)
+    return await asyncio.to_thread(authenticator.validate, token)

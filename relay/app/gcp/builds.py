@@ -81,7 +81,7 @@ class CloudBuildTrigger:
 
     async def find(self, race_id, run_token):
         async with cloudbuild_v1.CloudBuildAsyncClient() as client:
-            builds = client.list_builds(request=cloudbuild_v1.ListBuildsRequest(
+            builds = await client.list_builds(request=cloudbuild_v1.ListBuildsRequest(
                 parent=self._parent(),
                 filter=f'substitutions._RACE_ID="{race_id}" AND substitutions._RUN_TOKEN="{run_token}"',
             ), timeout=self.API_TIMEOUT_SECONDS)
@@ -93,4 +93,4 @@ class CloudBuildTrigger:
     def _is_terminal(status):
         return status in (cloudbuild_v1.Build.Status.SUCCESS, cloudbuild_v1.Build.Status.FAILURE,
                           cloudbuild_v1.Build.Status.INTERNAL_ERROR, cloudbuild_v1.Build.Status.TIMEOUT,
-                          cloudbuild_v1.Build.Status.CANCELLED)
+                          cloudbuild_v1.Build.Status.CANCELLED, cloudbuild_v1.Build.Status.EXPIRED)

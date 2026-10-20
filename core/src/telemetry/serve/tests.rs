@@ -1,10 +1,10 @@
 use super::*;
 use crate::processing::sensor_data_message::{AbsoluteSensorReading, UnwoundSensorDataMessage};
 use crate::runtime_configuration::RetainReadTimeValue;
-use crate::telemetry::proto::watch_response::Payload;
+use crate::telemetry::proto::stream_event::Payload;
+use crate::telemetry::proto::telemetry_client::TelemetryClient;
 use crate::telemetry::proto::watch_request::Selection;
-use crate::telemetry::proto::{AllSensors, SensorList, WatchRequest, WatchResponse};
-use crate::telemetry::proto::telemetry_service_client::TelemetryServiceClient;
+use crate::telemetry::proto::{AllSensors, SensorList, WatchRequest};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tonic::transport::Endpoint;
@@ -17,12 +17,7 @@ fn preview_with_slots(max_points: usize, max_subscribers: usize) -> PreviewHub {
     let driver = Box::leak(Box::new(RetainReadTimeValue::new(CompactString::from(
         "drv",
     ))));
-    PreviewHub::new(
-        driver,
-        max_points,
-        Duration::from_secs(30),
-        max_subscribers,
-    )
+    PreviewHub::new(driver, max_points, Duration::from_secs(30), max_subscribers)
 }
 
 fn watch_all(client_id: &str) -> WatchRequest {
@@ -297,8 +292,14 @@ async fn two_clients_each_receive_their_own_selection() {
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(hello_of(&mut telemetry_stream).await.selected_sensor_count, 0);
-    assert_eq!(hello_of(&mut analysis_stream).await.selected_sensor_count, 2);
+    assert_eq!(
+        hello_of(&mut telemetry_stream).await.selected_sensor_count,
+        0
+    );
+    assert_eq!(
+        hello_of(&mut analysis_stream).await.selected_sensor_count,
+        2
+    );
 
     hub.offer(&[message("speed", 2), message("temp", 1), message("rpm", 1)]);
 
@@ -318,7 +319,9 @@ async fn watch_rejects_invalid_requests() {
     let hub = preview(1000);
     let (_cancel, url) = start(hub.clone()).await;
     let mut client = connect(&url).await;
-    let too_many: Vec<String> = (0..=MAX_SELECTED_SENSORS).map(|i| format!("s{i}")).collect();
+    let too_many: Vec<String> = (0..=MAX_SELECTED_SENSORS)
+        .map(|i| format!("s{i}"))
+        .collect();
     let too_many: Vec<&str> = too_many.iter().map(String::as_str).collect();
     let long_sensor = "x".repeat(MAX_SENSOR_ID_BYTES + 1);
     let long_client = "c".repeat(MAX_CLIENT_ID_BYTES + 1);

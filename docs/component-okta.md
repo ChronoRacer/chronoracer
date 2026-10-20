@@ -40,9 +40,9 @@ Write gating by group is future work.
 
 The `chronoracer-relay` application carries both flows; Dashboard and Telemetry do not get separate apps.
 
-| Flow               | Used by                              | Notes                                                                                                          |
-|--------------------|--------------------------------------|----------------------------------------------------------------------------------------------------------------|
-| Client credentials | Operator CLI / scripts against Relay | Shared client secret, no per-person identity. Token recipe below.                                              |
+| Flow               | Used by                               | Notes                                                                                                                            |
+|--------------------|---------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| Client credentials | Operator CLI / scripts against Relay  | Shared client secret, no per-person identity. Token recipe below.                                                                |
 | Authorization code | Dashboard and Telemetry browser login | Dashboard uses its mapped hostname; Telemetry uses its deterministic `run.app` URL ([Browser OAuth](operator-browser-oauth.md)). |
 
 Interactive login needs real users, which client credentials never required. An Auth0 database connection holds
@@ -59,12 +59,12 @@ Out of Okta:
 
 ## Who may call what
 
-| Caller                    | Token                                                       | Surface                                               |
-|---------------------------|-------------------------------------------------------------|-------------------------------------------------------|
+| Caller                    | Token                                                       | Surface                                                       |
+|---------------------------|-------------------------------------------------------------|---------------------------------------------------------------|
 | Operator                  | Auth0 access token, audience `https://api.chronoracer.com`  | Relay start / event / status / history / stop / force-destroy |
-| Operator (browser)        | Auth0 user login, authorization code                        | Dashboard and Telemetry, read-only                    |
-| Track device              | Auth0 client credentials (client id + secret on the device) | Kafka PUBLIC listener only                            |
-| Cloud Build / export-done | Google OIDC                                                 | Relay push paths; not Okta                            |
+| Operator (browser)        | Auth0 user login, authorization code                        | Dashboard and Telemetry, read-only                            |
+| Track device              | Auth0 client credentials (client id + secret on the device) | Kafka PUBLIC listener only                                    |
+| Cloud Build / export-done | Google OIDC                                                 | Relay push paths; not Okta                                    |
 
 ## Operator token (no UI)
 

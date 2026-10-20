@@ -45,7 +45,15 @@ class InMemoryRaceRepository(RaceRepository):
 
     async def save_race(self, race, fields=None):
         logger.debug("Saving race {} in memory", race.race_id)
-        self._races[race.race_id] = race.model_copy(deep=True)
+        if fields is None:
+            self._races[race.race_id] = race.model_copy(deep=True)
+            return
+        current = self._races[race.race_id]
+        payload = race.model_dump(by_alias=True)
+        updates = {Race.model_fields[field].alias or field: payload[Race.model_fields[field].alias or field]
+                   for field in fields}
+        FirestoreRaceRepository._protect_controller_state(current.model_dump(by_alias=True), payload, updates)
+        self._races[race.race_id] = Race.model_validate({**current.model_dump(by_alias=True), **updates})
 
     async def set_active(self, pointer):
         self._active = pointer.model_copy(deep=True)
@@ -55,8 +63,8 @@ class InMemoryRaceRepository(RaceRepository):
         self._active = ActivePointer()
 
 
-class FirestoreRaceRepository(RaceRepository, ):
-    """Firestore adapter for the three Relay-owned document locations."""
+class FirestoreRaceRepository(RaceRepository):
+    """Firestore adapter for Relay's active pointer and race collection."""
 
     def __init__(self, project_id: str, database: str):
         self.project_id, self.database = project_id, database
@@ -104,13 +112,15 @@ class FirestoreRaceRepository(RaceRepository, ):
             await ref.set(payload)
             return
 
-        updates = {Race.model_fields[field].alias or field: payload[Race.model_fields[field].alias or field]
-                   for field in fields}
-        updates = {key: DELETE_FIELD if value is None else value for key, value in updates.items()}
         @async_transactional
         async def save_in_transaction(tx):
             snapshot = await ref.get(transaction=tx)
             current = snapshot.to_dict() or {}
+            # Transactions can retry against a new snapshot. Start with fresh
+            # updates each time; controller protection mutates this mapping.
+            updates = {Race.model_fields[field].alias or field: payload[Race.model_fields[field].alias or field]
+                       for field in fields}
+            updates = {key: DELETE_FIELD if value is None else value for key, value in updates.items()}
             self._protect_controller_state(current, payload, updates)
             if updates:
                 tx.update(ref, updates)

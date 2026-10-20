@@ -14,6 +14,13 @@ resource "google_service_account" "controller" {
   depends_on = [google_project_service.apis]
 }
 
+resource "google_service_account" "car" {
+  project      = var.project_id
+  account_id   = local.names.car_sa
+  display_name = "Chronoracer Car SA"
+  depends_on = [google_project_service.apis]
+}
+
 resource "google_service_account" "kafka" {
   project      = var.project_id
   account_id   = local.names.kafka_sa
