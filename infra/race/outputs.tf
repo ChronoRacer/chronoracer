@@ -39,3 +39,8 @@ output "telemetry_url" {
   value       = google_cloud_run_v2_service.telemetry.uri
   description = "Generated Telemetry Cloud Run URI. Controller copies this to Firestore as telemetryUrl."
 }
+
+output "analysis_instance" {
+  value       = google_compute_instance.analysis.id
+  description = "Analysis instance identity. Not part of the controller Firestore contract."
+}

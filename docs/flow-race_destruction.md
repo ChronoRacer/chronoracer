@@ -56,7 +56,7 @@ sequenceDiagram
    publishes export-done.
 4. Relay accepts export-done only in `exporting` with mutex not held, then stamps destroy and triggers Cloud Build. Ack
    only after that stamp.
-5. Controller `destroy`. Both VMs and Telemetry Cloud Run are deleted. On success Relay moves to `destroyed` and clears
+5. Controller `destroy`. All race services are deleted. On success Relay moves to `destroyed` and clears
    the pointer. Status no longer returns usable Kafka or Telemetry addresses. Race doc remains.
 
 Firewall delete is not a session kill. Some public produce may still arrive during drain. MVP accepts that. New public

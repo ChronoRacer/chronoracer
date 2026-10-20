@@ -1,0 +1,271 @@
+{
+  "car": "Toyota Corolla 2.0 Hybrid 2023",
+  "sensors": [
+    {
+      "name": "steer_angle",
+      "unit": "°",
+      "min": -540,
+      "max": 540,
+      "description": "Kąt skrętu kierownicy; lewo = plus."
+    },
+    {
+      "name": "brake_prs",
+      "unit": "",
+      "min": 0,
+      "max": 100,
+      "description": "Ciśnienie hamulca, czujnik główny."
+    },
+    {
+      "name": "brake_prs_b",
+      "unit": "",
+      "min": 0,
+      "max": 100,
+      "description": "Ciśnienie hamulca, drugi kanał."
+    },
+    {
+      "name": "wheel_fr",
+      "unit": "km/h",
+      "min": 0,
+      "max": 220,
+      "description": "Prędkość koła przedniego prawego."
+    },
+    {
+      "name": "wheel_fl",
+      "unit": "km/h",
+      "min": 0,
+      "max": 220,
+      "description": "Prędkość koła przedniego lewego."
+    },
+    {
+      "name": "wheel_rr",
+      "unit": "km/h",
+      "min": 0,
+      "max": 220,
+      "description": "Prędkość koła tylnego prawego."
+    },
+    {
+      "name": "wheel_rl",
+      "unit": "km/h",
+      "min": 0,
+      "max": 220,
+      "description": "Prędkość koła tylnego lewego."
+    },
+    {
+      "name": "accel_long",
+      "unit": "m/s²",
+      "min": -12,
+      "max": 12,
+      "description": "Przeciążenie wzdłużne: plus przyspieszanie, minus hamowanie."
+    },
+    {
+      "name": "accel_lat",
+      "unit": "m/s²",
+      "min": -12,
+      "max": 12,
+      "description": "Przeciążenie poprzeczne w zakręcie; lewo = plus."
+    },
+    {
+      "name": "accel_pedal",
+      "unit": "%",
+      "min": 0,
+      "max": 100,
+      "description": "Wciśnięcie pedału gazu."
+    },
+    {
+      "name": "speed",
+      "unit": "km/h",
+      "min": 0,
+      "max": 220,
+      "description": "Prędkość auta ze sterownika (OBD)."
+    },
+    {
+      "name": "rpm",
+      "unit": "rpm",
+      "min": 0,
+      "max": 8000,
+      "description": "Obroty silnika spalinowego; 0 przy jeździe na prądzie."
+    },
+    {
+      "name": "steer_torque",
+      "unit": "",
+      "min": -500,
+      "max": 500,
+      "description": "Siła kierowcy na kierownicy (moment)."
+    },
+    {
+      "name": "hv_soc",
+      "unit": "%",
+      "min": 0,
+      "max": 100,
+      "description": "Naładowanie baterii hybrydowej."
+    },
+    {
+      "name": "coolant_temp",
+      "unit": "°C",
+      "min": 40,
+      "max": 120,
+      "description": "Temperatura płynu chłodzącego."
+    },
+    {
+      "name": "oil_temp",
+      "unit": "°C",
+      "min": 40,
+      "max": 140,
+      "description": "Temperatura oleju silnika."
+    },
+    {
+      "name": "intake_temp",
+      "unit": "°C",
+      "min": 0,
+      "max": 90,
+      "description": "Temperatura powietrza w dolocie."
+    },
+    {
+      "name": "throttle",
+      "unit": "%",
+      "min": 0,
+      "max": 100,
+      "description": "Otwarcie przepustnicy (ustawia sterownik, nie kierowca)."
+    },
+    {
+      "name": "engine_load",
+      "unit": "%",
+      "min": 0,
+      "max": 100,
+      "description": "Obciążenie silnika spalinowego."
+    },
+    {
+      "name": "maf",
+      "unit": "g/s",
+      "min": 0,
+      "max": 200,
+      "description": "Przepływ powietrza do silnika (MAF)."
+    },
+    {
+      "name": "ign_timing",
+      "unit": "°",
+      "min": -20,
+      "max": 50,
+      "description": "Wyprzedzenie zapłonu."
+    },
+    {
+      "name": "stft",
+      "unit": "%",
+      "min": -25,
+      "max": 25,
+      "description": "Korekta paliwa krótkoterminowa."
+    },
+    {
+      "name": "ltft",
+      "unit": "%",
+      "min": -25,
+      "max": 25,
+      "description": "Korekta paliwa długoterminowa."
+    },
+    {
+      "name": "lambda_cmd",
+      "unit": "λ",
+      "min": 0.7,
+      "max": 1.3,
+      "description": "Skład mieszanki, który sterownik chce uzyskać."
+    },
+    {
+      "name": "lambda",
+      "unit": "λ",
+      "min": 0.7,
+      "max": 1.3,
+      "description": "Skład mieszanki zmierzony sondą (1,0 = idealny)."
+    },
+    {
+      "name": "o2_current",
+      "unit": "mA",
+      "min": null,
+      "max": null,
+      "description": "Prąd sondy lambda."
+    },
+    {
+      "name": "baro",
+      "unit": "kPa",
+      "min": 80,
+      "max": 110,
+      "description": "Ciśnienie powietrza na zewnątrz."
+    },
+    {
+      "name": "batt_volt",
+      "unit": "V",
+      "min": 10,
+      "max": 16,
+      "description": "Napięcie instalacji 12 V."
+    },
+    {
+      "name": "ambient_temp",
+      "unit": "°C",
+      "min": -20,
+      "max": 50,
+      "description": "Temperatura na zewnątrz."
+    },
+    {
+      "name": "fuel_l",
+      "unit": "L",
+      "min": 0,
+      "max": 60,
+      "description": "Paliwo w baku."
+    },
+    {
+      "name": "gps_lat",
+      "unit": "°",
+      "min": -90,
+      "max": 90,
+      "description": "Szerokość geograficzna (WGS84); tylko przy fixie."
+    },
+    {
+      "name": "gps_lon",
+      "unit": "°",
+      "min": -180,
+      "max": 180,
+      "description": "Długość geograficzna (WGS84); tylko przy fixie."
+    },
+    {
+      "name": "gps_speed",
+      "unit": "km/h",
+      "min": 0,
+      "max": 300,
+      "description": "Prędkość nad ziemią z GPS; tylko przy fixie."
+    },
+    {
+      "name": "gps_heading",
+      "unit": "°",
+      "min": 0,
+      "max": 360,
+      "description": "Kierunek jazdy z GPS, 0 = północ, zgodnie z zegarem; tylko przy fixie."
+    },
+    {
+      "name": "gps_alt",
+      "unit": "m",
+      "min": -500,
+      "max": 9000,
+      "description": "Wysokość nad poziomem morza; tylko przy fixie."
+    },
+    {
+      "name": "gps_sats",
+      "unit": "",
+      "min": 0,
+      "max": 40,
+      "description": "Liczba satelitów użytych do pozycji."
+    },
+    {
+      "name": "gps_pdop",
+      "unit": "",
+      "min": 0,
+      "max": 99.99,
+      "description": "PDOP: rozrzut satelitów na niebie, im mniej tym dokładniej (poniżej 2 dobrze)."
+    },
+    {
+      "name": "gps_fix",
+      "unit": "",
+      "min": 0,
+      "max": 3,
+      "description": "Jakość pozycji: 0 brak, 2 = 2D, 3 = 3D (pełna)."
+    }
+  ]
+}

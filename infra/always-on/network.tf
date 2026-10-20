@@ -77,7 +77,7 @@ resource "google_compute_firewall" "iap_ssh" {
   }
 
   source_ranges = local.iap_ssh_source_ranges
-  target_tags   = ["kafka", "core"]
+  target_tags   = ["kafka", "core", "analysis"]
 }
 
 resource "google_compute_firewall" "kafka_private" {
@@ -123,4 +123,57 @@ resource "google_dns_managed_zone" "chronoracer" {
   visibility  = "public"
 
   depends_on = [google_project_service.apis]
+}
+
+resource "google_compute_firewall" "analysis_core" {
+  name    = local.names.analysis_core_fw
+  project = var.project_id
+  network = google_compute_network.chronoracer.name
+
+  description = "Analysis to Core telemetry gRPC on the private VM subnet."
+  direction   = "INGRESS"
+  priority    = 1000
+
+  allow {
+    protocol = "tcp"
+    ports    = [tostring(local.platform.core_telemetry_port)]
+  }
+
+  source_tags = ["analysis"]
+  target_tags = ["core"]
+}
+
+# Needed so Analysis can access Telemetry
+resource "google_dns_managed_zone" "run_private" {
+  name        = local.names.run_private_dns_zone
+  project     = var.project_id
+  dns_name    = "run.app."
+  description = "Cloud Run access from the race VPC through Private Google Access."
+  visibility  = "private"
+
+  private_visibility_config {
+    networks {
+      network_url = google_compute_network.chronoracer.id
+    }
+  }
+}
+
+resource "google_dns_record_set" "run_private" {
+  project      = var.project_id
+  managed_zone = google_dns_managed_zone.run_private.name
+  name         = "run.app."
+  type         = "A"
+  ttl          = 300
+  # private.googleapis.com addresses
+  rrdatas      = ["199.36.153.8", "199.36.153.9", "199.36.153.10", "199.36.153.11"]
+}
+
+# This maps Cloud Run services to the internal DNS zone
+resource "google_dns_record_set" "run_private_wildcard" {
+  project      = var.project_id
+  managed_zone = google_dns_managed_zone.run_private.name
+  name         = "*.run.app."
+  type         = "CNAME"
+  ttl          = 300
+  rrdatas      = [google_dns_record_set.run_private.name]
 }

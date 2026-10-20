@@ -84,7 +84,7 @@ resource "google_artifact_registry_repository" "chronoracer" {
   location               = var.region
   repository_id          = local.names.ar_repo
   format                 = "DOCKER"
-  description            = "Controller, Relay, Dashboard, and Telemetry images. Not Kafka/Core VM families."
+  description            = "Controller, Relay, Dashboard, and Telemetry images. Not Compute VM families."
   cleanup_policy_dry_run = false
 
   cleanup_policies {

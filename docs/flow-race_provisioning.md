@@ -1,6 +1,6 @@
 # Flow - Race provisioning
 
-Goal: start one race. Create the two race VMs and Telemetry Cloud Run service, ensure Kafka/Core readiness, and only
+Goal: start one race. Create the three race VMs and Telemetry Cloud Run service, ensure Kafka/Core readiness, and only
 then hand operators the Kafka hostname, port, public IP, and Telemetry URL.
 
 MVP: one active race. No queue. Always-on stack is a separate Terraform root; race apply must not manage it.
@@ -33,6 +33,7 @@ sequenceDiagram
     Ctrl ->> TF: apply ingest_open true
     TF ->> Kafka: Kafka VM plus ephemeral public IP
     TF ->> Core: Core plus Influx VM
+    TF ->> Analysis: Analysis VM
     TF ->> Telemetry: Cloud Run min/max one plus VPC egress
     TF ->> TF: DNS A record TTL 30s plus public 9094 firewall
     Ctrl ->> FS: status applied
@@ -50,7 +51,7 @@ sequenceDiagram
 ```
 
 1. Operator start (Okta). New race vs retry from `failed`: [Relay start](component-relay.md).
-2. Cloud Build runs controller `apply`. Both VMs and Telemetry service are in one apply. Core must tolerate Kafka not
+2. Cloud Build runs controller `apply`. All race services are in one apply. Core must tolerate Kafka not
    listening yet (currently Core dies on Kafka not listening, but runs as service so will restart). Telemetry retries
    until Core's private gRPC listener is available.
 3. Kafka boot: [Kafka startup](../kafka/startup/README.md). Core boot: [Core startup](../core/startup/README.md).
@@ -84,16 +85,5 @@ private Kafka accepted a connection.
 
 Provisioning (`starting`) cannot use Kafka. That phase is Firestore plus Cloud Build (push, or status bind/replay).
 
-The [Dashboard](component-dashboard.md) and [Telemetry](component-telemetry.md) are not part of readiness. Neither
-publishes or reads a heartbeat, and an unreachable UI says nothing about race health. Telemetry may still be connecting
-to Core when Relay first reports ready; this can lose preview points but cannot delay ingest.
-
-Relay scale-to-zero: heartbeat is read on status only. Unsolicited wakes: Cloud Build finished, and export-done. Missed
-Cloud Build push is recovered on status. Export-done is not.
-
-## Failure
-
-Phase and mutex outcomes: [Firestore](component-firestore.md). API rejects: [Relay](component-relay.md).
-
-Apply ok, heartbeat never fresh: phase stays `applied`; status not-ready or unhealthy. Force-destroy (nothing reliable
-to export) or wait.
+Auxiliary modules ([Telemetry](component-telemetry.md) and [Analysis](component-analysis.md)) are not part of readiness. Neither
+publishes or reads a heartbeat, and an unreachable UI says nothing about race health. Their health can be monitored from [Dashboard](component-dashboard.md).

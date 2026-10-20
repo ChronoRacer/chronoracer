@@ -10,6 +10,8 @@ For target VMs used, see [ADR - VM types](adr-vm-types.md).
 
 ## Split
 
+**Analysis:** infrastructure-only Debian 13 image with the shared packages, Google Cloud Ops Agent and contract JSON. Rest is TODO.
+
 **Kafka:** full bake. Overlay + Apache Kafka at `/opt/kafka` + Google Cloud Ops Agent with whole-VM host metrics (no process scraper).
 Rebuild the family when Kafka, Java, agent config, overlay scripts, or contract JSON change.
 
@@ -27,7 +29,7 @@ The payload is published under an immutable `core/releases/.../` prefix. The sin
 the release pointer; the next race reads that pointer without a new image. Publishing the pointer is the final step, so
 a VM cannot combine a binary from one release with plugins from another.
 
-Do not download vendor packages from the public internet on the race Core VM (no Cloud NAT). Packer builders use the
+Do not download vendor packages from the public internet on the private race VMs (no Cloud NAT). Packer builders use the
 **default VPC** and an ephemeral public IP so apt and tarball fetches work. Do not build on the race VPC.
 
 ## How to publish
@@ -35,7 +37,7 @@ Do not download vendor packages from the public internet on the race Core VM (no
 Operator credentials (`gcloud auth application-default login`). Roles: create/delete Compute instances, disks, and
 images. No dedicated Packer service account.
 
-Builder: `e2-small`, 10 GB disk. The disk contents become the minimum image size; race VMs request their own 20 GB boot
+Builder: `e2-small`, 20 GB disk. The disk contents become the minimum image size; race VMs request their own 20 GB boot
 disks. Target machine types: [Terraform](component-terraform.md). The builder zone determines the image storage region,
 so use the same zone region as the always-on and race stacks.
 
@@ -50,6 +52,7 @@ export PKR_VAR_project_id="$(gcloud config get-value project)"
 
 ./infra/packer/build-kafka-vm-image.sh
 ./infra/packer/build-core-vm-image.sh
+./infra/packer/build-analysis-vm-image.sh
 
 # Build and download Core binary on a native CPU builder
 ./infra/packer/build-core-binary.sh
@@ -66,12 +69,12 @@ Always-on IAM for Core to read artifacts: [Terraform](component-terraform.md).
 
 ## Bake contents
 
-Family names come from [`names.json`](../infra/contract/names.json) (`kafka_family`, `core_family`). Packer reads that
+Family names come from [`names.json`](../infra/contract/names.json) (`kafka_family`, `core_family`, `analysis_family`). Packer reads that
 file; do not hardcode family strings in templates.
 
-Shared helper [`infra/packer/scripts/gce-metadata.sh`](../infra/packer/scripts/gce-metadata.sh) is baked into both
+Shared helper [`infra/packer/scripts/gce-metadata.sh`](../infra/packer/scripts/gce-metadata.sh) is baked into all race VM
 overlays as `/chronoracer/gce-metadata.sh`. Boot scripts source it and read project, zone, and instance attributes from
-the GCE metadata server. They do not call the Compute API. Core and Kafka service accounts do not need
+the GCE metadata server. They do not call the Compute API. Race VM service accounts do not need
 `compute.instances.get`.
 
 **Kafka** `/chronoracer/`: overlay from [`kafka/startup`](../kafka/startup) (scripts, `kafka.service`, Ops Agent
@@ -91,6 +94,7 @@ build so `rpk connect run` does not download on the race VM. Binary arrives as `
 schema is compile-time only in the repo ([`core/avro/sensor_data.avsc`](../core/avro/sensor_data.avsc)); Core does not
 read it at runtime ([Core](component-core.md#data-pipeline-batch-contract)).
 
-Boot order on the VM: [Kafka startup](../kafka/startup/README.md), [Core startup](../core/startup/README.md).
+Boot order on the VM: [Kafka startup](../kafka/startup/README.md), [Core startup](../core/startup/README.md),
+[Analysis startup](../analysis/startup/README.md).
 
 Payload layout and IAM: [GCS artifacts](component-gcs_buckets.md).

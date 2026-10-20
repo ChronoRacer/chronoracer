@@ -3,7 +3,7 @@
 Start: empty Artifact Registry. End: `relay`, `controller`, `dashboard`, and `telemetry` tags exist in
 `europe-west1-docker.pkg.dev/{project}/chronoracer/`. Always-on resources and race Terraform can apply.
 
-Not Packer. Kafka/Core VM families: [Compute images](component-images.md).
+Not Packer. Compute VM families: [Compute images](component-images.md).
 
 Canonical names: [`infra/contract/names.json`](../infra/contract/names.json) (`ar_repo`, `ar_relay_image`,
 `ar_controller_image`, `ar_dashboard_image`, `ar_telemetry_image`). Region: [docs README](README.md).

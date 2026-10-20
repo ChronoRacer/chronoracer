@@ -1,0 +1,32 @@
+# Local Python environments and tooling caches
+.venv/
+venv/
+env/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Generated/build output
+build/
+dist/
+*.egg-info/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+
+# Local rules and model data
+rules/rules_files/
+models/
+data/
+analysis/TODOo.txt
+analysis/TODO
+analysis/TODO.txt
+TODOo.txt
+corolla_channels-2.json
+ml/data

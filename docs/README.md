@@ -72,6 +72,7 @@ flowchart LR
         Kafka[Kafka VM]
         CoreDB[Core plus InfluxDB VM]
         Telemetry[Telemetry Cloud Run]
+        Analysis["Analysis VM"]
     end
     Devices[Track devices]
     Operators -->|HTTPS Okta, API| Relay
@@ -96,7 +97,9 @@ flowchart LR
     CoreDB -->|private, heartbeat| Kafka
     Devices -->|TLS Okta, data| Kafka
     Kafka -->|private, data, control events| CoreDB
-    Telemetry -->|private, gRPC h2c| CoreDB
+    Telemetry -->|private, gRPC| CoreDB
+    Analysis -->|private, gRPC| CoreDB
+    Analysis -->|private, TODO - not specified yet| Telemetry
     Kafka -->|private, heartbeat| Relay
     CoreDB -->|private, exports| GcsRace
     GcsArt -->|private, Core payload| CoreDB
@@ -116,6 +119,7 @@ See graph above for connections.
 | Dashboard   | [Dashboard](component-dashboard.md)   |
 | Telemetry   | [Telemetry](component-telemetry.md)   |
 | Relay       | [Relay](component-relay.md)           |
+| Analysis    | [Analysis](component-analysis.md)     |
 | Kafka       | [Kafka](component-kafka.md)           |
 | Firestore   | [Firestore](component-firestore.md)   |
 | GCS Buckets | [GCS](component-gcs_buckets.md)       |

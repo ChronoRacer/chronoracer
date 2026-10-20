@@ -47,8 +47,8 @@ A dedicated Kafka preview topic was rejected. It would add another producer and 
 that is the critical ingest buffer. Current local load results leave headroom but do not prove GCP broker capacity, and
 the preview does not need Kafka durability.
 
-Core exposes one private server stream. Telemetry is the only network-authorized client. Protocol and rejected
-transports: [ADR - Core telemetry stream protocol](adr-telemetry-stream.md). What the stream carries, and how loss
+Core exposes one private server stream. Network authorization is owned by
+[Terraform](component-terraform.md#always-on-stack). Protocol and rejected transports: [ADR - Core telemetry stream protocol](adr-telemetry-stream.md). What the stream carries, and how loss
 works: [Core](component-core.md#telemetry-stream).
 
 Rejected: **Core pushes outbound to Telemetry**. It makes the critical process own destination discovery, OAuth/IAM

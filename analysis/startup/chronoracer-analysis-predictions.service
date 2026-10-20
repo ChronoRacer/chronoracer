@@ -1,0 +1,17 @@
+[Unit]
+Description=Chronoracer Analysis predictions
+After=network-online.target chronoracer-analysis-stream.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+UMask=0077
+WorkingDirectory=/chronoracer
+Environment=PYTHONPATH=/chronoracer
+EnvironmentFile=/chronoracer/analysis.env
+ExecStart=/chronoracer/analysis-venv/bin/python -m analysis.predictions.predictions
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

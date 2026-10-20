@@ -55,7 +55,8 @@ Relay returns that output rather than constructing the URL.
 
 ## Private Core connection
 
-Telemetry is the only client allowed to reach Core's telemetry port. Always-on Terraform owns:
+Telemetry and Analysis may reach Core's telemetry port. The network authorization boundary is owned by
+[Terraform](component-terraform.md#always-on-stack). For Telemetry, always-on Terraform owns:
 
 - a dedicated `/26` Direct VPC Egress subnet
 - a firewall rule from that subnet to the `core` network tag on the telemetry port
@@ -63,7 +64,7 @@ Telemetry is the only client allowed to reach Core's telemetry port. Always-on T
 
 Race Terraform attaches those resources to the Cloud Run service. The port is owned by
 [`platform.json`](../infra/contract/platform.json). No application credential or TLS is used on this private hop; the
-dedicated subnet and firewall are the authorization boundary, matching the private Kafka listener model.
+network boundary linked above controls access, matching the private Kafka listener model.
 
 Telemetry calls `Watch` as `client_id` `telemetry` and selects sensors with `TELEMETRY_SENSORS`. Selection rules, limits,
 and what happens on a second call with the same id are owned by [Core](component-core.md#clients-and-sensor-selection).

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Google Cloud Ops Agent. Shared by Kafka and Core Packer builders. Runs as root.
+# Google Cloud Ops Agent. Shared by race VM Packer builders. Runs as root.
 # Starts disabled: race boot copies overlay config then enables the unit.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive

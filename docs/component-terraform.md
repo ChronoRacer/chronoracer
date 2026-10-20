@@ -20,7 +20,7 @@ Terraform GCS backend stores workspace state as `{prefix}/default.tfstate`.
 | `race` | Controller only | Race stack. Object `race/default.tfstate`. Empty after destroy.                      |
 
 `raceId` is a Terraform variable for GCS object paths, Core metadata, and the `race-id` label. It is not a second state
-prefix and not part of resource names (`kafka`, `core`, firewall, DNS record set). Label
+prefix and not part of resource names (`kafka`, `core`, `analysis`, firewall, DNS record set). Label
 rules: [Firestore](component-firestore.md).
 
 Every Terraform command uses `-lock-timeout=5m`. Nothing unlocks the lock; other Terraform applies must wait. Stuck lock
@@ -43,8 +43,13 @@ Resources:
 - VPC and three subnets, all with Private Google Access: the `/24` VM subnet, a Relay Cloud Run subnet, and a
   Telemetry Cloud Run subnet (each Cloud Run subnet at least `/26`, the Google minimum for Direct VPC Egress)
 - Baseline firewall (IAP SSH only, no public `22` to the internet; no public Core; private Kafka from the VM subnet and
-  the Relay subnet to tag `kafka`; Core telemetry gRPC from the Telemetry subnet only to tag `core` — ports:
+  the Relay subnet to tag `kafka`; Core telemetry gRPC from the Telemetry subnet and the `analysis` source tag
+  to tag `core` — ports:
   [`platform.json`](../infra/contract/platform.json))
+- Private Cloud DNS zone `run.app.` attached to the race VPC. Its apex resolves to the Private Google Access VIPs
+  (`199.36.153.8/30`), and wildcard names alias that apex. Analysis reaches Telemetry over HTTPS using its generated
+  URL through Google networking without an external IP or Cloud NAT. Telemetry retains its public browser ingress
+  and application authentication; an internal network path does not bypass authentication.
 - Cloud DNS managed zone and stable Kafka FQDN (zone exists with no A record between races). Always-on also creates
   Cloud Run domain mappings and `CNAME` records to `ghs.googlehosted.com.` for `relay.{dns zone}` and
   `dashboard.{dns zone}` (today `relay.chronoracer.live` / `dashboard.chronoracer.live`). Why this region can do that:
@@ -71,7 +76,7 @@ Resources:
 - One Cloud Build trigger in `var.region` that runs the controller image. Trigger location, timeout,
   substitutions: [Controller](component-controller.md). Native build notifications use topic `cloud-builds` (Pub/Sub
   topics are global; push to Relay). Export-done uses topic `export-done`.
-- Artifact Registry for the **controller, Relay, Dashboard, and Telemetry** images (not Kafka/Core VM families). First
+- Artifact Registry for the **controller, Relay, Dashboard, and Telemetry** images (not Compute VM families). First
   tags: [Control-plane images](operator-control-plane-images.md)
 - Service accounts and IAM (below)
 - Project `_Default` log sink exclusions ([`logging.tf`](../infra/always-on/logging.tf)): drop unread infra noise
@@ -95,11 +100,11 @@ apply: [Control-plane images](operator-control-plane-images.md).
 ### Stable names for race data sources
 
 Canonical strings: [`names.json`](../infra/contract/names.json), [`platform.json`](../infra/contract/platform.json).
-Bootstrap, always-on, race, Relay template, and Core/Kafka boot scripts read those files. Do not duplicate the strings
+Bootstrap, always-on, race, Relay template, and race VM overlays read those files. Do not duplicate the strings
 in each root.
 
 Race stack does **not** use `terraform_remote_state` on the `base` prefix. It looks up always-on **resources** (VPC,
-VM and Telemetry subnets, zone, DNS zone, Kafka/Core/Telemetry SAs, TLS and browser OAuth secrets, Artifact Registry,
+VM and Telemetry subnets, zone, DNS zone, race VM and Telemetry SAs, TLS and browser OAuth secrets, Artifact Registry,
 race bucket, image families). Missing resource = plan fail. Adjust names only via always-on apply, then next race.
 
 `kafka_fqdn` is a Terraform variable (must sit in the always-on zone; no fake default). Public Kafka firewall name is
@@ -107,15 +112,15 @@ race bucket, image families). Missing resource = plan fail. Adjust names only vi
 
 ### Service accounts
 
-| Account                  | May only                                                                                                                                                                                                    |
-|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Relay                    | Firestore; write Core YAML object; read `*/export/**` and issue time-limited download access; trigger Cloud Build; read and list Cloud Build (bind + replay); receive both Pub/Sub pushes                   |
-| Controller (Cloud Build) | Race Terraform (Compute, Telemetry Cloud Run, DNS A in the existing zone, race public firewall); race Firestore fields on `apply` only, token-gated; read Core YAML object; `race/` state prefix            |
-| Kafka VM                 | Read TLS secret; write its Ops Agent metrics to Cloud Monitoring                                                                                                                                            |
-| Core VM                  | Read `{raceId}/core-config.yaml`; write `{raceId}/export/**`; publish export-done; read artifacts `core/current.json` and its release; read the Influx token secret payload; write Cloud Monitoring metrics |
-| Dashboard                | Read Cloud Monitoring; read the browser Auth0 client secret payload                                                                                                                                         |
-| Telemetry                | Read the browser Auth0 client secret payload; private gRPC `Watch` to Core from its dedicated subnet                                                                                                        |
-| Car                      | Read Auth0 secret                                                                                                                                                                                           |
+| Account                  | May                                                                                                                                                                                                         | Must not                                                                                                                                                                            |
+|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Relay                    | Firestore; write Core YAML object; read `*/export/**` and issue time-limited download access; trigger Cloud Build; read and list Cloud Build (bind + replay); receive both Pub/Sub pushes                   | Terraform state; create VMs; Secret Manager payload                                                                                                                                 |
+| Controller (Cloud Build) | Race Terraform (Compute, Telemetry Cloud Run, DNS A in the existing zone, race public firewall); race Firestore fields on `apply` only, token-gated; read Core YAML object; `race/` state prefix            | Change VPC, IAM identities, Secret Manager payload, `base/` state prefix; write phase on `close_ingest` / `destroy`; apply Terraform when `runToken` mismatches; force-unlock state |
+| Kafka VM                 | Read TLS secret; write its Ops Agent metrics to Cloud Monitoring                                                                                                                                            | GCS; Cloud Build; Firestore; Pub/Sub                                                                                                                                                |
+| Core VM                  | Read `{raceId}/core-config.yaml`; write `{raceId}/export/**`; publish export-done; read artifacts `core/current.json` and its release; read the Influx token secret payload; write Cloud Monitoring metrics | Firestore; any other Secret Manager payload (TLS cert included); Terraform state; Cloud Build; write `core-config.yaml`; write artifacts                                            |
+| Analysis VM              | Write Ops Agent host metrics and logs; private Core gRPC and Telemetry HTTPS                                                                                                                                | Firestore; GCS; Secret Manager payload; Cloud Build; Terraform state                                                                                                                |
+| Dashboard                | Read Cloud Monitoring; read the browser Auth0 client secret payload                                                                                                                                         | Firestore; GCS; Kafka; InfluxDB; VPC race endpoints; Cloud Build; Terraform state; Relay endpoints; any other Secret Manager payload                                                |
+| Telemetry                | Read the browser Auth0 client secret payload; private gRPC `Watch` to Core from its dedicated subnet                                                                                                        | Firestore; GCS; Kafka; InfluxDB; Cloud Monitoring; Cloud Build; Terraform state; Relay endpoints; any other Secret Manager payload                                                  |
 
 Residual (GCP constraints, not project Editor):
 
@@ -135,7 +140,7 @@ Residual (GCP constraints, not project Editor):
 - Controller `secretmanager.viewer` on the TLS and browser OAuth **secret resources** (metadata for race Terraform
   data sources). Kafka VM is the only TLS accessor; Dashboard and Telemetry are the browser OAuth
   payload accessors.
-- Controller `roles/iam.serviceAccountViewer` so SA data sources fail if Kafka/Core SAs are missing.
+- Controller `roles/iam.serviceAccountViewer` so SA data sources fail if any SAs are missing.
 - Controller Cloud Run get/create/list/`operations.get` is project-scoped (create conditions are unreliable, same as
   firewall). Update/delete/`setIamPolicy` are bound under an IAM condition on the canonical Telemetry service
   resource name. Controller can act as the Telemetry service account. Do not grant general IAM administration.
@@ -149,25 +154,28 @@ Residual (GCP constraints, not project Editor):
 
 ## Race stack
 
-Root: [`infra/race`](../infra/race). One module. One reused state. Attaches always-on Kafka/Core service accounts. Does
+Root: [`infra/race`](../infra/race). One module. One reused state. Attaches always-on race VM service accounts. Does
 not create SAs or IAM bindings.
 
 VM defaults (Terraform variables; changing them mid-race is forbidden — see close_ingest invariant):
 
-| Resource             | Name        | Network                                                |
-|----------------------|-------------|--------------------------------------------------------|
-| Kafka VM             | `kafka`     | Public + private IP (ephemeral public `access_config`) |
-| Core + InfluxDB VM   | `core`      | Private IP only                                        |
-| Telemetry Cloud Run  | `telemetry` | Public `run.app`; Direct VPC Egress to Core            |
+| Resource            | Name        | Network                                                |
+|---------------------|-------------|--------------------------------------------------------|
+| Kafka VM            | `kafka`     | Public + private IP (ephemeral public `access_config`) |
+| Core + InfluxDB VM  | `core`      | Private IP only                                        |
+| Analysis VM         | `analysis`  | Private IP only                                        |
+| Telemetry Cloud Run | `telemetry` | Public `run.app`; Direct VPC Egress to Core            |
 
 For rationale on VM types, see [ADR - VM types](adr-vm-types.md).
 
-Network tags: `kafka`, `core`. Label `race-id` = `raceId`. No extra data disks. No preemptible.
+Network tags: `kafka`, `core`, `analysis`. Label `race-id` = `raceId`. No extra data disks. No preemptible.
 
 Resources (stable names from `names.json`):
 
-- Kafka VM from family `chronoracer-kafka` at first apply, then pinned to that image id in instance state
+- Kafka VM from family `chronoracer-kafka` at first apply, then pinned
 - Core VM from family `chronoracer-core` at first apply, then pinned
+- Analysis VM from family `chronoracer-analysis` at first apply, then pinned. Publish prerequisite:
+  [Compute images](component-images.md#how-to-publish)
 - DNS A record: stable FQDN → Kafka public IP, TTL **30s**. Destroy deletes the record. Between races the name must not
   resolve
 - Public Kafka firewall: TCP public ingest port from `platform.json`, source `0.0.0.0/0`, target tag `kafka`. Own
@@ -175,6 +183,9 @@ Resources (stable names from `names.json`):
 - Telemetry Cloud Run service from the pre-published Artifact Registry image. It uses the existing Telemetry service
   account and subnet, minimum/maximum one instance, always-allocated CPU, and the shared browser OAuth secret. Terraform
   injects Core's stable internal URL and `raceId`; its generated service URI is an output.
+- Analysis metadata: `race-id`, `core-telemetry-url` (the same private Core URL as Telemetry), `telemetry-url`
+  (the deterministic Telemetry HTTPS URL), and the shared `startup-script`. The startup overlay currently only enables
+  Ops Agent; module runtime configuration and application authentication remain TODO in [Analysis](component-analysis.md).
 - Instance metadata only: Core `core-config-gcs-uri` (`gs://{bucket}/{raceId}/core-config.yaml`), `race-id`, and
   `startup-script` (inline `local.overlay_startup`: `exec /chronoracer/entrypoint.sh`). Kafka same `startup-script`,
   `tls-secret-id` = Secret Manager secret resource name (`projects/{project}/secrets/{id}`), `kafka-fqdn` =
@@ -196,13 +207,13 @@ Variable `ingest_open` (bool). `apply` sets `true`. `close_ingest` sets `false`.
 When `ingest_open` is `false`, the public ingest firewall resource is absent (`count` / `for_each` empty). That is the
 only intended plan diff.
 
-It must never replace Kafka VM, Core VM, Telemetry Cloud Run, disks, metadata, or the public IP.
+It must never replace any other race resources.
 
 Mechanism:
 
 1. First `apply` resolves each image **family** to a concrete image id and writes that id on
    `boot_disk.initialize_params.image` (never leave the family name on the instance).
-2. Both VMs use `lifecycle.ignore_changes = all`. A moved family, machine type var, or metadata tweak is not a plan diff
+2. All race VMs use `lifecycle.ignore_changes = all`. A moved family, machine type var, or metadata tweak is not a plan diff
    on the instance.
 3. Image **family** data sources still run every plan. Missing family fails `close_ingest` (fail early). That lookup
    must not replace VMs.
@@ -230,7 +241,7 @@ means that action failed (`apply` → phase `failed` only if still `starting`; `
 `terraform apply` with `ingest_open=true`. Create (or converge) the race stack with public ingest open.
 
 1. Refuse if bind/YAML checks fail ([Controller](component-controller.md)).
-2. Apply: both VMs, Telemetry Cloud Run, public IP, DNS A record, public ingest firewall present, metadata paths,
+2. Apply: all race VMs, Telemetry Cloud Run, public IP, DNS A record, public ingest firewall present, metadata paths,
    attach always-on SAs. Resolve image families to concrete ids in state.
 3. Persist terraform outputs on the race doc only per controller write rules.
 
@@ -267,7 +278,7 @@ flowchart LR
         Bucket[Race bucket]
     end
     subgraph raceState ["Race state (controller)"]
-        VMs[Two VMs stable names]
+        VMs[VMs with stable names]
         Telemetry[Telemetry Cloud Run]
         ARec[DNS A record TTL 30s]
         Fw[Public Kafka ingest firewall]
@@ -285,7 +296,8 @@ flowchart LR
 
 Race `apply` picks current family, then pins that id on the instance. Packer and
 payload: [Compute images](component-images.md). Boot
-scripts: [Kafka startup](../kafka/startup/README.md), [Core](component-core.md).
+scripts: [Kafka startup](../kafka/startup/README.md), [Core](component-core.md),
+[Analysis startup](../analysis/startup/README.md).
 
 What Terraform stores: GCS URI of Core YAML, `race-id`, and the Core `startup-script` text on the Core VM; Kafka
 `startup-script`, `tls-secret-id` (Secret Manager resource name), `kafka-fqdn`. Not YAML bytes. Not TLS private key. Not
@@ -304,8 +316,9 @@ Race Terraform may not: delete the zone, VPC, Relay, Dashboard, buckets, secrets
 images; rename VMs per `raceId`; open the `base` state prefix; create Cloud NAT; reserve an idle static Kafka IP.
 
 Always-on rejects a `zone` outside `region`. Direct VPC Egress allocates ephemeral Cloud Run addresses from two `/26`
-subnets, keeping Relay and Telemetry out of the `/24` VM subnet and out of each other. That split lets the Core
-telemetry firewall authorize Telemetry without allowing Relay or Kafka to reach the stream.
+subnets, keeping Relay and Telemetry out of the `/24` VM subnet and out of each other. That split and the separate
+Analysis source-tag rule let the Core telemetry firewall authorize Telemetry and Analysis without allowing Relay
+or Kafka to reach the stream.
 
 Dashboard adds nothing to the race stack and has no `ingest_open` interaction. Telemetry is a race resource but remains
 unchanged during `close_ingest`; only the public Kafka firewall is removed.

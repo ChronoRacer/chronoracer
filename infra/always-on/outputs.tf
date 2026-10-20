@@ -13,7 +13,7 @@ output "relay_run_subnet_name" {
 
 output "telemetry_run_subnet_name" {
   value       = google_compute_subnetwork.telemetry_run.name
-  description = "Telemetry Direct VPC Egress subnet. Only this range may reach Core telemetry."
+  description = "Telemetry Direct VPC Egress subnet. This range may reach Core telemetry; Analysis is authorized separately by VM tag."
 }
 
 output "dns_zone_name" {
@@ -126,4 +126,8 @@ output "race_public_kafka_firewall_name" {
 
 output "artifact_registry_repository" {
   value = google_artifact_registry_repository.chronoracer.id
+}
+
+output "analysis_sa_email" {
+  value = google_service_account.analysis.email
 }
