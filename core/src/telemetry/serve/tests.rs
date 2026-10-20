@@ -112,11 +112,11 @@ fn point_batch_emits_only_the_chunk_span() {
     assert!(pending.is_empty());
 }
 
-async fn connect(url: &str) -> TelemetryClient<tonic::transport::Channel> {
+async fn connect(url: &str) -> TelemetryServiceClient<tonic::transport::Channel> {
     connect_with_window(url, HTTP2_WINDOW_SIZE).await
 }
 
-async fn connect_with_window(url: &str, window: u32) -> TelemetryClient<tonic::transport::Channel> {
+async fn connect_with_window(url: &str, window: u32) -> TelemetryServiceClient<tonic::transport::Channel> {
     let channel = Endpoint::from_shared(url.to_owned())
         .unwrap()
         .initial_stream_window_size(window)
@@ -124,7 +124,7 @@ async fn connect_with_window(url: &str, window: u32) -> TelemetryClient<tonic::t
         .connect()
         .await
         .unwrap();
-    TelemetryClient::new(channel)
+    TelemetryServiceClient::new(channel)
 }
 
 #[tokio::test]
@@ -255,7 +255,7 @@ async fn wait_until_sender_stalls(hub: &PreviewHub, offered: usize) -> usize {
 }
 
 async fn next_point_batch(
-    stream: &mut tonic::Streaming<StreamEvent>,
+    stream: &mut tonic::Streaming<WatchResponse>,
 ) -> crate::telemetry::proto::PointBatch {
     let event = tokio::time::timeout(Duration::from_secs(2), stream.message())
         .await
@@ -268,7 +268,7 @@ async fn next_point_batch(
     batch
 }
 
-async fn hello_of(stream: &mut tonic::Streaming<StreamEvent>) -> Hello {
+async fn hello_of(stream: &mut tonic::Streaming<WatchResponse>) -> Hello {
     let event = stream.message().await.unwrap().unwrap();
     let Some(Payload::Hello(hello)) = event.payload else {
         panic!("expected hello, got {event:?}");

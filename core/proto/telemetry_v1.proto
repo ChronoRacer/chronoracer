@@ -3,8 +3,8 @@ syntax = "proto3";
 package chronoracer.telemetry.v1;
 
 // One server stream. Behavioral rules live in docs/component-core.md.
-service Telemetry {
-  rpc Watch(WatchRequest) returns (stream StreamEvent);
+service TelemetryService {
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
 }
 
 message WatchRequest {
@@ -21,7 +21,7 @@ message SensorList {
   repeated string sensor_ids = 1;
 }
 
-message StreamEvent {
+message WatchResponse {
   oneof payload {
     Hello hello = 1;
     PointBatch point_batch = 2;

@@ -1,16 +1,10 @@
-# Single-package workspace (root package only). Security settings require pnpm 11+.
-# https://pnpm.io/supply-chain-security
-
-# Explicit quarantine
 minimumReleaseAge: 1440
 
-# Block install when publisher trust evidence downgrades vs prior releases.
 trustPolicy: no-downgrade
 
-# Allow older packages that predate npm provenance / registry signatures.
 trustPolicyIgnoreAfter: 525600
 
-# Only approved packages may run install/build lifecycle scripts.
 allowBuilds:
   esbuild: true
   protobufjs: true
+  "@bufbuild/buf": true
