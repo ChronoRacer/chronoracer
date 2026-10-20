@@ -20,7 +20,7 @@ class Sensor(BaseModel):
     desc : str
 
 
-TELEMETRY_PREDICTIONS_ENDPOINT = "/api/prediction"
+TELEMETRY_PREDICTIONS_ENDPOINT = "/predictions"
 
 class PredictionsEngine:
     def __init__(self,config):
