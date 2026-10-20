@@ -452,6 +452,12 @@ ignored. The DLQ handler finishing as part of the race-end or signal drain does 
 Release builds use `panic = "abort"`: a panic aborts the process immediately without export or export-done; systemd is
 expected to restart Core. The supervisor does not treat panics as a distinct recoverable path.
 
+**Startup:** Core logs its release first (`core/version.txt`, baked in at build time). Core creates its topics, then waits
+until each is visible in broker metadata (up to 60 seconds) before any consumer subscribes. If a topic never becomes
+visible, Core exits with failure and the supervisor restarts it.
+
+**Logs:** plain text by default. Set `CORE_LOG_COLOR=1` (or `true`) in the environment to enable ANSI colour, for local runs.
+
 Race stop sequence around this: [Race destruction](flow-race_destruction.md).
 
 #### Kafka export

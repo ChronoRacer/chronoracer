@@ -49,5 +49,5 @@ pipeline:
 output:
   gcp_cloud_storage:
     bucket: __EXPORT_BUCKET__
-    path: '__BUCKET_DIR_PATH__/${! meta("kafka_topic") }/part-${! meta("kafka_partition").string().pad_zeros(4) }-${! meta("kafka_offset").string().pad_zeros(16) }-${! timestamp_unix_nano() }.parquet'
+    path: '__BUCKET_DIR_PATH__/${! meta("kafka_topic") }/part-${! "%04d".format(meta("kafka_partition").number()) }-${! "%016d".format(meta("kafka_offset").number()) }-${! timestamp_unix_nano() }.parquet'
     max_in_flight: 4

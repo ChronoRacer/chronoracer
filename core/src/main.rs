@@ -4,7 +4,7 @@
 
 use crate::configuration::CoreConfig;
 use crate::gcp::gcp_entrypoint::GcpLayerEntrypoint;
-use crate::logger::init_logger;
+use crate::logger::{CORE_VERSION, init_logger};
 use crate::messaging::messaging_entrypoint::MessagingLayerEntrypoint;
 use crate::messaging::partial_message::SourceOffset;
 use crate::monitor::Monitor;
@@ -49,8 +49,9 @@ const WRITE_METRICS: &str = "write_metrics";
 
 fn main() -> ExitCode {
     let _logger_guard = init_logger();
+    info!("Running Chronoracer Core v{CORE_VERSION}");
     if let Err(error) = run() {
-        error!(%error, "Chronoracer core failed");
+        error!(%error,  "Core initalization failed");
         return ExitCode::FAILURE;
     }
     ExitCode::SUCCESS
@@ -63,7 +64,7 @@ fn run() -> Result<()> {
     let config: &'static CoreConfig = Box::leak(Box::new(config_val));
     info!("Configuration loaded: {:#?}", config);
     info!(
-        "Starting Chronoracer core for race_id={}",
+        "Starting Core for race_id={}",
         config.race.race_id
     );
 
