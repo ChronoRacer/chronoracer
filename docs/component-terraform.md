@@ -184,8 +184,9 @@ Resources (stable names from `names.json`):
   account and subnet, minimum/maximum one instance, always-allocated CPU, and the shared browser OAuth secret. Terraform
   injects Core's stable internal URL and `raceId`; its generated service URI is an output.
 - Analysis metadata: `race-id`, `core-telemetry-url` (the same private Core URL as Telemetry), `telemetry-url`
-  (the deterministic Telemetry HTTPS URL), and the shared `startup-script`. The startup overlay currently only enables
-  Ops Agent; module runtime configuration and application authentication remain TODO in [Analysis](component-analysis.md).
+  (the deterministic Telemetry HTTPS URL), and the shared `startup-script`. Boot renders them into the module
+  environment: [Analysis startup](../analysis/startup/README.md). Application authentication remains TODO in
+  [Analysis](component-analysis.md).
 - Instance metadata only: Core `core-config-gcs-uri` (`gs://{bucket}/{raceId}/core-config.yaml`), `race-id`, and
   `startup-script` (inline `local.overlay_startup`: `exec /chronoracer/entrypoint.sh`). Kafka same `startup-script`,
   `tls-secret-id` = Secret Manager secret resource name (`projects/{project}/secrets/{id}`), `kafka-fqdn` =

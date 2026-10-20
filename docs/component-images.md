@@ -10,7 +10,9 @@ For target VMs used, see [ADR - VM types](adr-vm-types.md).
 
 ## Split
 
-**Analysis:** infrastructure-only Debian 13 image with the shared packages, Google Cloud Ops Agent and contract JSON. Rest is TODO.
+**Analysis:** full bake. Debian 13 with the shared packages, Google Cloud Ops Agent, contract JSON, the module's Python
+venv and code, and its startup overlay. Rebuild the family when Analysis code, `requirements.txt`, overlay scripts,
+units, agent config, or contract JSON change.
 
 **Kafka:** full bake. Overlay + Apache Kafka at `/opt/kafka` + Google Cloud Ops Agent with whole-VM host metrics (no process scraper).
 Rebuild the family when Kafka, Java, agent config, overlay scripts, or contract JSON change.
@@ -93,6 +95,11 @@ build-time `/chronoracer/influxdb-plugin-venv`
 build so `rpk connect run` does not download on the race VM. Binary arrives as `/chronoracer/core`. The Avro sensor
 schema is compile-time only in the repo ([`core/avro/sensor_data.avsc`](../core/avro/sensor_data.avsc)); Core does not
 read it at runtime ([Core](component-core.md#data-pipeline-batch-contract)).
+
+**Analysis** `/chronoracer/`: overlay from [`analysis/startup`](../analysis/startup) (scripts, three systemd units, Ops
+Agent configuration), `gce-metadata.sh`, `enable-ops-agent.sh`, contract JSON, the build-time
+`/chronoracer/analysis-venv`, and module code at `/chronoracer/analysis`. Venv and code layout:
+[Analysis startup](../analysis/startup/README.md#image-bake).
 
 Boot order on the VM: [Kafka startup](../kafka/startup/README.md), [Core startup](../core/startup/README.md),
 [Analysis startup](../analysis/startup/README.md).
