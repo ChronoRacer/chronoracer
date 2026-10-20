@@ -34,7 +34,7 @@ class GoRulesSchema(BaseModel):
     eval_ts_ms : int
     signals : dict[str,Signal] # sensor_id - Signal
 
-TELEMETRY_RULES_ENDPOINT = "/api/rule"
+TELEMETRY_RULES_ENDPOINT = "/alerts/"
 TIME_CACHE_NS = 3 * 1_000_000_000
 class RulesEngine:
     def __init__(self,config):

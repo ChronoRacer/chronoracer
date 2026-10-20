@@ -7,7 +7,7 @@ The race VM has no internet access. Every Python dependency is installed while t
 ## Image bake
 
 [`install-analysis.sh`](install-analysis.sh) runs on the Packer builder. It installs `python3-venv`, creates
-`/chronoracer/analysis-venv`, installs [`requirements-todo.txt`](../requirements-todo.txt) into it, and fails the
+`/chronoracer/analysis-venv`, installs [`requirements.txt`](../requirements.txt) into it, and fails the
 build on `pip check` or a failed import. It copies the `shared`, `data_stream`, `rules`, and `predictions` packages to
 `/chronoracer/analysis`, so the module imports as `analysis.*` with `PYTHONPATH=/chronoracer`. Changing code or
 requirements means rebuilding the image family.
