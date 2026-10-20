@@ -1,8 +1,8 @@
 use crate::processing::sensor_data_message::MAX_SENSOR_ID_BYTES;
-use crate::telemetry::proto::stream_event::Payload;
-use crate::telemetry::proto::telemetry_server::{Telemetry, TelemetryServer};
+use crate::telemetry::proto::watch_response::Payload;
+use crate::telemetry::proto::telemetry_service_server::{TelemetryService, TelemetryServiceServer};
 use crate::telemetry::proto::watch_request::Selection;
-use crate::telemetry::proto::{Gap, Hello, Point, PointBatch, StreamEvent, WatchRequest};
+use crate::telemetry::proto::{Gap, Hello, Point, PointBatch, WatchRequest, WatchResponse};
 use crate::telemetry::queue::{
     Chunk, Drain, FIRST_SEQUENCE, Filter, GapSpan, MAX_POINTS_PER_BATCH, PreviewHub,
     SubscribeError, Subscriber,
@@ -122,7 +122,7 @@ async fn run_server(
     if let Some(tx) = bound_tx.take() {
         let _ = tx.send(bound);
     }
-    info!(%bound, "Telemetry gRPC listener bound");
+    info!(%bound, "gRPC server started - listener bound");
     // tonic's `tcp_nodelay` applies only to its own listener. This server accepts on
     // `TcpListenerStream`, so Nagle would hold small preview frames unless set here.
     let incoming = TcpListenerStream::new(listener).map(|accepted| {
@@ -193,7 +193,7 @@ impl TelemetryService for WatchService {
         info!(
             client_id = subscriber.client_id(),
             selected_sensors = subscriber.selected_sensor_count(),
-            "Telemetry watch started"
+            "New subscriber Watch started"
         );
         let state = StreamState {
             race_id: self.race_id.to_string(),

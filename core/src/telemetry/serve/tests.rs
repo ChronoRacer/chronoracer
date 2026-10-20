@@ -1,10 +1,10 @@
 use super::*;
 use crate::processing::sensor_data_message::{AbsoluteSensorReading, UnwoundSensorDataMessage};
 use crate::runtime_configuration::RetainReadTimeValue;
-use crate::telemetry::proto::stream_event::Payload;
-use crate::telemetry::proto::telemetry_client::TelemetryClient;
+use crate::telemetry::proto::watch_response::Payload;
+use crate::telemetry::proto::telemetry_service_client::TelemetryServiceClient;
 use crate::telemetry::proto::watch_request::Selection;
-use crate::telemetry::proto::{AllSensors, SensorList, WatchRequest};
+use crate::telemetry::proto::{AllSensors, SensorList, WatchRequest, WatchResponse};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tonic::transport::Endpoint;

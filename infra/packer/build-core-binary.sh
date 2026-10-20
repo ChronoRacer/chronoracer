@@ -82,7 +82,7 @@ start=$(date +%s)
 echo "Creating source code bundle"
 tar -czvf "$core_bundle" \
   -C "${REPO_ROOT}" \
-  core/src core/Cargo.lock core/Cargo.toml core/.cargo core/build.rs core/proto
+  core/src core/Cargo.lock core/Cargo.toml core/.cargo core/build.rs core/proto core/version.txt
 
 MACHINE_TYPE="c4d-highcpu-2"
 echo "Creating disposable Spot builder ${INSTANCE} (${ZONE}, ${MACHINE_TYPE})"
