@@ -5,7 +5,7 @@ set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 SRC="${ANALYSIS_SRC:-/tmp/analysis-src}"
-REQUIREMENTS="${SRC}/requirements-todo.txt"
+REQUIREMENTS="${SRC}/requirements.txt"
 VENV="/chronoracer/analysis-venv"
 CODE_DIR="/chronoracer/analysis"
 PACKAGES=(shared data_stream rules predictions)
