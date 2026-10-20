@@ -1,3 +1,11 @@
+/**
+ * @fileoverview Core gRPC Telemetry Stream Watcher Loop
+ *
+ * Consumes the streaming gRPC `watch` RPC endpoint from the core telemetry server.
+ * Streams data batches into `PreviewStore` and handles connection recovery using
+ * exponential backoff with jitter and Keep-Alive keepalive health checks.
+ */
+
 import { setTimeout as sleep } from 'node:timers/promises';
 import { ChannelCredentials } from '@grpc/grpc-js';
 import { ClientError, createChannel, createClient, Status } from 'nice-grpc';
@@ -28,6 +36,15 @@ export type CoreWatchOptions = {
   signal: AbortSignal;
 };
 
+/**
+ * Executes a resilient, infinite reconnection loop watching core telemetry updates.
+ *
+ * - Ingests `hello`, `pointBatch`, and `gap` payloads into the local `PreviewStore`.
+ * - Validates expected `raceId` matches upon receiving the `hello` handshake.
+ * - Reconnects automatically on stream termination or transient errors using backoff + jitter.
+ *
+ * @throws {Error} Immediately if `raceId` mismatches or gRPC status is `INVALID_ARGUMENT`.
+ */
 export async function runCoreWatchLoop(options: CoreWatchOptions): Promise<void> {
   const { coreTelemetryUrl, raceId, sensors, store, signal } = options;
   const address = coreTelemetryGrpcAddress(coreTelemetryUrl);

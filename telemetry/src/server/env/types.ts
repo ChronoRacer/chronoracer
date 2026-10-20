@@ -1,4 +1,9 @@
-// Types for the telemetry server environment variables.
+/**
+ * @fileoverview Telemetry Server Environment & Runtime Configuration Types
+ *
+ * Defines parsed environment settings including storage retention rules,
+ * WebSocket fanout rate-limiting, and optional OAuth/OIDC authentication.
+ */
 
 export type SensorSelection = string[] | undefined;
 
@@ -31,5 +36,6 @@ export type TelemetryEnv = {
   ring: RingLimits;
   fanout: FanoutConfig;
   auth: AuthConfig;
+  analysisIngestToken: string | undefined;
   clientDir: string | undefined;
 };

@@ -1,4 +1,10 @@
-// Preview store for the telemetry server.
+/**
+ * @fileoverview In-Memory Ring Buffer Store for Live Telemetry
+ *
+ * High-performance, time-series ring buffer using double-ended queues (`Denque`).
+ * Handles point ingestion, stream gap detection, memory eviction rules (TTL + capacity limits),
+ * and incremental delta accumulation for downstream websockets.
+ */
 
 import Denque from 'denque';
 import type { CoreGap, Hello, Point } from '../core/types.js';

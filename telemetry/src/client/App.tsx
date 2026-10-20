@@ -1,39 +1,76 @@
-import { ConnectionStatus } from './components/ConnectionStatus';
+import { useEffect, useState } from 'react';
+import { AlertsPanel } from './components/AlertsPanel';
+import { Drawer } from './components/Drawer';
+import { DrivingZone } from './components/DrivingZone';
 import { GapMarkers } from './components/GapMarkers';
-import { SensorPanel } from './components/SensorPanel';
+import { PowertrainZone } from './components/PowertrainZone';
+import { PredictionsPanel } from './components/PredictionsPanel';
+import { ServiceZone } from './components/ServiceZone';
+import { StatusBar } from './components/StatusBar';
 import { useTelemetrySocket } from './hooks/useTelemetrySocket';
-import { CAR } from './sensors/catalog';
-import { withUnknownSensors } from './sensors/layout';
+import { unknownSensors } from './sensors/layout';
+
+type DrawerKind = 'analysis' | 'service' | null;
 
 export function App() {
   const state = useTelemetrySocket();
+  const other = unknownSensors(state.sensorIds);
+  const [drawer, setDrawer] = useState<DrawerKind>(null);
+
+  useEffect(() => {
+    if (drawer === null) {
+      return;
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setDrawer(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [drawer]);
 
   return (
-    <div className="app">
-      <header>
-        <h1 className="brand">Chronoracer Telemetry</h1>
-        <p className="lede">{CAR}. Near-real-time preview of Core-accepted sensor values.</p>
-      </header>
-
-      <div className="toolbar">
-        <ConnectionStatus connection={state.connection} coreConnected={state.coreConnected} hello={state.hello} />
-        <a className="auth-link" href="/auth/logout">
-          Log out
-        </a>
+    <div className="dash">
+      <StatusBar state={state} />
+      <div className="dash-chrome">
+        <GapMarkers gaps={state.gaps} />
+        <PredictionsPanel
+          predictions={state.predictions}
+          variant="strip"
+          onExpand={() => setDrawer('analysis')}
+        />
+        <AlertsPanel alerts={state.alerts} variant="strip" onExpand={() => setDrawer('analysis')} />
       </div>
 
-      <GapMarkers gaps={state.gaps} />
+      <div className="dash-stage">
+        <div className="zones-main">
+          <DrivingZone store={state.store} />
+          <PowertrainZone store={state.store} />
+        </div>
 
-      {withUnknownSensors(state.sensorIds).map((section) => (
-        <section key={section.title} className="sensor-section">
-          <h2>{section.title}</h2>
-          <div className="sensor-grid">
-            {section.sensors.map((id) => (
-              <SensorPanel key={id} store={state.store} id={id} />
-            ))}
+        <Drawer open={drawer === 'analysis'} title="Predykcje i alerty" onClose={() => setDrawer(null)}>
+          <div className="drawer-split">
+            <PredictionsPanel predictions={state.predictions} />
+            <AlertsPanel alerts={state.alerts} />
           </div>
-        </section>
-      ))}
+        </Drawer>
+
+        <Drawer
+          open={drawer === 'service'}
+          title={other.length > 0 ? 'Serwis, wykresy i pozostałe sensory' : 'Serwis i wykresy'}
+          onClose={() => setDrawer(null)}
+        >
+          <ServiceZone store={state.store} extraIds={other} />
+        </Drawer>
+      </div>
+
+      <ServiceZone
+        store={state.store}
+        variant="strip"
+        onExpand={() => setDrawer('service')}
+        extraIds={other}
+      />
     </div>
   );
 }

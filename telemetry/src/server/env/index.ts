@@ -1,4 +1,10 @@
-// Load the telemetry server environment variables.
+/**
+ * @fileoverview Environment Loader & Configuration Mapper
+ *
+ * Loads, validates, and transforms process environment variables into a strongly-typed
+ * `TelemetryEnv` config object. Handles fail-fast validation errors and constructs
+ * conditional authentication configurations (OAuth vs disabled).
+ */
 
 import { createEnv } from '@t3-oss/env-core';
 import { serverEnvShape, type RawEnv } from './schema.js';
@@ -36,6 +42,7 @@ function toTelemetryEnv(raw: RawEnv): TelemetryEnv {
     },
     clientDir: raw.TELEMETRY_CLIENT_DIR || undefined,
     auth: toAuthConfig(raw),
+    analysisIngestToken: raw.ANALYSIS_INGEST_TOKEN || undefined,
   };
 }
 

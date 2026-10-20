@@ -23,6 +23,7 @@
     "@t3-oss/env-core": "^0.13.11",
     "denque": "^2.1.0",
     "hono": "^4.9.0",
+    "motion": "^14.1.0",
     "nice-grpc": "^2.1.17",
     "nice-grpc-common": "^2.0.2",
     "oauth4webapi": "^3.8.8",

@@ -1,4 +1,12 @@
-// Browser login with Auth0 (@hono/oidc-auth): authorization code + PKCE, HS256 session cookie.
+/**
+ * @fileoverview OpenID Connect (OIDC) & Session Auth Middleware (Auth0 + @hono/oidc-auth)
+ *
+ * Implements browser authentication using OAuth 2.0 Authorization Code Flow + PKCE:
+ * - OIDC middleware initialization & HTTP-only session cookie management (12h TTL).
+ * - Auth routes (`/login`, `/callback`, `/logout` with OIDC RP-Initiated Logout).
+ * - Development fallback (`auth.enabled: false`) yielding an `anonymous` dummy session.
+ * - Same-Origin verification middleware protecting WebSocket upgrade endpoints against CSWSH.
+ */
 
 import {
   getAuth,
@@ -71,6 +79,7 @@ export async function readSession(c: Context, auth: AuthConfig): Promise<Session
   return session?.sub ? { sub: session.sub, email: session.email || undefined } : undefined;
 }
 
+/** Cross-Site WebSocket Hijacking (CSWSH) protection: verifies `Origin` header matches `auth.rootUrl`. */
 export function requireSameOrigin(auth: AuthConfig): MiddlewareHandler {
   return async (c, next) => {
     if (auth.enabled && c.req.header('origin') !== auth.rootUrl) {

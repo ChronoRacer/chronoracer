@@ -1,4 +1,9 @@
-// Environment variables validation schema for the telemetry server.
+/**
+ * @fileoverview Zod Validation Schemas & Parsers for Environment Variables
+ *
+ * Defines type-safe parsing rules, fallbacks, and coercions for all application
+ * environment variables prior to application bootstrapping.
+ */
 
 import { z } from 'zod';
 
@@ -37,6 +42,7 @@ export const serverEnvShape = {
   OAUTH_ISSUER: z.url().optional(),
   TELEMETRY_ROOT_URL: z.url().optional(),
   SESSION_SECRET: z.string().trim().min(32).optional(),
+  ANALYSIS_INGEST_TOKEN: z.string().trim().min(32).optional(),
 };
 
 export type RawEnv = z.infer<z.ZodObject<typeof serverEnvShape>>;
