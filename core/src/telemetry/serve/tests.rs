@@ -2,9 +2,9 @@ use super::*;
 use crate::processing::sensor_data_message::{AbsoluteSensorReading, UnwoundSensorDataMessage};
 use crate::runtime_configuration::RetainReadTimeValue;
 use crate::telemetry::proto::stream_event::Payload;
+use crate::telemetry::proto::telemetry_client::TelemetryClient;
 use crate::telemetry::proto::watch_request::Selection;
 use crate::telemetry::proto::{AllSensors, SensorList, WatchRequest};
-use crate::telemetry::proto::telemetry_client::TelemetryClient;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tonic::transport::Endpoint;
@@ -17,12 +17,7 @@ fn preview_with_slots(max_points: usize, max_subscribers: usize) -> PreviewHub {
     let driver = Box::leak(Box::new(RetainReadTimeValue::new(CompactString::from(
         "drv",
     ))));
-    PreviewHub::new(
-        driver,
-        max_points,
-        Duration::from_secs(30),
-        max_subscribers,
-    )
+    PreviewHub::new(driver, max_points, Duration::from_secs(30), max_subscribers)
 }
 
 fn watch_all(client_id: &str) -> WatchRequest {
@@ -117,11 +112,11 @@ fn point_batch_emits_only_the_chunk_span() {
     assert!(pending.is_empty());
 }
 
-async fn connect(url: &str) -> TelemetryClient<tonic::transport::Channel> {
+async fn connect(url: &str) -> TelemetryServiceClient<tonic::transport::Channel> {
     connect_with_window(url, HTTP2_WINDOW_SIZE).await
 }
 
-async fn connect_with_window(url: &str, window: u32) -> TelemetryClient<tonic::transport::Channel> {
+async fn connect_with_window(url: &str, window: u32) -> TelemetryServiceClient<tonic::transport::Channel> {
     let channel = Endpoint::from_shared(url.to_owned())
         .unwrap()
         .initial_stream_window_size(window)
@@ -129,7 +124,7 @@ async fn connect_with_window(url: &str, window: u32) -> TelemetryClient<tonic::t
         .connect()
         .await
         .unwrap();
-    TelemetryClient::new(channel)
+    TelemetryServiceClient::new(channel)
 }
 
 #[tokio::test]
@@ -260,7 +255,7 @@ async fn wait_until_sender_stalls(hub: &PreviewHub, offered: usize) -> usize {
 }
 
 async fn next_point_batch(
-    stream: &mut tonic::Streaming<StreamEvent>,
+    stream: &mut tonic::Streaming<WatchResponse>,
 ) -> crate::telemetry::proto::PointBatch {
     let event = tokio::time::timeout(Duration::from_secs(2), stream.message())
         .await
@@ -273,7 +268,7 @@ async fn next_point_batch(
     batch
 }
 
-async fn hello_of(stream: &mut tonic::Streaming<StreamEvent>) -> Hello {
+async fn hello_of(stream: &mut tonic::Streaming<WatchResponse>) -> Hello {
     let event = stream.message().await.unwrap().unwrap();
     let Some(Payload::Hello(hello)) = event.payload else {
         panic!("expected hello, got {event:?}");
@@ -297,8 +292,14 @@ async fn two_clients_each_receive_their_own_selection() {
         .await
         .unwrap()
         .into_inner();
-    assert_eq!(hello_of(&mut telemetry_stream).await.selected_sensor_count, 0);
-    assert_eq!(hello_of(&mut analysis_stream).await.selected_sensor_count, 2);
+    assert_eq!(
+        hello_of(&mut telemetry_stream).await.selected_sensor_count,
+        0
+    );
+    assert_eq!(
+        hello_of(&mut analysis_stream).await.selected_sensor_count,
+        2
+    );
 
     hub.offer(&[message("speed", 2), message("temp", 1), message("rpm", 1)]);
 
@@ -318,7 +319,9 @@ async fn watch_rejects_invalid_requests() {
     let hub = preview(1000);
     let (_cancel, url) = start(hub.clone()).await;
     let mut client = connect(&url).await;
-    let too_many: Vec<String> = (0..=MAX_SELECTED_SENSORS).map(|i| format!("s{i}")).collect();
+    let too_many: Vec<String> = (0..=MAX_SELECTED_SENSORS)
+        .map(|i| format!("s{i}"))
+        .collect();
     let too_many: Vec<&str> = too_many.iter().map(String::as_str).collect();
     let long_sensor = "x".repeat(MAX_SENSOR_ID_BYTES + 1);
     let long_client = "c".repeat(MAX_CLIENT_ID_BYTES + 1);

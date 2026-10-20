@@ -373,7 +373,12 @@ impl PreviewHub {
             let refused = incoming
                 .messages
                 .iter()
-                .map(|message| (Arc::clone(&message.sensor_id), as_u64(message.readings.len())))
+                .map(|message| {
+                    (
+                        Arc::clone(&message.sensor_id),
+                        as_u64(message.readings.len()),
+                    )
+                })
                 .chain(incoming.missed);
             self.note_misses(epoch, refused);
         }
@@ -397,7 +402,12 @@ impl PreviewHub {
         } else if registry.len() >= self.inner.max_subscribers {
             return Err(SubscribeError::Full);
         }
-        let join_epoch = self.inner.epoch.load(Ordering::Acquire).wrapping_add(1).max(1);
+        let join_epoch = self
+            .inner
+            .epoch
+            .load(Ordering::Acquire)
+            .wrapping_add(1)
+            .max(1);
         let subscriber = Arc::new(Subscriber {
             client_id: client_id.to_owned(),
             filter,
@@ -460,7 +470,12 @@ impl PreviewHub {
         let registry = self.registry_lock();
         let mut any = false;
         for subscriber in registry.iter() {
-            if subscriber.ingest(&incoming, &misses, self.inner.max_points, self.inner.max_age) {
+            if subscriber.ingest(
+                &incoming,
+                &misses,
+                self.inner.max_points,
+                self.inner.max_age,
+            ) {
                 subscriber.notify.notify_waiters();
                 any = true;
             }

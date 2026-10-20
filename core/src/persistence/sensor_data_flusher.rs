@@ -41,9 +41,10 @@ pub enum FlushOutcome {
 }
 
 /// The single limit on concurrent database writes. `max_inflight_db_writes` permits in total:
-/// a pool only the fast path may use, plus a shared pool. Reserved is a quarter of the total, at
+/// a pool only the enabled fast path may use, plus a shared pool. Reserved is a quarter of the total, at
 /// least one when more than one permit exists, and never the last permit. One permit is shared.
 /// With two or more, normal batches cannot occupy every permit and starve fast flushes.
+/// Without a fast path, all permits are shared.
 struct WritePermits {
     fast_reserved: Arc<Semaphore>,
     shared: Arc<Semaphore>,
@@ -57,8 +58,12 @@ fn fast_reserved_permits(max_inflight: usize) -> usize {
 }
 
 impl WritePermits {
-    fn new(max_inflight: usize) -> Self {
-        let reserved = fast_reserved_permits(max_inflight);
+    fn new(max_inflight: usize, fast_path_enabled: bool) -> Self {
+        let reserved = if fast_path_enabled {
+            fast_reserved_permits(max_inflight)
+        } else {
+            0
+        };
         Self {
             fast_reserved: Arc::new(Semaphore::new(reserved)),
             shared: Arc::new(Semaphore::new(max_inflight - reserved)),
@@ -183,7 +188,7 @@ impl FlushContext {
                 }
                 Err(error) if is_retryable(&error) => {
                     self.write_metrics.record_retry();
-                    if retries % RETRY_LOG_EVERY == 0 {
+                    if retries.is_multiple_of(RETRY_LOG_EVERY) {
                         if is_auth_or_config(&error) {
                             warn!(%error, "Database write failed: auth/config problem, retrying. retries_so_far={retries}, flush_type={wiring_type:?}");
                         } else {
@@ -236,7 +241,7 @@ impl FlushContext {
 }
 
 pub struct InfluxDbFlusher {
-    fast_wiring: BatcherWiring,
+    fast_wiring: Option<BatcherWiring>,
     normal_wiring: BatcherWiring,
     context: Arc<FlushContext>,
 }
@@ -246,19 +251,23 @@ impl InfluxDbFlusher {
     pub fn from_config(
         persistence: &PersistenceConfig,
         race_id: CompactString,
-        fast_wiring: BatcherWiring,
+        fast_wiring: Option<BatcherWiring>,
         normal_wiring: BatcherWiring,
         client: Arc<influxdb3_client::Client>,
         write_metrics: Arc<WriteMetrics>,
         offsets: OffsetLedger,
     ) -> Self {
+        let permits = WritePermits::new(
+            usize::from(persistence.max_inflight_db_writes.get()),
+            fast_wiring.is_some(),
+        );
         Self {
             fast_wiring,
             normal_wiring,
             context: Arc::new(FlushContext {
                 client,
                 race_id: Arc::from(race_id),
-                permits: WritePermits::new(usize::from(persistence.max_inflight_db_writes.get())),
+                permits,
                 backoff: RetryBackoff {
                     initial: Duration::from_millis(u64::from(
                         persistence.write_retry_initial_backoff_ms.get(),
@@ -279,10 +288,14 @@ impl InfluxDbFlusher {
             normal_wiring,
             context,
         } = self;
-        tokio::join!(
-            Self::ingest_internal(fast_wiring, Arc::clone(&context)),
-            Self::ingest_internal(normal_wiring, context),
-        );
+        if let Some(fast_wiring) = fast_wiring {
+            tokio::join!(
+                Self::ingest_internal(fast_wiring, Arc::clone(&context)),
+                Self::ingest_internal(normal_wiring, context),
+            );
+        } else {
+            Self::ingest_internal(normal_wiring, context).await;
+        }
     }
 
     async fn ingest_internal(wiring: BatcherWiring, context: Arc<FlushContext>) {
@@ -323,7 +336,9 @@ impl InfluxDbFlusher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::messaging::offset_ledger::testing::{RecordingSink, detached_ledger, recording_ledger};
+    use crate::messaging::offset_ledger::testing::{
+        RecordingSink, detached_ledger, recording_ledger,
+    };
     use crate::messaging::offset_tracker::OffsetSet;
     use crate::persistence::persistence_entrypoint::PersistenceLayerEntryPoint;
     use std::io::{Read, Write};
@@ -424,8 +439,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn normal_path_uses_all_permits_when_fast_path_is_disabled() {
+        let permits = WritePermits::new(3, false);
+        let mut held = Vec::new();
+        for _ in 0..3 {
+            held.push(
+                timeout(SHORT, permits.acquire(BatcherWiringType::Normal))
+                    .await
+                    .expect("normal path must have access to every permit")
+                    .unwrap(),
+            );
+        }
+        assert!(
+            timeout(SHORT, permits.acquire(BatcherWiringType::Normal))
+                .await
+                .is_err(),
+            "normal path must still respect the total write limit"
+        );
+    }
+
+    #[tokio::test]
     async fn normal_path_cannot_use_the_fast_reserve() {
-        let permits = WritePermits::new(3);
+        let permits = WritePermits::new(3, true);
         let _first = permits.acquire(BatcherWiringType::Normal).await.unwrap();
         let _second = permits.acquire(BatcherWiringType::Normal).await.unwrap();
 
@@ -445,7 +480,7 @@ mod tests {
 
     #[tokio::test]
     async fn fast_path_takes_the_reserve_first_and_total_stays_at_the_limit() {
-        let permits = WritePermits::new(3);
+        let permits = WritePermits::new(3, true);
         let _fast = permits.acquire(BatcherWiringType::Fast).await.unwrap();
 
         // The reserve was used, so both shared permits are still free for normal.
@@ -467,7 +502,7 @@ mod tests {
 
     #[tokio::test]
     async fn fast_path_overflows_into_the_shared_pool() {
-        let permits = WritePermits::new(3);
+        let permits = WritePermits::new(3, true);
         let _reserved = permits.acquire(BatcherWiringType::Fast).await.unwrap();
         let _shared_a = permits.acquire(BatcherWiringType::Fast).await.unwrap();
         let _shared_b = permits.acquire(BatcherWiringType::Fast).await.unwrap();
@@ -480,7 +515,7 @@ mod tests {
 
     #[tokio::test]
     async fn single_permit_is_shared_by_both_paths() {
-        let permits = WritePermits::new(1);
+        let permits = WritePermits::new(1, true);
         let held = permits.acquire(BatcherWiringType::Normal).await.unwrap();
         assert!(
             timeout(SHORT, permits.acquire(BatcherWiringType::Fast))
@@ -557,7 +592,7 @@ mod tests {
         FlushContext {
             client: Arc::new(client),
             race_id: Arc::from("race"),
-            permits: WritePermits::new(2),
+            permits: WritePermits::new(2, true),
             backoff: RetryBackoff {
                 initial: Duration::from_millis(2),
                 max: Duration::from_millis(4),
@@ -615,7 +650,8 @@ mod tests {
     #[tokio::test]
     async fn auth_and_missing_database_are_retried_until_the_write_succeeds() {
         for code in [401, 403, 404] {
-            let (port, server) = spawn_mock_influx(vec![(code, r#"{"error":"rejected"}"#), (204, "")]);
+            let (port, server) =
+                spawn_mock_influx(vec![(code, r#"{"error":"rejected"}"#), (204, "")]);
             let metrics = Arc::new(WriteMetrics::new());
             let context = context_for(port, Arc::clone(&metrics)).await;
 
@@ -686,13 +722,20 @@ mod tests {
     }
 
     /// Registers the offsets with the context's ledger as the sink would, and pairs them with points.
-    fn point_batch(context: &FlushContext, offsets: &[(i32, i64)], points: Vec<SimplePoint>) -> PointBatch {
+    fn point_batch(
+        context: &FlushContext,
+        offsets: &[(i32, i64)],
+        points: Vec<SimplePoint>,
+    ) -> PointBatch {
         let mut set = OffsetSet::default();
         for &(partition, offset) in offsets {
             context.offsets.register(partition, offset);
             set.push(partition, offset);
         }
-        PointBatch { points, offsets: set }
+        PointBatch {
+            points,
+            offsets: set,
+        }
     }
 
     fn recording_context(context: &mut FlushContext) -> Arc<RecordingSink> {
@@ -714,9 +757,14 @@ mod tests {
             let sink = recording_context(&mut context);
             let batch = point_batch(&context, &[(0, 5), (0, 6), (1, 9)], batch());
 
-            let points = context.flush_and_settle(batch, BatcherWiringType::Normal).await;
+            let points = context
+                .flush_and_settle(batch, BatcherWiringType::Normal)
+                .await;
 
-            assert!(points.is_empty(), "{expected:?}: the buffer comes back cleared");
+            assert!(
+                points.is_empty(),
+                "{expected:?}: the buffer comes back cleared"
+            );
             assert_eq!(sink.positions(), [(0, 7), (1, 10)], "{expected:?}");
             server.join().unwrap();
         }
@@ -726,7 +774,11 @@ mod tests {
     async fn a_batch_is_settled_only_after_the_database_answered() {
         // Accepts connections but never answers: the write hangs like an unreachable database.
         let hung = TcpListener::bind("127.0.0.1:0").unwrap();
-        let mut context = context_for(hung.local_addr().unwrap().port(), Arc::new(WriteMetrics::new())).await;
+        let mut context = context_for(
+            hung.local_addr().unwrap().port(),
+            Arc::new(WriteMetrics::new()),
+        )
+        .await;
         let sink = recording_context(&mut context);
         let batch = point_batch(&context, &[(0, 0)], batch());
 
@@ -748,7 +800,9 @@ mod tests {
         let sink = recording_context(&mut context);
         let batch = point_batch(&context, &[(2, 100)], batch());
 
-        context.flush_and_settle(batch, BatcherWiringType::Normal).await;
+        context
+            .flush_and_settle(batch, BatcherWiringType::Normal)
+            .await;
 
         assert_eq!(sink.stored(), [(2, 101)]);
         assert_eq!(server.join().unwrap().len(), 3);
@@ -757,7 +811,11 @@ mod tests {
     #[tokio::test]
     async fn a_batch_without_points_settles_without_writing() {
         // Nothing listens on this port: a write attempt would retry forever.
-        let closed_port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let closed_port = TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
         let mut context = context_for(closed_port, Arc::new(WriteMetrics::new())).await;
         let sink = recording_context(&mut context);
         let batch = point_batch(&context, &[(0, 3)], Vec::new());
@@ -781,12 +839,57 @@ mod tests {
         let first = point_batch(&context, &[(0, 0), (0, 1), (0, 2), (0, 3), (0, 4)], batch());
         let second = point_batch(&context, &[(0, 5), (0, 6)], batch());
 
-        context.flush_and_settle(second, BatcherWiringType::Normal).await;
-        assert!(sink.stored().is_empty(), "offsets 0..=4 are still in flight");
-        context.flush_and_settle(first, BatcherWiringType::Normal).await;
+        context
+            .flush_and_settle(second, BatcherWiringType::Normal)
+            .await;
+        assert!(
+            sink.stored().is_empty(),
+            "offsets 0..=4 are still in flight"
+        );
+        context
+            .flush_and_settle(first, BatcherWiringType::Normal)
+            .await;
 
         assert_eq!(sink.stored(), [(0, 7)]);
         server.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn flusher_without_fast_wiring_writes_and_settles_normal_batches() {
+        let (port, server) = spawn_mock_influx(vec![(204, "")]);
+        let mut context = context_for(port, Arc::new(WriteMetrics::new())).await;
+        let sink = recording_context(&mut context);
+        let batch = point_batch(&context, &[(0, 0), (0, 1)], batch());
+        let (batch_tx, batch_rx) = tokio::sync::mpsc::channel(4);
+        let (pool_tx, mut pool_rx) = tokio::sync::mpsc::channel(4);
+        batch_tx.send(batch).await.unwrap();
+        drop(batch_tx);
+
+        let config = PersistenceConfig::mock_config();
+        let flusher = InfluxDbFlusher::from_config(
+            &config,
+            CompactString::from("race"),
+            None,
+            BatcherWiring {
+                batch_rx,
+                pool_tx,
+                wiring_type: BatcherWiringType::Normal,
+            },
+            context.client,
+            context.write_metrics,
+            context.offsets,
+        );
+        assert_eq!(
+            flusher.context.permits.shared.available_permits(),
+            usize::from(config.max_inflight_db_writes.get()),
+        );
+        timeout(Duration::from_secs(2), flusher.ingest())
+            .await
+            .expect("normal-only flusher must drain and terminate");
+
+        assert_eq!(sink.positions(), [(0, 2)]);
+        assert!(pool_rx.try_recv().unwrap().is_empty());
+        assert_eq!(server.join().unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -816,4 +919,5 @@ mod tests {
         let recycled = pool_rx.try_recv().unwrap();
         assert!(recycled.is_empty() && recycled.capacity() > 0);
         server.join().unwrap();
-    }}
+    }
+}

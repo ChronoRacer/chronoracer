@@ -16,7 +16,7 @@ Terraform GCS backend stores workspace state as `{prefix}/default.tfstate`.
 
 | Prefix | Who             | Contents                                                                             |
 |--------|-----------------|--------------------------------------------------------------------------------------|
-| `base` | Human or CI     | Always-on stack. Object `base/default.tfstate`. Controller never opens this backend. |
+| `base` | Operator or CI  | Always-on stack. Object `base/default.tfstate`. Controller never opens this backend. |
 | `race` | Controller only | Race stack. Object `race/default.tfstate`. Empty after destroy.                      |
 
 `raceId` is a Terraform variable for GCS object paths, Core metadata, and the `race-id` label. It is not a second state
@@ -30,7 +30,7 @@ after a killed build: human/CI unlocks `race/default.tfstate` only, then retry t
 
 | Stack     | Who                       | When                                                               |
 |-----------|---------------------------|--------------------------------------------------------------------|
-| Always-on | Human / CI                | Rare. Platform changes.                                            |
+| Always-on | Operator / CI             | Rare. Platform changes.                                            |
 | Race      | Controller in Cloud Build | Every `apply`, `close_ingest`, `destroy`. Triggered only by Relay. |
 
 ## Always-on stack

@@ -7,6 +7,7 @@
   "kafka_sa": "chronoracer-kafka",
   "core_sa": "chronoracer-core",
   "relay_sa": "chronoracer-relay",
+  "car_sa": "chronoracer-car",
   "controller_sa": "chronoracer-controller",
   "dashboard_sa": "chronoracer-dashboard",
   "analysis_sa": "chronoracer-analysis",

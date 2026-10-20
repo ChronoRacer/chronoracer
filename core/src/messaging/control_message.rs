@@ -76,13 +76,16 @@ impl fmt::Display for InvalidDriverId {
             }
             InvalidDriverId::ControlCharacter => write!(f, "contains ASCII control character"),
             InvalidDriverId::LineProtocolSpecial => {
-                write!(f, "contains line-protocol special character (, = space \\\\ \")")
+                write!(
+                    f,
+                    "contains line-protocol special character (, = space \\\\ \")"
+                )
             }
         }
     }
 }
 
-/// Rejects values unsafe as InfluxDB line-protocol tag values (unescaped).
+/// Rejects values unsafe as `InfluxDB` line-protocol tag values (unescaped).
 pub fn validate_driver_id(driver_id: &str) -> Result<(), InvalidDriverId> {
     if driver_id.is_empty() {
         return Err(InvalidDriverId::Empty);
@@ -239,10 +242,7 @@ mod tests {
     #[test]
     fn validate_driver_id_rejects_too_long() {
         let long = "x".repeat(MAX_DRIVER_ID_BYTES + 1);
-        assert_eq!(
-            validate_driver_id(&long),
-            Err(InvalidDriverId::TooLong)
-        );
+        assert_eq!(validate_driver_id(&long), Err(InvalidDriverId::TooLong));
         let err = CoreControlMessage::try_from(message(Some(b"CHDRV"), Some(long.as_bytes())))
             .err()
             .expect("oversized driver id");
@@ -273,7 +273,13 @@ mod tests {
 
     #[test]
     fn validate_driver_id_rejects_line_protocol_specials() {
-        for bad in ["x,race=other", "has space", "eq=bad", "slash\\y", "quote\"d"] {
+        for bad in [
+            "x,race=other",
+            "has space",
+            "eq=bad",
+            "slash\\y",
+            "quote\"d",
+        ] {
             assert_eq!(
                 validate_driver_id(bad),
                 Err(InvalidDriverId::LineProtocolSpecial),

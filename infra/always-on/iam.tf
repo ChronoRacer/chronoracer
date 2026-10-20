@@ -338,6 +338,13 @@ resource "google_secret_manager_secret_iam_member" "okta_oauth" {
   member    = "serviceAccount:${google_service_account.dashboard.email}"
 }
 
+resource "google_secret_manager_secret_iam_member" "car_okta_oauth" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.okta_oauth.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.car.email}"
+}
+
 resource "google_artifact_registry_repository_iam_member" "telemetry_reader" {
   project    = var.project_id
   location   = var.region

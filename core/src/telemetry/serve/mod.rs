@@ -1,10 +1,11 @@
+use crate::processing::sensor_data_message::MAX_SENSOR_ID_BYTES;
 use crate::telemetry::proto::stream_event::Payload;
 use crate::telemetry::proto::telemetry_server::{Telemetry, TelemetryServer};
-use crate::telemetry::proto::{Gap, Hello, Point, PointBatch, StreamEvent, WatchRequest};
 use crate::telemetry::proto::watch_request::Selection;
+use crate::telemetry::proto::{Gap, Hello, Point, PointBatch, StreamEvent, WatchRequest};
 use crate::telemetry::queue::{
-    Chunk, Drain, FIRST_SEQUENCE, Filter, GapSpan, MAX_POINTS_PER_BATCH, PreviewHub, SubscribeError,
-    Subscriber,
+    Chunk, Drain, FIRST_SEQUENCE, Filter, GapSpan, MAX_POINTS_PER_BATCH, PreviewHub,
+    SubscribeError, Subscriber,
 };
 use compact_str::CompactString;
 use std::collections::{HashSet, VecDeque};
@@ -14,13 +15,12 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
-use tokio_stream::wrappers::TcpListenerStream;
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::TcpListenerStream;
 use tokio_util::sync::CancellationToken;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
-use crate::processing::sensor_data_message::MAX_SENSOR_ID_BYTES;
 
 const HTTP2_WINDOW_SIZE: u32 = 256 * 1024;
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
@@ -56,7 +56,7 @@ struct StreamState {
     next_sequence: u64,
     selected_sensor_count: u32,
     hello_sent: bool,
-    pending: VecDeque<StreamEvent>,
+    pending: VecDeque<WatchResponse>,
     cancel: CancellationToken,
 }
 
@@ -92,7 +92,7 @@ async fn accept_loop(
         match run_server(&hub, &cancel, addr, &race_id, &mut bound_tx).await {
             Ok(()) => return,
             Err(error) => {
-                if failures % BIND_LOG_EVERY == 0 {
+                if failures.is_multiple_of(BIND_LOG_EVERY) {
                     error!(
                         %error,
                         %addr,
@@ -126,11 +126,10 @@ async fn run_server(
     // tonic's `tcp_nodelay` applies only to its own listener. This server accepts on
     // `TcpListenerStream`, so Nagle would hold small preview frames unless set here.
     let incoming = TcpListenerStream::new(listener).map(|accepted| {
-        accepted.map(|stream| {
+        accepted.inspect(|stream| {
             if let Err(error) = stream.set_nodelay(true) {
                 error!(%error, "failed to set TCP_NODELAY on telemetry connection");
             }
-            stream
         })
     });
     let service = WatchService {
@@ -145,7 +144,7 @@ async fn run_server(
         .max_concurrent_streams(MAX_CONCURRENT_STREAMS)
         .http2_keepalive_interval(Some(KEEPALIVE_INTERVAL))
         .http2_keepalive_timeout(Some(KEEPALIVE_TIMEOUT))
-        .add_service(TelemetryServer::new(service).max_decoding_message_size(MAX_REQUEST_BYTES))
+        .add_service(TelemetryServiceServer::new(service).max_decoding_message_size(MAX_REQUEST_BYTES))
         .serve_with_incoming_shutdown(incoming, cancel.clone().cancelled_owned())
         .await?;
     Ok(())
@@ -176,21 +175,21 @@ struct WatchService {
 }
 
 #[tonic::async_trait]
-impl Telemetry for WatchService {
+impl TelemetryService for WatchService {
     type WatchStream =
-        Pin<Box<dyn tokio_stream::Stream<Item = Result<StreamEvent, Status>> + Send>>;
+        Pin<Box<dyn tokio_stream::Stream<Item = Result<WatchResponse, Status>> + Send>>;
 
     async fn watch(
         &self,
         request: Request<WatchRequest>,
     ) -> Result<Response<Self::WatchStream>, Status> {
         let (client_id, filter) = parse_request(request.into_inner())?;
-        let subscriber = self
-            .hub
-            .subscribe(&client_id, filter)
-            .map_err(|SubscribeError::Full| {
-                Status::resource_exhausted("every telemetry subscriber slot is in use")
-            })?;
+        let subscriber =
+            self.hub
+                .subscribe(&client_id, filter)
+                .map_err(|SubscribeError::Full| {
+                    Status::resource_exhausted("every telemetry subscriber slot is in use")
+                })?;
         info!(
             client_id = subscriber.client_id(),
             selected_sensors = subscriber.selected_sensor_count(),
@@ -260,7 +259,7 @@ fn parse_request(request: WatchRequest) -> Result<(String, Filter), Status> {
 }
 
 enum Step {
-    Event(StreamEvent),
+    Event(WatchResponse),
     Replaced,
     Stopped,
 }
@@ -272,7 +271,7 @@ enum Drive {
     End,
 }
 
-async fn poll_step(drive: Drive) -> Option<(Result<StreamEvent, Status>, Drive)> {
+async fn poll_step(drive: Drive) -> Option<(Result<WatchResponse, Status>, Drive)> {
     let Drive::Live(mut state) = drive else {
         return None;
     };
@@ -285,10 +284,7 @@ async fn poll_step(drive: Drive) -> Option<(Result<StreamEvent, Status>, Drive)>
     }
     match wait_for_chunk(&mut state).await {
         Step::Event(event) => Some((Ok(event), Drive::Live(state))),
-        Step::Replaced => Some((
-            Err(Status::aborted("replaced by a new watch")),
-            Drive::End,
-        )),
+        Step::Replaced => Some((Err(Status::aborted("replaced by a new watch")), Drive::End)),
         Step::Stopped => None,
     }
 }
@@ -319,8 +315,8 @@ async fn wait_for_chunk(state: &mut StreamState) -> Step {
     }
 }
 
-fn hello_event(state: &StreamState) -> StreamEvent {
-    StreamEvent {
+fn hello_event(state: &StreamState) -> WatchResponse {
+    WatchResponse {
         payload: Some(Payload::Hello(Hello {
             protocol_version: PROTOCOL_VERSION,
             race_id: state.race_id.clone(),
@@ -331,8 +327,8 @@ fn hello_event(state: &StreamState) -> StreamEvent {
     }
 }
 
-fn push_gap(pending: &mut VecDeque<StreamEvent>, gap: GapSpan) {
-    pending.push_back(StreamEvent {
+fn push_gap(pending: &mut VecDeque<WatchResponse>, gap: GapSpan) {
+    pending.push_back(WatchResponse {
         payload: Some(Payload::Gap(Gap {
             first_sequence: gap.first_sequence,
             dropped_point_count: gap.dropped,
@@ -341,7 +337,7 @@ fn push_gap(pending: &mut VecDeque<StreamEvent>, gap: GapSpan) {
 }
 
 fn push_ready(
-    pending: &mut VecDeque<StreamEvent>,
+    pending: &mut VecDeque<WatchResponse>,
     gap: Option<GapSpan>,
     chunks: &[Chunk],
     tail: Option<GapSpan>,
@@ -357,7 +353,7 @@ fn push_ready(
     }
 }
 
-fn point_batch(chunks: &[Chunk]) -> Option<StreamEvent> {
+fn point_batch(chunks: &[Chunk]) -> Option<WatchResponse> {
     if chunks.is_empty() {
         return None;
     }
@@ -379,7 +375,7 @@ fn point_batch(chunks: &[Chunk]) -> Option<StreamEvent> {
     if points.is_empty() {
         return None;
     }
-    Some(StreamEvent {
+    Some(WatchResponse {
         payload: Some(Payload::PointBatch(PointBatch {
             first_sequence,
             points,

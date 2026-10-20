@@ -20,6 +20,7 @@ pub struct ProcessingLayerEntrypoint {
 
 impl ProcessingLayerEntrypoint {
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn init(
         sensor_sink_rx: BatchSinkRx,
         control_rx: SinkRx,

@@ -13,6 +13,23 @@ pub struct SensorDataSplitter {
 }
 
 impl SensorDataSplitter {
+    /// Connects processed data directly to the normal path unless fast sensors are configured.
+    #[must_use]
+    pub fn wire(
+        data_rx: SensorDataRx,
+        channel_capacity: usize,
+        persistence_config: &PersistenceConfig,
+    ) -> (Option<Self>, Option<SensorDataRx>, SensorDataRx) {
+        if persistence_config.fast_flush_sensor_ids.is_empty() {
+            return (None, None, data_rx);
+        }
+
+        let (fast_tx, fast_rx) = tokio::sync::mpsc::channel(channel_capacity);
+        let (normal_tx, normal_rx) = tokio::sync::mpsc::channel(channel_capacity);
+        let splitter = Self::new(data_rx, fast_tx, normal_tx, persistence_config);
+        (Some(splitter), Some(fast_rx), normal_rx)
+    }
+
     #[must_use]
     pub fn new(
         data_rx: SensorDataRx,
@@ -115,7 +132,10 @@ mod tests {
         splitter.ingest().await;
 
         let offsets = |batch: SensorDataBatch| -> Vec<(i32, i64)> {
-            batch.iter().map(|m| (m.source.partition, m.source.offset)).collect()
+            batch
+                .iter()
+                .map(|m| (m.source.partition, m.source.offset))
+                .collect()
         };
         assert_eq!(offsets(fast_rx.recv().await.unwrap()), [(2, 10), (2, 12)]);
         assert_eq!(offsets(normal_rx.recv().await.unwrap()), [(2, 11), (2, 13)]);
@@ -163,14 +183,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_splitter_routes_all_to_normal_when_fast_ids_empty() {
+    async fn test_wiring_bypasses_splitter_when_fast_ids_empty() {
         let config = PersistenceConfig::mock_config();
 
         let (data_tx, data_rx) = mpsc::channel(10);
-        let (fast_tx, mut fast_rx) = mpsc::channel(10);
-        let (normal_tx, mut normal_rx) = mpsc::channel(10);
-
-        let mut splitter = SensorDataSplitter::new(data_rx, fast_tx, normal_tx, &config);
+        // Zero capacity would panic if wiring tried to create splitter channels.
+        let (splitter, fast_rx, mut normal_rx) = SensorDataSplitter::wire(data_rx, 0, &config);
+        assert!(splitter.is_none());
+        assert!(fast_rx.is_none());
 
         data_tx
             .send(vec![create_message("sensor_1"), create_message("sensor_2")])
@@ -178,14 +198,39 @@ mod tests {
             .unwrap();
         drop(data_tx);
 
-        splitter.ingest().await;
-
-        assert!(fast_rx.try_recv().is_err());
-
-        let normal_batch = normal_rx.recv().await.unwrap();
+        // Data is available without running a splitter task.
+        let normal_batch = normal_rx.try_recv().unwrap();
         assert_eq!(normal_batch.len(), 2);
         assert_eq!(normal_batch[0].sensor_id.as_ref(), "sensor_1");
         assert_eq!(normal_batch[1].sensor_id.as_ref(), "sensor_2");
+        assert!(normal_rx.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_wiring_preserves_fast_and_normal_routes_when_fast_ids_present() {
+        let config = PersistenceConfig {
+            fast_flush_sensor_ids: vec!["fast".to_string()],
+            ..PersistenceConfig::mock_config()
+        };
+        let (data_tx, data_rx) = mpsc::channel(10);
+        let (splitter, fast_rx, mut normal_rx) = SensorDataSplitter::wire(data_rx, 10, &config);
+        let mut splitter = splitter.expect("fast sensors require a splitter");
+        let mut fast_rx = fast_rx.expect("fast sensors require a fast channel");
+        data_tx
+            .send(vec![
+                create_message_at("fast", 10),
+                create_message_at("normal", 11),
+            ])
+            .await
+            .unwrap();
+        drop(data_tx);
+        splitter.ingest().await;
+
+        assert_eq!(fast_rx.recv().await.unwrap()[0].source.offset, 10);
+        assert_eq!(normal_rx.recv().await.unwrap()[0].source.offset, 11);
+        drop(splitter);
+        assert!(fast_rx.recv().await.is_none());
+        assert!(normal_rx.recv().await.is_none());
     }
 
     #[tokio::test]

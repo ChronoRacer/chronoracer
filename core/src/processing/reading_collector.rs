@@ -106,7 +106,11 @@ fn decode_batch(batch: Vec<PartialMessage>, dlq_tx: &InvalidMessageTx) -> Sensor
 /// blocked parse thread would stall the whole ingest. A record that does not fit is discarded,
 /// counted by the channel, and reported by the DLQ handler. Its offset is collected into `dropped`
 /// to be settled; a queued record is settled by the DLQ handler once delivered.
-fn dead_letter(dlq_tx: &InvalidMessageTx, message: PartialMessageWithError, dropped: &mut OffsetSet) {
+fn dead_letter(
+    dlq_tx: &InvalidMessageTx,
+    message: PartialMessageWithError,
+    dropped: &mut OffsetSet,
+) {
     match dlq_tx.try_offer(message) {
         DlqOffer::Queued => {}
         DlqOffer::Dropped(rejected) => {
@@ -117,7 +121,9 @@ fn dead_letter(dlq_tx: &InvalidMessageTx, message: PartialMessageWithError, drop
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::messaging::dlq_handler::{InvalidMessageRx, InvalidSettler, invalid_message_channel};
+    use crate::messaging::dlq_handler::{
+        InvalidMessageRx, InvalidSettler, invalid_message_channel,
+    };
     use crate::messaging::offset_ledger::testing::recording_ledger;
     use crate::messaging::partial_message::PartialMessage;
     use crate::persistence::persistence_entrypoint::SensorDataBatch;
@@ -214,13 +220,8 @@ mod tests {
         let (flush_tx, flush_rx) = mpsc::channel::<Vec<PartialMessage>>(10);
         let (dlq_tx, dlq_rx) = invalid_message_channel(dlq_capacity, settler);
         let (processed_tx, processed_rx) = mpsc::channel::<SensorDataBatch>(10);
-        let mut collector = ReadingCollector::new(
-            flush_rx,
-            dlq_tx,
-            processed_tx,
-            build_pool().into(),
-            preview,
-        );
+        let mut collector =
+            ReadingCollector::new(flush_rx, dlq_tx, processed_tx, build_pool().into(), preview);
         let ingest_handle = tokio::spawn(async move {
             collector.ingest().await;
         });
@@ -297,7 +298,9 @@ mod tests {
         assert!(harness.processed_rx.try_recv().is_err());
 
         assert!(result.is_ok(), "Timed out waiting for DLQ failure output");
-        let dlq_msg = result.unwrap().expect("Expected PartialMessageWithError on DLQ");
+        let dlq_msg = result
+            .unwrap()
+            .expect("Expected PartialMessageWithError on DLQ");
         assert_eq!(dlq_msg.message.partition, 1);
         assert_eq!(dlq_msg.message.offset, 10);
 
@@ -325,7 +328,10 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(processed.len(), 2);
-        assert!(Arc::ptr_eq(&processed[0].sensor_id, &processed[1].sensor_id));
+        assert!(Arc::ptr_eq(
+            &processed[0].sensor_id,
+            &processed[1].sensor_id
+        ));
         let dlq_msg = harness.dlq_rx.try_recv().expect("one invalid message");
         assert_eq!(dlq_msg.message.offset, 2);
         assert!(harness.dlq_rx.try_recv().is_none());
@@ -394,7 +400,11 @@ mod tests {
 
         harness
             .flush_tx
-            .send(vec![valid_message(&schema, 4), corrupt_message(5), valid_message(&schema, 6)])
+            .send(vec![
+                valid_message(&schema, 4),
+                corrupt_message(5),
+                valid_message(&schema, 6),
+            ])
             .await
             .unwrap();
 
@@ -404,11 +414,20 @@ mod tests {
             .unwrap();
         let sources: Vec<_> = processed
             .iter()
-            .map(|message| (message.source.origin, message.source.partition, message.source.offset))
+            .map(|message| {
+                (
+                    message.source.origin,
+                    message.source.partition,
+                    message.source.offset,
+                )
+            })
             .collect();
         assert_eq!(
             sources,
-            [(MessageOrigin::SensorData, 0, 4), (MessageOrigin::SensorData, 0, 6)]
+            [
+                (MessageOrigin::SensorData, 0, 4),
+                (MessageOrigin::SensorData, 0, 6)
+            ]
         );
 
         drop(harness.flush_tx);
@@ -445,7 +464,10 @@ mod tests {
         .expect("discarded offsets were not settled");
 
         let lag = ledger.lag();
-        assert_eq!((lag[0].partition, lag[0].pending, lag[0].position), (1, 1, 0));
+        assert_eq!(
+            (lag[0].partition, lag[0].pending, lag[0].position),
+            (1, 1, 0)
+        );
         assert!(sink.stored().is_empty(), "offset 0 is still with the DLQ");
         assert_eq!(harness.dlq_rx.try_recv().unwrap().message.offset, 0);
 
