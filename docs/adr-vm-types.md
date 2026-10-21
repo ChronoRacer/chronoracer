@@ -70,8 +70,8 @@ Core thread config:
 - `tokio_workers`: 3
 - `tokio_blocking`: 1
 
-500,000 sensor-data batches (1-15 readings each, 7 sensors, 120 seconds declared time)
-from [load testing script](../core/dev-only/dev-load-test/README.md).
+500,000 sensor-data batches (1-15 readings each, 7 sensors, 120 seconds declared time; produced by an earlier version of the script)
+from [load testing script](../curls/load_test/README.md).
 
 #### Local load test
 

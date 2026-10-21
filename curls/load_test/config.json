@@ -1,0 +1,97 @@
+{
+  "broker": "localhost:9092",
+  "oauth": {
+    "enabled": false,
+    "broker": "ingest.chronoracer.live:9094",
+    "client_id": "QwcTbS7a6Tn70WZo58UIl57mDxaJZp0V",
+    "client_secret_env_var": "OKTA_CLIENT_SECRET",
+    "token_endpoint_url": "https://chronoracer.eu.auth0.com/oauth/token",
+    "extension_audience": "https://api.chronoracer.com"
+  },
+  "sensor_topic": "data",
+  "batch_window_ms": 500,
+  "car_name": "Toyota Corolla 2.0 Hybrid 2023",
+  "channels_file": "../../analysis/corolla_channels-2.json",
+  "load": {
+    "points_per_second": 15000,
+    "min_points_per_message": 1,
+    "max_points_per_message": 20,
+    "duration_s": 120.0,
+    "tick_ms": 20,
+    "seed": null
+  },
+  "change_driver": {
+    "enabled": true,
+    "driver_id": "driver-b",
+    "initial_delay": 180.0,
+    "topic": "control"
+  },
+  "shutdown": {
+    "enabled": false,
+    "topic": "control"
+  },
+  "car": {
+    "mass_kg": 1450.0,
+    "wheelbase_m": 2.64,
+    "track_m": 1.53,
+    "steering_ratio": 14.0,
+    "max_accel_mps2": 3.2,
+    "max_brake_mps2": 8.5,
+    "drag_area": 0.63,
+    "rolling_resistance": 0.013,
+    "fuel_start_l": 42.0,
+    "ambient_c": 18.0,
+    "start_lat": 52.0611,
+    "start_lon": 19.9361,
+    "start_alt_m": 112.0,
+    "start_heading_deg": 45.0
+  },
+  "lap": [
+    {
+      "target_kph": 130.0,
+      "duration_s": 10.0
+    },
+    {
+      "target_kph": 60.0,
+      "duration_s": 3.5
+    },
+    {
+      "target_kph": 60.0,
+      "duration_s": 6.0,
+      "radius_m": 50.0,
+      "turn": -1
+    },
+    {
+      "target_kph": 110.0,
+      "duration_s": 7.0
+    },
+    {
+      "target_kph": 45.0,
+      "duration_s": 3.0
+    },
+    {
+      "target_kph": 45.0,
+      "duration_s": 7.0,
+      "radius_m": 25.0,
+      "turn": 1
+    },
+    {
+      "target_kph": 140.0,
+      "duration_s": 11.0
+    },
+    {
+      "target_kph": 70.0,
+      "duration_s": 3.5
+    },
+    {
+      "target_kph": 70.0,
+      "duration_s": 9.0,
+      "radius_m": 120.0,
+      "turn": 1
+    },
+    {
+      "target_kph": 130.0,
+      "duration_s": 8.0
+    }
+  ]
+}
