@@ -16,5 +16,5 @@ bash "${WORKDIR}/add-google-cloud-ops-agent-repo.sh" --also-install --version="$
 dpkg-query --show --showformat '${Package} ${Version}\n' google-cloud-ops-agent
 systemctl cat google-cloud-ops-agent.service >/dev/null
 
-# Overlay config is applied at first race boot. Do not ship the default syslog pipeline.
+# Overlay config is applied at first race boot. Do not ship the default syslog pipeline; overlay ships a journald pipeline.
 systemctl disable --now google-cloud-ops-agent.service

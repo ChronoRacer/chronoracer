@@ -1,10 +1,21 @@
 # Whole-VM host metrics only. The process scraper walks /proc and is omitted.
-# Default syslog pipeline is emptied so the agent does not ship journal/syslog.
+# Logs: journald, filtered to this VM's service units. Syslog file collection stays off.
 logging:
+  receivers:
+    journal:
+      type: systemd_journald
+  processors:
+    only_chronoracer_units:
+      type: exclude_logs
+      match_any:
+        - 'NOT jsonPayload._SYSTEMD_UNIT = "kafka.service"'
   service:
     pipelines:
       default_pipeline:
-        receivers: []
+        receivers:
+          - journal
+        processors:
+          - only_chronoracer_units
 metrics:
   receivers:
     hostmetrics:
