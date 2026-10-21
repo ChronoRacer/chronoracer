@@ -1,0 +1,108 @@
+# Load-test race stack — infra readiness (read-only audit)
+
+**Project:** `chronoracer` · **Region/zone:** `europe-west1` / `europe-west1-b` · **Kafka FQDN:** `ingest.chronoracer.live.`
+
+## Backend & variables
+
+| Item | Value |
+|------|--------|
+| State bucket | `gs://chronoracer-state` |
+| State prefix | `race` → object `race/default.tfstate` (not per-`race_id`) |
+| Workspace | default only (`race/default.tfstate`; docs: no workspace per race) |
+| Required apply vars | `project_id`, `region`, `zone`, `race_id`, `kafka_fqdn` (trailing dot), `ingest_open`, **`telemetry_image`** (no default) |
+| `telemetry_image` | `europe-west1-docker.pkg.dev/chronoracer/chronoracer/telemetry:latest` (match always-on / publish script) |
+| `terraform.tfvars` | Sets `project_id`, `kafka_fqdn`, `ingest_open=true`, placeholder `race_id` — override `race_id` + pass `telemetry_image` on CLI |
+
+Current remote state: **empty** (0 resources; last update 2026-10-20). No leftover race VMs, Telemetry service, public Kafka firewall, or ingest A record.
+
+## Targeted apply / destroy (no Analysis VM)
+
+**Resources (6):** `google_compute_instance.kafka`, `google_compute_instance.core`, `google_compute_firewall.kafka_public[0]` (requires `ingest_open=true`), `google_dns_record_set.kafka`, `google_cloud_run_v2_service.telemetry`, `google_cloud_run_v2_service_iam_member.telemetry_public`.
+
+**Data sources with `-target`:** Verified via `terraform plan -target=…`: reads kafka/core images, kafka/core/telemetry SAs, VPC, VM + telemetry subnets, DNS zone, TLS + okta secrets, race bucket, zones, project. **Does not read** `data.google_service_account.analysis` or `data.google_compute_image.analysis`. A **non-targeted** full plan still reads analysis SA/image.
+
+**Apply** (from `infra/race` after `terraform init`; use operator credentials with race-state write + compute/run/dns IAM):
+
+```bash
+cd infra/race
+terraform apply -input=false -auto-approve -lock-timeout=5m \
+  -var-file=terraform.tfvars \
+  -var 'race_id=<RACE_ID>' \
+  -var 'telemetry_image=europe-west1-docker.pkg.dev/chronoracer/chronoracer/telemetry:latest' \
+  -target=google_compute_instance.kafka \
+  -target=google_compute_instance.core \
+  -target='google_compute_firewall.kafka_public[0]' \
+  -target=google_dns_record_set.kafka \
+  -target=google_cloud_run_v2_service.telemetry \
+  -target=google_cloud_run_v2_service_iam_member.telemetry_public
+```
+
+**Destroy** (same targets; keep `ingest_open=true` so firewall `[0]` exists in state; `telemetry_image` still required):
+
+```bash
+terraform destroy -input=false -auto-approve -lock-timeout=5m \
+  -var-file=terraform.tfvars \
+  -var 'race_id=<RACE_ID>' \
+  -var 'telemetry_image=europe-west1-docker.pkg.dev/chronoracer/chronoracer/telemetry:latest' \
+  -var 'ingest_open=true' \
+  -target=google_compute_instance.kafka \
+  -target=google_compute_instance.core \
+  -target='google_compute_firewall.kafka_public[0]' \
+  -target=google_dns_record_set.kafka \
+  -target=google_cloud_run_v2_service.telemetry \
+  -target=google_cloud_run_v2_service_iam_member.telemetry_public
+```
+
+**Close ingest only** (optional, controller equivalent): `terraform apply` with `-var ingest_open=false` and `-target='google_compute_firewall.kafka_public[0]'` (removes rule; VMs/DNS/Telemetry unchanged).
+
+## GCP prerequisite status
+
+| Prerequisite | Status |
+|--------------|--------|
+| VPC `chronoracer` | OK |
+| Subnet `chronoracer` (`10.20.0.0/24`, PGA) | OK |
+| Subnet `chronoracer-telemetry-run` (`10.20.2.0/26`, PGA) | OK |
+| Subnet `chronoracer-relay-run` | OK |
+| DNS zone `chronoracer` (`chronoracer.live.`) | OK |
+| SA `chronoracer-kafka` / `core` / `telemetry` / `analysis` | OK |
+| Secret `chronoracer-kafka-tls` | OK — enabled v1 |
+| Secret `chronoracer-okta-oauth` | OK — enabled v1 (Telemetry revision) |
+| Secret `chronoracer-influx-token` | OK — enabled v2 (Core boot) |
+| Secret `chronoracer-relay-config` | OK — enabled v3,v4 (Relay only; not race apply) |
+| Bucket `chronoracer-race` | OK |
+| Bucket `chronoracer-artifacts` | OK |
+| `gs://chronoracer-artifacts/core/current.json` | OK — `{"prefix":"core/releases/0.1.4-load"}` |
+| Release `0.1.4-load/` | OK — `core`, `influxdb-plugins/export_database.py` |
+| Image family `chronoracer-kafka` | OK — `chronoracer-kafka-1792605521` (2026-10-21) |
+| Image family `chronoracer-core` | OK — `chronoracer-core-1792605793` (2026-10-21) |
+| Image family `chronoracer-analysis` | OK — present (not needed for targeted apply) |
+| AR `…/chronoracer/telemetry:latest` | OK — updated 2026-10-20 |
+| FW `chronoracer-core-telemetry` → core:9470 from `10.20.2.0/26` | OK |
+| FW `chronoracer-iap-ssh` → :22 from `35.235.240.0/20` tags kafka/core/analysis | OK |
+| IAP `roles/iap.tunnelResourceAccessor` for `ignacy.smolinski@gmail.com` | OK |
+| Pub/Sub `export-done`, `cloud-builds` | OK |
+| Leftover race VMs / Telemetry / `chronoracer-kafka-public` / ingest A | **None** |
+
+## Manual steps (controller / Relay normally does these)
+
+Order for a manual load test:
+
+1. **Choose `<RACE_ID>`** (1–12 chars, `[a-z0-9_-]`, matches Terraform validation).
+2. **Upload Core operator YAML** — required for boot (`render-config.sh` `gcloud storage cat` the metadata URI). Example: `scratch/load-test/core-config.yaml` → `gs://chronoracer-race/<RACE_ID>/core-config.yaml` (controller `apply` HEAD-check; Terraform does not).
+3. **Core binary / plugins** — boot pulls `artifacts_bucket` via `core/current.json` (today `0.1.4-load`). If you ship your own build instead: publish to artifacts + bump pointer, **or** after IAP SSH to `core`, replace `/chronoracer/core` and restart `chronoracer-core` (bypasses controller/Relay).
+4. **`terraform init` + targeted apply** (commands above). Expect state lock on `race/default.tfstate` (5m timeout; no force-unlock).
+5. **Wait for boot** — Kafka: TLS from Secret Manager, topics (`event` at Kafka boot; `data`/`control`/`heartbeat`/`dlq` from Core). Core: Influx token secret, payload fetch, merged config. No manual Kafka OAuth/ACL setup (OAuth validator in broker config; clients use Auth0 per `platform.json`).
+6. **DNS** — A record created by apply (TTL 30s). Load generators use `ingest.chronoracer.live:9094` (TLS + OAuth).
+7. **SSH to Core (no public IP):** `gcloud compute ssh core --zone=europe-west1-b --tunnel-through-iap --project=chronoracer` then `journalctl -u chronoracer-core` (needs IAP tunnel + `iap_ssh_members` or equivalent).
+8. **Readiness** — Relay/Firestore `applied` phase and heartbeat-gated status are **not** updated; verify Kafka listener, Core logs, and heartbeat on private topic yourself.
+9. **Telemetry** — public `run.app` URL from terraform output `telemetry_url`; browser Auth0 login (same secret as Dashboard).
+
+**Not required for this stack:** Analysis VM, Relay race start, Cloud Build controller, Firestore mutex/`runToken`, controller output persistence, Pub/Sub wiring (Core uses existing `export-done` topic if export runs).
+
+## Notes / surprises
+
+- Targeted plan: **6 adds**, analysis data sources skipped; `analysis_instance` output omitted from plan (resource not in graph).
+- Full plan without `-target` still resolves analysis image/SA (would plan 7 VMs worth of deps).
+- `outputs.tf` still defines `analysis_instance`; harmless if analysis never applied.
+- Core config GCS path is **mandatory** at boot, not optional.
+- `0.1.4-load` pointer is instrumentation build; `0.1.3` prefix not in bucket listing.
