@@ -5,6 +5,7 @@ use crate::persistence::sensor_data_batcher::{PointBatch, SensorDataBatcher, Sim
 use crate::persistence::sensor_data_flusher::{BatcherWiring, BatcherWiringType, InfluxDbFlusher};
 use crate::persistence::sensor_data_splitter::SensorDataSplitter;
 use crate::persistence::write_metrics::WriteMetrics;
+use crate::pipeline_stats::PipelineStats;
 use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use crate::runtime_configuration::RetainReadTimeValue;
 use anyhow::{Context, Result, anyhow};
@@ -32,6 +33,7 @@ impl PersistenceLayerEntryPoint {
         processed_data_rx: SensorDataRx,
         driver_id_holder: &'static RetainReadTimeValue<CompactString>,
         offsets: OffsetLedger,
+        stats: Arc<PipelineStats>,
     ) -> Result<Self> {
         let persistence_config = &config.persistence;
         let db_client = Arc::new(Self::create_influxdb_client(persistence_config).await?);
@@ -69,6 +71,7 @@ impl PersistenceLayerEntryPoint {
             normal_batcher_wiring,
             Arc::clone(&db_client),
             Arc::clone(&write_metrics),
+            stats,
             offsets,
         );
 

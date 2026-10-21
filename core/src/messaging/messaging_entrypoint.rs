@@ -8,6 +8,7 @@ use crate::messaging::management::ensure_all_topics_exists;
 use crate::messaging::message_sink::{BatchMessageSink, BatchSinkRx, InstantMessageSink, SinkRx};
 use crate::messaging::offset_ledger::OffsetLedger;
 use crate::messaging::partial_message::PartialMessage;
+use crate::pipeline_stats::PipelineStats;
 use anyhow::{Context, Result, bail};
 use rdkafka::producer::FutureProducer;
 use std::sync::Arc;
@@ -26,7 +27,10 @@ pub struct MessagingLayerEntrypoint {
 }
 
 impl MessagingLayerEntrypoint {
-    pub async fn init(config: &'static CoreConfig) -> Result<MessagingLayerEntrypoint> {
+    pub async fn init(
+        config: &'static CoreConfig,
+        stats: Arc<PipelineStats>,
+    ) -> Result<MessagingLayerEntrypoint> {
         ensure_kafka_compilation_features()?;
 
         let kafka_exporter = KafkaExporter::new(&config.race.race_id, &config.gcp, &config.kafka)
@@ -45,6 +49,7 @@ impl MessagingLayerEntrypoint {
             sensor_sink_tx,
             config.processing.message_batch_size.get(),
             config.processing.message_batch_flush_interval_ms.get(),
+            stats,
         )?;
         let (control_sink_tx, control_sink_rx) = tokio::sync::mpsc::channel::<PartialMessage>(
             config.processing.message_channel_buffer_size.get(),

@@ -16,6 +16,8 @@ pub struct PartialMessage {
     pub partition: i32,
     pub payload: Option<Box<[u8]>>,
     pub origin: MessageOrigin,
+    /// Kafka record timestamp in Unix milliseconds (producer `CreateTime`), when the record has one.
+    pub created_ms: Option<i64>,
 }
 
 /// Position of a consumed record in its source topic.
@@ -44,6 +46,7 @@ impl PartialMessage {
             key: borrowed_message.key().map(Box::from),
             payload: borrowed_message.payload().map(Box::from),
             origin,
+            created_ms: borrowed_message.timestamp().to_millis(),
         }
     }
 }

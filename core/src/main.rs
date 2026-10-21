@@ -9,6 +9,7 @@ use crate::messaging::messaging_entrypoint::MessagingLayerEntrypoint;
 use crate::messaging::partial_message::SourceOffset;
 use crate::monitor::Monitor;
 use crate::persistence::persistence_entrypoint::PersistenceLayerEntryPoint;
+use crate::pipeline_stats::PipelineStats;
 use crate::processing::processing_entrypoint::ProcessingLayerEntrypoint;
 use crate::runtime_configuration::RetainReadTimeValue;
 use crate::telemetry::PreviewHub;
@@ -32,6 +33,7 @@ pub mod logger;
 pub mod messaging;
 pub mod monitor;
 pub mod persistence;
+pub mod pipeline_stats;
 pub mod processing;
 pub mod runtime_configuration;
 pub mod telemetry;
@@ -105,8 +107,11 @@ fn run() -> Result<()> {
             handler.get()
         );
 
+        let pipeline_stats = Arc::new(PipelineStats::default());
+
         // Messaging
-        let messaging_wrapper = MessagingLayerEntrypoint::init(config).await?;
+        let messaging_wrapper =
+            MessagingLayerEntrypoint::init(config, Arc::clone(&pipeline_stats)).await?;
         info!("Messaging layer initialized");
 
         // Processing
@@ -119,6 +124,7 @@ fn run() -> Result<()> {
             messaging_wrapper.control_offsets.clone(),
             rayon_pool,
             preview.clone(),
+            Arc::clone(&pipeline_stats),
         )?;
         info!("Processing layer initialized");
 
@@ -128,6 +134,7 @@ fn run() -> Result<()> {
             processing_layer.processed_data_rx,
             handler,
             messaging_wrapper.sensor_offsets.clone(),
+            pipeline_stats,
         )
         .await?;
         info!("Persistence layer initialized");

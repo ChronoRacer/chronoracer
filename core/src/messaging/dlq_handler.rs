@@ -445,6 +445,7 @@ mod tests {
                 offset,
                 payload: None,
                 origin: MessageOrigin::SensorData,
+                created_ms: None,
             },
         }
     }
@@ -472,6 +473,7 @@ mod tests {
                 offset: 100,
                 payload: Some(Box::from(b"bad bytes".to_vec())),
                 origin: MessageOrigin::SensorData,
+                created_ms: None,
             },
         };
 

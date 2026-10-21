@@ -120,7 +120,8 @@ only a replay). The data consumer is not polled after the sink stops. If the dra
 rule applies. Unexpected failure exits without a final commit, which is the same as a crash. Periodic lag is logged
 every `kafka.sensor_data_consumer.offset_lag_log_interval_s` as pending offsets per partition, with a warning for a
 partition whose position has not moved since the previous report while messages are pending (a stuck database, or a
-message that never settles and would hold the commit back forever).
+message that never settles and would hold the commit back forever). Each lag log is followed by the
+[pipeline report](#pipeline-report).
 
 ### Control consumer and SHUTDOWN replay
 
@@ -250,6 +251,34 @@ Counters increment once per write attempt, off the per-point path. Each attempt 
 the batch is sent again). `ok`, `partial`, and `error` therefore still count once per batch, and lines and bytes are added
 once when the batch ends. A growing `retry` with a flat `ok` is an outage being absorbed, not data loss. A background task sends one `CreateTimeSeries` every 60 seconds while `gcp.enabled` is true. After the data pipeline drains on race-end or signal shutdown, the publisher sends one final sample (bounded by `runtime.write_metrics_final_timeout_s`) before export or exit. Partial writes count accepted lines and the `partial` outcome, and do not add bytes. Publish failure is logged and does not stop ingest.
 Missing GCE metadata can either disable metric sending or fallback to sending sentinel labels for time series, decided by configuration property `gcp.allow_unknown_gce_metrics`. 
+
+## Pipeline report
+
+One `Pipeline report:` log line every `kafka.sensor_data_consumer.offset_lag_log_interval_s`, covering the window since
+the previous line. It locates a throughput or latency limit: generator, Kafka, Core consumption, or InfluxDB. Set the
+interval to 10 s for load tests. Counters cost one atomic add per message or batch; nothing is published.
+
+| Field              | Meaning                                                                                       |
+|--------------------|-----------------------------------------------------------------------------------------------|
+| `consumed_msg_s`   | Data messages the sink took from Kafka                                                        |
+| `decoded_pts_s`    | Points from valid messages, before the telemetry copy                                         |
+| `written_lines_s`  | Lines InfluxDB accepted                                                                       |
+| `sink_blocked_pct` | Share of the window the sink waited for a free collector slot (backpressure from downstream) |
+| `unconsumed`       | Data messages on the broker not yet delivered to Core, summed over partitions                 |
+| `preview_ms`       | Per message: record timestamp to the [telemetry](#telemetry-stream) copy                      |
+| `write_ms`         | Per InfluxDB write attempt, retries and failures included                                     |
+| `persist_ms`       | Per point batch: oldest record timestamp in the batch to its settlement                       |
+
+Latencies are fixed-bucket histograms (bounds 1 ms to 60 s) printed as `p50<=bound,p99<=bound,max,mean,n`. Ages use
+the Kafka record timestamp, which the producer sets when it creates the record, so they include the producer's own
+queueing but not the reading `delta` window, and they assume the producer and Core clocks are NTP-synced (a negative
+age counts as 0).
+
+`unconsumed` is the broker high watermark minus the position Core's application has reached (librdkafka
+prefetch included), from librdkafka statistics on the data consumer (`statistics.interval.ms` equals the report
+interval). It reads `unknown` until the first statistics arrive. A growing `unconsumed` with `sink_blocked_pct` near
+100 means decode or persistence is the limit (`write_ms` and `written_lines_s` tell which); with `sink_blocked_pct`
+near 0 it means Kafka fetch is.
 
 ## Startup
 

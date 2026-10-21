@@ -314,11 +314,108 @@ def delivery_report(err, msg):
         print(f"Message delivery failed: {err}")
 
 
-def produce(producer, **kwargs):
+# Same bucket bounds as Core's pipeline report (docs/component-core.md), so the two compare directly.
+LATENCY_BOUNDS_MS = (1, 2, 5, 10, 20, 50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000, 30_000, 60_000)
+
+
+class LatencyHistogram:
+    def __init__(self):
+        self.buckets = [0] * (len(LATENCY_BOUNDS_MS) + 1)
+        self.max_ms = 0.0
+
+    def record(self, ms):
+        index = next((i for i, bound in enumerate(LATENCY_BOUNDS_MS) if ms <= bound), len(LATENCY_BOUNDS_MS))
+        self.buckets[index] += 1
+        self.max_ms = max(self.max_ms, ms)
+
+    def _bound(self, quantile):
+        count = sum(self.buckets)
+        rank = max(1, math.ceil(quantile * count))
+        seen = 0
+        for index, bucket in enumerate(self.buckets):
+            seen += bucket
+            if seen >= rank:
+                return f"<={LATENCY_BOUNDS_MS[index]}" if index < len(LATENCY_BOUNDS_MS) else f">{LATENCY_BOUNDS_MS[-1]}"
+        return "?"
+
+    def __str__(self):
+        count = sum(self.buckets)
+        if count == 0:
+            return "n=0"
+        return f"p50{self._bound(0.5)},p99{self._bound(0.99)},max={self.max_ms:.0f},n={count}"
+
+
+class SendStats:
+    """Sensor message counters for the periodic report and the final summary.
+
+    Delivery callbacks run inside `poll`/`flush`, which several threads call, hence the lock.
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.total = self._fresh()
+        self.window = self._fresh()
+
+    @staticmethod
+    def _fresh():
+        return {
+            "started": time.monotonic(),
+            "messages": 0,
+            "points": 0,
+            "behind_s": 0.0,
+            "delivered": 0,
+            "failed": 0,
+            "delivery": LatencyHistogram(),
+        }
+
+    def sent(self, points, behind_s):
+        with self.lock:
+            for counters in (self.total, self.window):
+                counters["messages"] += 1
+                counters["points"] += points
+                counters["behind_s"] = max(counters["behind_s"], behind_s)
+
+    def on_delivery(self, err, msg):
+        with self.lock:
+            if err is not None:
+                if self.window["failed"] == 0:
+                    print(f"Message delivery failed: {err} (further failures this window are only counted)")
+                for counters in (self.total, self.window):
+                    counters["failed"] += 1
+                return
+            latency_s = msg.latency()
+            for counters in (self.total, self.window):
+                counters["delivered"] += 1
+                if latency_s is not None:
+                    counters["delivery"].record(latency_s * 1000.0)
+
+    @staticmethod
+    def _line(counters, queued):
+        elapsed = max(time.monotonic() - counters["started"], 1e-3)
+        return (
+            f"window_s={elapsed:.1f} sent_pts_s={counters['points'] / elapsed:.0f} "
+            f"sent_msg_s={counters['messages'] / elapsed:.0f} behind_max_s={counters['behind_s']:.3f} "
+            f"queued={queued} delivered={counters['delivered']} failed={counters['failed']} "
+            f"delivery_ms={counters['delivery']}"
+        )
+
+    def report_window(self, queued):
+        with self.lock:
+            line = self._line(self.window, queued)
+            self.window = self._fresh()
+        print(f"[Report] {line}")
+
+    def report_total(self, queued):
+        with self.lock:
+            line = self._line(self.total, queued)
+        print(f"[Summary] {line}")
+
+
+def produce(producer, on_delivery=delivery_report, **kwargs):
     """Produce, waiting for queue space instead of failing when Kafka lags behind."""
     while True:
         try:
-            producer.produce(on_delivery=delivery_report, **kwargs)
+            producer.produce(on_delivery=on_delivery, **kwargs)
             return
         except BufferError:
             producer.poll(0.05)
@@ -331,7 +428,7 @@ def finish_value(channel, value):
     return float(round(value)) if channel.name in INTEGER_CHANNELS else value
 
 
-def produce_sensor_messages(producer, config, channels, model, rng, load):
+def produce_sensor_messages(producer, config, channels, model, rng, load, stats, report_interval_s):
     """Thread function for producing Avro sensor messages at the configured point rate.
 
     A message is one random sensor with a random number of readings spread over the
@@ -356,6 +453,7 @@ def produce_sensor_messages(producer, config, channels, model, rng, load):
     started = time.monotonic()
     started_ns = time.time_ns()
     next_due = started
+    next_report = started + report_interval_s
     messages = 0
     points = 0
 
@@ -364,6 +462,12 @@ def produce_sensor_messages(producer, config, channels, model, rng, load):
         elapsed_s = now - started
         if elapsed_s >= duration_s:
             break
+        if now >= next_report:
+            stats.report_window(len(producer))
+            next_report += report_interval_s
+        # How late this message is against the pacing schedule. Growing means this process
+        # cannot generate the configured rate: add instances instead of reading it as Kafka or Core.
+        behind_s = max(0.0, now - next_due)
 
         while model_ticks * tick_s <= elapsed_s:
             if len(history) == history.maxlen:
@@ -386,12 +490,14 @@ def produce_sensor_messages(producer, config, channels, model, rng, load):
 
         produce(
             producer,
+            on_delivery=stats.on_delivery,
             topic=topic,
             value=serialize_record({"sensor_id": name, "timestamp": base_ns, "readings": readings}),
             key=name,
         )
         messages += 1
         points += count
+        stats.sent(count, behind_s)
         producer.poll(0)
 
         next_due += count / rate
@@ -446,7 +552,12 @@ def parse_args():
     parser.add_argument("--seed", type=int, help="random seed, overrides load.seed (default: random)")
     parser.add_argument("--no-control", action="store_true",
                         help="skip change_driver and shutdown messages (for extra parallel instances)")
-    return parser.parse_args()
+    parser.add_argument("--report-interval", type=float, default=10.0,
+                        help="seconds between [Report] lines (default: 10)")
+    args = parser.parse_args()
+    if args.report_interval <= 0:
+        parser.error("--report-interval must be positive")
+    return args
 
 
 def main():
@@ -492,8 +603,10 @@ def main():
     print(f"- SHUTDOWN enabled: {shutdown_enabled}")
     print(f"- OAuth enabled: {config.get('oauth', {}).get('enabled', False)}")
 
+    stats = SendStats()
     sensor_thread = threading.Thread(
-        target=produce_sensor_messages, args=(producer, config, channels, model, rng, load)
+        target=produce_sensor_messages,
+        args=(producer, config, channels, model, rng, load, stats, args.report_interval),
     )
     sensor_thread.start()
     if chdrv_enabled:
@@ -508,6 +621,7 @@ def main():
     if shutdown_enabled:
         produce_shutdown_message(producer, config)
     producer.flush()
+    stats.report_total(len(producer))
 
 
 if __name__ == "__main__":

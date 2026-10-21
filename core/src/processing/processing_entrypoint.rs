@@ -3,6 +3,7 @@ use crate::messaging::message_sink::{BatchSinkRx, SinkRx};
 use crate::messaging::offset_ledger::OffsetLedger;
 use crate::messaging::partial_message::SourceOffset;
 use crate::persistence::persistence_entrypoint::{SensorDataBatch, SensorDataRx};
+use crate::pipeline_stats::PipelineStats;
 use crate::processing::control_filter::ControlFilter;
 use crate::processing::reading_collector::ReadingCollector;
 use crate::runtime_configuration::RetainReadTimeValue;
@@ -30,6 +31,7 @@ impl ProcessingLayerEntrypoint {
         control_offsets: OffsetLedger,
         rayon_pool: Arc<rayon::ThreadPool>,
         preview: PreviewHub,
+        stats: Arc<PipelineStats>,
     ) -> Result<Self> {
         let (processed_data_tx, processed_data_rx) =
             tokio::sync::mpsc::channel::<SensorDataBatch>(rayon_pool.current_num_threads());
@@ -40,6 +42,7 @@ impl ProcessingLayerEntrypoint {
             processed_data_tx,
             Arc::clone(&rayon_pool),
             preview,
+            stats,
         );
         let control_filter = ControlFilter::new(
             control_rx,

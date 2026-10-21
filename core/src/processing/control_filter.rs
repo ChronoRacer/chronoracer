@@ -161,6 +161,7 @@ mod tests {
             partition: 0,
             payload: payload.map(Box::from),
             origin: MessageOrigin::Control,
+            created_ms: None,
         }
     }
 
