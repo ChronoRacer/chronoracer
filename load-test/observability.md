@@ -2,19 +2,19 @@
 
 Project `chronoracer`, region `europe-west1`, zone `europe-west1-b`. Placeholders: `<RACE_ID>`, `<START>`, `<END>` (RFC3339, e.g. `2026-10-21T18:00:00+02:00`).
 
-Race bucket: `chronoracer-race` ([`infra/contract/names.json`](../../infra/contract/names.json)). VM **names** are always `core` and `kafka`; disambiguate races with label `race-id=<RACE_ID>` or the test time window.
+Race bucket: `chronoracer-race` ([`infra/contract/names.json`](../infra/contract/names.json)). VM **names** are always `core` and `kafka`; disambiguate races with label `race-id=<RACE_ID>` or the test time window.
 
 ## 1. Core operator overlay (`core-config.yaml`)
 
 ### Merge order
 
-[`render-config.sh`](../../core/startup/render-config.sh): `default-config.yaml` ← operator GCS object ← platform YAML (platform wins). [`merge_config.py`](../../core/startup/merge_config.py) deep-merges dicts.
+[`render-config.sh`](../core/startup/render-config.sh): `default-config.yaml` ← operator GCS object ← platform YAML (platform wins). [`merge_config.py`](../core/startup/merge_config.py) deep-merges dicts.
 
 **Required:** `gs://chronoracer-race/<RACE_ID>/core-config.yaml` must exist; boot runs `gcloud storage cat` on metadata `core-config-gcs-uri` (fail closed if missing). Empty mapping `{}` is valid YAML but leaves `race.initial_driver_id` at default `placeholder` (valid); Relay `/race/start` injects `race.initial_driver_id` from `initialDriverId` and overrides operator values.
 
 **Platform overlay forces** (operator cannot override): `race.race_id`, `kafka.brokers`, `kafka.sensor_data_topic.name`, `kafka.control_event_topic.name`, `kafka.heartbeat_topic.name`, `persistence.db_port`, `persistence.db_name`, `persistence.db_password` (Influx admin token from VM secret), `telemetry.port`, `gcp.enabled`, `gcp.project_id`, `gcp.export_bucket`, `gcp.pubsub_topic_id`.
 
-**Core validation** ([`configuration.rs`](../../core/src/configuration.rs)): non-empty `kafka.group_id`; `race.initial_driver_id` driver-id rules; telemetry subscriber bounds; persistence retry backoff ordering. Operator YAML is not schema-validated by Relay.
+**Core validation** ([`configuration.rs`](../core/src/configuration.rs)): non-empty `kafka.group_id`; `race.initial_driver_id` driver-id rules; telemetry subscriber bounds; persistence retry backoff ordering. Operator YAML is not schema-validated by Relay.
 
 **Minimal overlay for this test** (see [`core-config.yaml`](./core-config.yaml)):
 
@@ -29,7 +29,7 @@ race:
 Upload (do not run from automation; read-only rule):
 
 ```bash
-gcloud storage cp scratch/load-test/core-config.yaml \
+gcloud storage cp load-test/core-config.yaml \
   gs://chronoracer-race/<RACE_ID>/core-config.yaml
 ```
 
@@ -41,11 +41,11 @@ After upload, restart Core or re-run race apply so `render-config.sh` runs if th
 
 ### Path to Cloud Logging
 
-- Core/Kafka images: [`enable-ops-agent.sh`](../../infra/packer/scripts/enable-ops-agent.sh) installs [`core/startup/ops-agent.yaml`](../../core/startup/ops-agent.yaml) / [`kafka/startup/ops-agent.yaml`](../../kafka/startup/ops-agent.yaml).
+- Core/Kafka images: [`enable-ops-agent.sh`](../infra/packer/scripts/enable-ops-agent.sh) installs [`core/startup/ops-agent.yaml`](../core/startup/ops-agent.yaml) / [`kafka/startup/ops-agent.yaml`](../kafka/startup/ops-agent.yaml).
 - **Receivers:** `systemd_journald` only (no syslog files).
 - **Processors:** exclude everything except `chronoracer-core.service` + `influxdb3.service` (Core VM) or `kafka.service` (Kafka VM).
 - Core stdout (Rust `tracing` → journal) lands in `jsonPayload.MESSAGE` with `jsonPayload._SYSTEMD_UNIT`.
-- Project log **exclusions** drop Ops Agent self-noise on GCE ([`infra/always-on/logging.tf`](../../infra/always-on/logging.tf)); they do not drop application journal lines.
+- Project log **exclusions** drop Ops Agent self-noise on GCE ([`infra/always-on/logging.tf`](../infra/always-on/logging.tf)); they do not drop application journal lines.
 
 Resolve Core `instance_id` for tight filters (recommended when VM names are reused):
 
@@ -76,7 +76,7 @@ If `MESSAGE` is empty, pipe JSON and `jq -r '[.timestamp, (.jsonPayload.MESSAGE 
 
 ### (a) Pipeline report lines
 
-Emitted every `offset_lag_log_interval_s` after lag logging ([`message_sink.rs`](../../core/src/messaging/message_sink.rs), [`component-core.md#pipeline-report`](../../docs/component-core.md#pipeline-report)).
+Emitted every `offset_lag_log_interval_s` after lag logging ([`message_sink.rs`](../core/src/messaging/message_sink.rs), [`component-core.md#pipeline-report`](../docs/component-core.md#pipeline-report)).
 
 ```bash
 gcloud logging read \
@@ -140,7 +140,7 @@ gcloud logging read \
 
 ### (e) DLQ handler aggregated lines (10 s window)
 
-Messages ([`dlq_handler.rs`](../../core/src/messaging/dlq_handler.rs)):
+Messages ([`dlq_handler.rs`](../core/src/messaging/dlq_handler.rs)):
 
 - `Redirected messages to DLQ`
 - `Failed to write to DLQ (first failure of the window logged above)`
@@ -162,7 +162,7 @@ gcloud logging read \
 
 ### Journal fallback (Core VM)
 
-Units: [`chronoracer-core.service`](../../core/startup/chronoracer-core.service), [`influxdb3.service`](../../core/startup/influxdb3.service). Kafka: [`kafka.service`](../../kafka/startup/kafka.service).
+Units: [`chronoracer-core.service`](../core/startup/chronoracer-core.service), [`influxdb3.service`](../core/startup/influxdb3.service). Kafka: [`kafka.service`](../kafka/startup/kafka.service).
 
 ```bash
 gcloud compute ssh core --project=chronoracer --zone=europe-west1-b --tunnel-through-iap -- \
@@ -178,7 +178,7 @@ gcloud compute ssh core --project=chronoracer --zone=europe-west1-b --tunnel-thr
 
 ## 3. Metrics
 
-Ops Agent on Core/Kafka: **host** metrics only (60 s interval); process scraper excluded ([`ops-agent.yaml`](../../core/startup/ops-agent.yaml)). Dashboard uses Compute CPU + Agent memory/disk/network ([`race-fleet.json`](../../dashboard/dashboard_files/v2/race-fleet.json)).
+Ops Agent on Core/Kafka: **host** metrics only (60 s interval); process scraper excluded ([`ops-agent.yaml`](../core/startup/ops-agent.yaml)). Dashboard uses Compute CPU + Agent memory/disk/network ([`race-fleet.json`](../dashboard/dashboard_files/v2/race-fleet.json)).
 
 | Area | Metric type | Notes |
 |------|-------------|--------|
@@ -186,22 +186,35 @@ Ops Agent on Core/Kafka: **host** metrics only (60 s interval); process scraper 
 | Core memory | `agent.googleapis.com/memory/percent_used` | `metric.label.state="used"` for panels |
 | Kafka CPU / memory / disk / net | same families + `agent.googleapis.com/disk/percent_used`, `agent.googleapis.com/interface/traffic` | |
 | Influx writes | `custom.googleapis.com/chronoracer/influx_write_lines`, `influx_write_bytes`, `influx_write_requests` | Cumulative on `gce_instance`; `outcome` label on requests |
-| Telemetry | `run.googleapis.com/container/instance_count`, `request_count`, `request_latencies` | Service name `telemetry` ([`names.json`](../../infra/contract/names.json)) |
+| Telemetry | `run.googleapis.com/container/instance_count`, `request_count`, `request_latencies` | Service name `telemetry` ([`names.json`](../infra/contract/names.json)) |
 
-Core publishes write counters every **60 s** while running ([`component-core.md`](../../docs/component-core.md#cloud-monitoring-write-counters)) — coarser than 10 s pipeline reports.
+Core publishes write counters every **60 s** while running ([`component-core.md`](../docs/component-core.md#cloud-monitoring-write-counters)) — coarser than 10 s pipeline reports.
 
 ### Script export
 
 ```bash
 pip install google-cloud-monitoring
-python3 scratch/load-test/collect_metrics.py \
+python3 load-test/collect_metrics.py \
   --race-id <RACE_ID> \
   --start '<START>' \
   --end '<END>' \
-  --output-dir scratch/load-test/metrics-out
+  --output-dir load-test/metrics-out
 ```
 
 Writes one CSV per metric family under `--output-dir` plus `meta.json` with resolved `instance_id`s.
+
+### Persisted point count (loss check) {#persisted-point-count-loss-check}
+
+**Primary:** compare generator totals with Core `WriteMetricSnapshot` / accepted write-line counters in `core.log` and
+pipeline `written_lines_s` (no upward `unconsumed` trend). **Secondary:** [`influx_count.sh`](influx_count.sh) piped
+over IAP SSH for the run window (`run-metadata.json` start/end, pad ±1 s). It runs **one `count(*)` per sensor table**
+(safe on large DBs). A single UNION across all tables can hang the Core VM at ~100M+ points.
+
+```bash
+gcloud compute ssh core --project=chronoracer --zone=europe-west1-b --tunnel-through-iap \
+  --command "sudo bash -s -- <START> <END>" < load-test/influx_count.sh \
+  > load-test/runs/<ID>/artifacts/influx-count.csv
+```
 
 ### Metrics Explorer (MQL examples)
 
@@ -251,11 +264,11 @@ Prefer `collect_metrics.py` for bulk CSV; alpha CLI output is awkward for many s
 
 ## 4. Kafka VM checks
 
-**Broker:** KRaft single node, `/opt/kafka`, systemd [`kafka.service`](../../kafka/startup/kafka.service). **Listeners:** PRIVATE `0.0.0.0:9092` (plaintext), PUBLIC `9094` (SASL_SSL). **No JMX** in repo startup/properties — broker health via logs, consumer groups, and host metrics only.
+**Broker:** KRaft single node, `/opt/kafka`, systemd [`kafka.service`](../kafka/startup/kafka.service). **Listeners:** PRIVATE `0.0.0.0:9092` (plaintext), PUBLIC `9094` (SASL_SSL). **No JMX** in repo startup/properties — broker health via logs, consumer groups, and host metrics only.
 
-**Bootstrap on VM (private listener):** `127.0.0.1:9092` ([`create-topics.sh`](../../kafka/startup/create-topics.sh)).
+**Bootstrap on VM (private listener):** `127.0.0.1:9092` ([`create-topics.sh`](../kafka/startup/create-topics.sh)).
 
-**Core consumer group** ([`component-kafka.md`](../../docs/component-kafka.md#consumer-groups)): prefix `kafka.group_id` default `chrono-core` → data group **`chrono-core-data`**, control **`chrono-core-control`**.
+**Core consumer group** ([`component-kafka.md`](../docs/component-kafka.md#consumer-groups)): prefix `kafka.group_id` default `chrono-core` → data group **`chrono-core-data`**, control **`chrono-core-control`**.
 
 **Topic `data`:** name from `platform.json` → `data`, 4 partitions (Core creates at runtime).
 
@@ -298,4 +311,4 @@ Optional **public** SSH (only if IAP blocked): use Kafka's ephemeral IP from `gc
 | Ops Agent log fields | Rely on `jsonPayload.MESSAGE`; structured tracing fields may also appear as separate JSON keys. |
 | `unsettled` quiet periods | `No unsettled offsets` is **DEBUG** — usually absent in Cloud Logging. |
 
-**Discrepancies spotted:** [`core/startup/README.md`](../../core/startup/README.md) references `enable-ops-agent.sh` under `/chronoracer` (image copy of packer script) — behavior matches packer source. [`component-core.md`](../../docs/component-core.md) says platform sets topic names only; partition counts remain from defaults/operator (not platform) — consistent with `render-config.sh`. Relay docs require `race.initial_driver_id` injection on start; manual GCS upload must set it explicitly (this overlay).
+**Discrepancies spotted:** [`core/startup/README.md`](../core/startup/README.md) references `enable-ops-agent.sh` under `/chronoracer` (image copy of packer script) — behavior matches packer source. [`component-core.md`](../docs/component-core.md) says platform sets topic names only; partition counts remain from defaults/operator (not platform) — consistent with `render-config.sh`. Relay docs require `race.initial_driver_id` injection on start; manual GCS upload must set it explicitly (this overlay).

@@ -88,7 +88,7 @@ terraform destroy -input=false -auto-approve -lock-timeout=5m \
 Order for a manual load test:
 
 1. **Choose `<RACE_ID>`** (1–12 chars, `[a-z0-9_-]`, matches Terraform validation).
-2. **Upload Core operator YAML** — required for boot (`render-config.sh` `gcloud storage cat` the metadata URI). Example: `scratch/load-test/core-config.yaml` → `gs://chronoracer-race/<RACE_ID>/core-config.yaml` (controller `apply` HEAD-check; Terraform does not).
+2. **Upload Core operator YAML** — required for boot (`render-config.sh` `gcloud storage cat` the metadata URI). Example: `load-test/core-config.yaml` → `gs://chronoracer-race/<RACE_ID>/core-config.yaml` (controller `apply` HEAD-check; Terraform does not).
 3. **Core binary / plugins** — boot pulls `artifacts_bucket` via `core/current.json` (today `0.1.4-load`). If you ship your own build instead: publish to artifacts + bump pointer, **or** after IAP SSH to `core`, replace `/chronoracer/core` and restart `chronoracer-core` (bypasses controller/Relay).
 4. **`terraform init` + targeted apply** (commands above). Expect state lock on `race/default.tfstate` (5m timeout; no force-unlock).
 5. **Wait for boot** — Kafka: TLS from Secret Manager, topics (`event` at Kafka boot; `data`/`control`/`heartbeat`/`dlq` from Core). Core: Influx token secret, payload fetch, merged config. No manual Kafka OAuth/ACL setup (OAuth validator in broker config; clients use Auth0 per `platform.json`).

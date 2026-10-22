@@ -9,7 +9,7 @@ import time
 from collections import deque
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[1]
 LOAD_TEST_DIR = REPO / "curls" / "load_test"
 sys.path.insert(0, str(LOAD_TEST_DIR))
 

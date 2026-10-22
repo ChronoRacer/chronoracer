@@ -1,18 +1,21 @@
 # Load test runbook: 15k points/s on the race stack (Kafka + Core + Telemetry, no Analysis)
 
 Goal: find where ingest stops scaling and prove a stable ≥ 15k points/s with every point persisted, plus a
-preview-latency baseline on current defaults. Option analysis this feeds: [core-latency-options.md](../core-latency-options.md).
+preview-latency baseline on current defaults. Option analysis this feeds: [core-latency-options.md](../scratch/core-latency-options.md).
 
 | File | Owns |
 | --- | --- |
 | [infra-readiness.md](infra-readiness.md) | Prerequisite audit, targeted apply/destroy commands, controller steps done by hand |
 | [observability.md](observability.md) | Log filters, metric types, Kafka VM commands, config merge rules |
 | [watch_probe.md](watch_probe.md) | Direct Core `Watch` subscriber over an IAP SSH forward |
-| [core-config.yaml](core-config.yaml) / [core-config-phase2.yaml](core-config-phase2.yaml) | Operator overlay: baseline / phase-2 tuning |
+| [core-config.yaml](core-config.yaml) / [core-config-throughput.yaml](core-config-throughput.yaml) / [core-config-phase2.yaml](core-config-phase2.yaml) | Operator overlay: baseline (S0-S2) / persistence sized for throughput (S3 on) / phase-2 tuning |
 | [generator-config.json](generator-config.json) | Laptop generator: public listener, OAuth, `shutdown` disabled, `CHDRV` after 60 s |
 | [run-generators.sh](run-generators.sh) | Parallel generators, one run directory per run |
+| [run-scenario.sh](run-scenario.sh) | One-shot: generators, wait, collect, Influx count, steady summary |
 | [collect-artifacts.sh](collect-artifacts.sh) | Logs + metrics + summaries into the run directory |
-| [influx_count.sh](influx_count.sh) | Exact persisted point count (runs on the Core VM) |
+| [steady_summary.py](steady_summary.py) | Steady-window JSON summary into `artifacts/steady-summary.json` |
+| [influx_count.sh](influx_count.sh) | Per-table persisted point count on the Core VM (secondary loss check) |
+| [fault-inject.sh](fault-inject.sh) | S5 timing: `stop` or `freeze` InfluxDB, then restart Core |
 
 
 ## 1. Ready check (laptop)
@@ -23,7 +26,7 @@ export RACE_ID=lt1021a                      # 1-12 chars [a-z0-9_-]
 export OKTA_CLIENT_SECRET="$(gcloud secrets versions access latest --secret=chronoracer-okta-oauth --project=chronoracer)"
 /tmp/lt-venv/bin/pip install -q -r curls/load_test/requirements.txt google-cloud-monitoring grpcio
 timedatectl show -p NTPSynchronized --value  # must print yes
-gcloud storage cp scratch/load-test/core-config.yaml "gs://chronoracer-race/${RACE_ID}/core-config.yaml"
+gcloud storage cp load-test/core-config.yaml "gs://chronoracer-race/${RACE_ID}/core-config.yaml"
 ```
 
 The overlay is mandatory: Core fails boot without it. It only sets the report interval to 10 s and the initial driver.
@@ -50,24 +53,26 @@ Ready when all hold (allow ~5 min):
 ## 3. Scenarios
 
 Run in order. Pause ≥ 3 min between runs so the pipeline drains and windows stay separable. Every run:
-`scratch/load-test/run-generators.sh <TOTAL_RATE> <DURATION_S> <INSTANCES> scratch/load-test/runs/<ID>`.
+`load-test/run-generators.sh <TOTAL_RATE> <DURATION_S> <INSTANCES> load-test/runs/<ID>` or
+`load-test/run-scenario.sh <ID> <TOTAL_RATE> <DURATION_S> <INSTANCES>` (collect + count + summary).
 
 | ID | Rate (pts/s) | Duration | Instances | Extra | Answers |
 | --- | --- | --- | --- | --- | --- |
 | S0 smoke | 1,000 | 120 s | 1 | check `CHDRV` applied in Core log | Auth, path, reports, artifact collection work |
 | S1a-d ramp | 2,500 / 5,000 / 10,000 / 15,000 | 300 s each | 4 | | Where any metric starts to bend |
 | S2 soak | 15,000 | 1,200 s | 4 | | **Target**: stable 15k |
-| S3a-b headroom | 20,000 / 25,000 | 300 s each | 4 | stop early if `unconsumed` climbs every window | Breaking point and which side breaks |
+| S3a-b headroom | 20,000 / 25,000 | 300 s each | 4 | before S3a: upload `core-config-throughput.yaml`, reset Core as in [Phase 2](#7-phase-2-optional-same-stack-after-s2); stop early if `unconsumed` climbs every window | Breaking point and which side breaks |
 | S4 isolation | 15,000 | 300 s | 4 | `watch_probe.py --slow 0.2` + Telemetry UI open | A slow subscriber only gaps itself |
-| S5 reliability (optional) | 15,000 | 300 s | 4 | t=120 s stop `influxdb3` 30 s; t=210 s restart `chronoracer-core` | No loss across DB stall and Core restart; does preview stall at 15k |
+| S5 reliability (optional) | 15,000 | 300 s | 4 | `fault-inject.sh freeze` (or `stop`) in background; see [fault-inject.sh](fault-inject.sh) | No loss across DB stall and Core restart; does preview stall at 15k |
 
 S4 probe, in two extra terminals: the SSH forward from [watch_probe.md](watch_probe.md), then
-`/tmp/lt-venv/bin/python scratch/load-test/watch_probe.py --slow 0.2 | tee scratch/load-test/runs/S4/watch-probe.log`.
+`/tmp/lt-venv/bin/python load-test/watch_probe.py --slow 0.2 | tee load-test/runs/S4/watch-probe.log`.
 Core allows 4 subscribers (Telemetry + probe = 2).
 
-S5 actions on the Core VM: `sudo systemctl stop influxdb3; sleep 30; sudo systemctl start influxdb3`, later
-`sudo systemctl restart chronoracer-core`. 30 s stays under the 60 s heartbeat write-failure threshold. Re-check the
-earlier rejection in [core-latency-options.md](../core-latency-options.md#rejected): preview is expected to stall once
+S5: run `load-test/fault-inject.sh freeze runs/S5/fault.log` alongside generators (`freeze` stalls InfluxDB without
+stopping Core; `stop` also stops Core because `chronoracer-core.service` `Requires=influxdb3.service`). 30 s stays
+under the 60 s heartbeat write-failure threshold. Re-check the earlier rejection in
+[core-latency-options.md](../scratch/core-latency-options.md#rejected): preview is expected to stall once
 the ~5 s persistence buffer fills.
 
 Live view during runs: generator `[Report]` lines in `runs/<ID>/gen-*.log`, and
@@ -75,24 +80,16 @@ Live view during runs: generator `[Report]` lines in `runs/<ID>/gen-*.log`, and
 
 ## 4. After each run
 
-```bash
-sleep 180   # Ops Agent and the 60 s write counters lag
-RACE_ID=${RACE_ID} scratch/load-test/collect-artifacts.sh scratch/load-test/runs/<ID>
-# exact persisted count for the run window (reading times trail produce time by <= 0.5 s)
-gcloud compute ssh core --project=chronoracer --zone=europe-west1-b --tunnel-through-iap \
-  --command "sudo bash -s -- <start_utc - 1s> <end_utc + 1s>" \
-  < scratch/load-test/influx_count.sh > scratch/load-test/runs/<ID>/artifacts/influx-count.csv
-```
+Prefer `load-test/run-scenario.sh` (sleep, collect, count, `steady_summary.py`). Manual steps: [observability.md](observability.md#persisted-point-count-loss-check).
 
-`start_utc`/`end_utc` are in `runs/<ID>/run-metadata.json`. Compare `TOTAL` with the generator total printed by
-`run-generators.sh` (sum of `[Sensors]` lines). They must be equal: replays are deduplicated by InfluxDB, so a
-smaller count is loss; check DLQ and partial-write lines in `core.log` (NaN/inf flag in
-[core-latency-options.md](../core-latency-options.md#reliability-flag-outside-perf-scope-unverified)).
+**Primary loss check:** `WriteMetricSnapshot` accepted-line deltas in `core.log` (see observability). **Secondary:**
+`influx-count.csv` from [influx_count.sh](influx_count.sh) — one query per table; do not use a single UNION on very
+large databases (can exhaust Core VM memory).
 
 ## 5. Reading the result
 
-Field meanings: Core [Pipeline report](../../docs/component-core.md#pipeline-report), generator
-[Report](../../curls/load_test/README.md#report).
+Field meanings: Core [Pipeline report](../docs/component-core.md#pipeline-report), generator
+[Report](../curls/load_test/README.md#report).
 
 | Symptom | Bottleneck |
 | --- | --- |
@@ -112,9 +109,9 @@ S2 passes ("stable 15k") when, over all windows after the first minute:
 - Core and Kafka VM CPU below 80%.
 
 Record per scenario: max sustained rate, `preview_ms` p50/p99, `persist_ms` p99, `sink_blocked_pct`, VM CPU,
-Telemetry gaps. Final evidence goes to [adr-vm-types.md](../../docs/adr-vm-types.md).
+Telemetry gaps. Final evidence goes to [adr-vm-types.md](../docs/adr-vm-types.md).
 
-## 6. Artifacts (per run, `scratch/load-test/runs/<ID>/`)
+## 6. Artifacts (per run, `load-test/runs/<ID>/`)
 
 | Path | Content |
 | --- | --- |
@@ -138,9 +135,12 @@ Upload `core-config-phase2.yaml` over the race overlay, then `gcloud compute ins
 Run with v1 or v2 config (pick better for throughput based on previous phases). Goal: test how many points per second
 can the system handle and test behaviour system when overloaded.
 
-##  9. Teardown
+## 8. Run the export flow (send SHUTDOWN to Core) - monitor if sensor data exported
+
+## 9. Ensure all metrics collected from all VMs, GCP. Everything that can be checked was checked
+
+##  10. Teardown
 
 Targeted destroy in [infra-readiness.md](infra-readiness.md#targeted-apply--destroy-no-analysis-vm) (same target set,
-`ingest_open=true`). Do not send `SHUTDOWN` (it would start the export flow); `generator-config.json` has it
-disabled. Afterwards confirm no instances with `labels.race-id=${RACE_ID}`, no `telemetry` service, no
-`chronoracer-kafka-public` rule, no `ingest` A record, and remove `gs://chronoracer-race/${RACE_ID}/`.
+`ingest_open=true`). Afterwards confirm no instances with `labels.race-id=${RACE_ID}`, no `telemetry` service, no
+`chronoracer-kafka-public` rule, no `ingest` A record. Leave GCS bucket export content.

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LOAD_TEST="${REPO_ROOT}/curls/load_test/load_test.py"
 CONFIG="${SCRIPT_DIR}/generator-config.json"
 PYTHON="${PYTHON:-/tmp/lt-venv/bin/python}"

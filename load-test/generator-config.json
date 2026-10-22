@@ -11,7 +11,7 @@
   "sensor_topic": "data",
   "batch_window_ms": 500,
   "car_name": "Toyota Corolla 2.0 Hybrid 2023",
-  "channels_file": "../../analysis/corolla_channels-2.json",
+  "channels_file": "../analysis/corolla_channels-2.json",
   "load": {
     "points_per_second": 15000,
     "min_points_per_message": 1,

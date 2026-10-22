@@ -1,4 +1,4 @@
-# Phase-2 candidate overlay: baseline + Kafka fetch and batch-flush tuning for load tests.
+# Phase-2 candidate overlay: core-config-throughput.yaml + Kafka fetch and batch-flush tuning for load tests.
 # Same upload path as core-config.yaml; use one file per race (do not merge both).
 
 kafka:
@@ -9,6 +9,9 @@ kafka:
 
 processing:
   message_batch_flush_interval_ms: 5
+
+persistence:
+  flush_max_combined_batch_size: 50000
 
 race:
   initial_driver_id: loadtest
