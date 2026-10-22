@@ -31,7 +31,10 @@ class FakeProducer:
         self._queue.append(kwargs)
 
     def poll(self, _timeout=0):
-        return 0
+        # load_test.produce retries on BufferError until poll frees space, so poll must drain.
+        drained = len(self._queue)
+        self._queue.clear()
+        return drained
 
     def flush(self, _timeout=None):
         self._queue.clear()

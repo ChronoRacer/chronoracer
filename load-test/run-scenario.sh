@@ -30,7 +30,7 @@ clock before
 "${SCRIPT_DIR}/run-generators.sh" "${RATE}" "${DUR}" "${INST}" "${RUN}" 2>&1 | tail -n $((INST * 3 + 4))
 echo "gen_exit=${PIPESTATUS[0]}"
 clock after
-echo "waiting 190 s for log/metric lag"
+echo "waiting 175 s for log/metric lag (plus ~15 s spent sampling clocks)"
 sleep 175
 RACE_ID="${RACE_ID}" "${SCRIPT_DIR}/collect-artifacts.sh" "${RUN}" >"${RUN}/collect.log" 2>&1
 echo "collect_exit=$?"

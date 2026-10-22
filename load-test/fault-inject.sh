@@ -3,7 +3,8 @@
 # Usage: fault-inject.sh <stop|freeze> <LOG>
 #   stop   — systemctl stop influxdb3 30s then start (also stops Core: chronoracer-core Requires=influxdb3)
 #   freeze — SIGSTOP/SIGCONT influxdb3 30s (Core keeps running; preferred DB stall test)
-set -euo pipefail
+# No -e: a failed SSH step must not skip the later Core restart.
+set -uo pipefail
 
 MODE="${1:?mode: stop or freeze}"
 LOG="${2:?log path required}"
