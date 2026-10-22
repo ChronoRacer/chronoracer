@@ -31,3 +31,6 @@ TODOo.txt
 corolla_channels-2.json
 ml/data
 ml/ml.ipynb
+rules/test/files
+/rules/test/files/
+/rules/test/rule_testcases.json
