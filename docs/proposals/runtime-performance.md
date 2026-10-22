@@ -1,6 +1,6 @@
 # Proposal - Core and Kafka VM runtime performance
 
-Status: **proposed, not implemented.** Items 1-4 were exercised in the load test as config or test-only overrides;
+Status: **items 1-7 implemented in code/config/images; items 1, 5 and 6 still need the verification runs described below.** Items 1-4 were exercised in the load test as config or test-only overrides;
 items 5-7 are derived from observed failures and need a verification run. The existing [docs](../README.md) remain the
 source of truth for the running system.
 

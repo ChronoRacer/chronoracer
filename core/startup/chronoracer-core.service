@@ -1,7 +1,7 @@
 [Unit]
 Description=Chronoracer Core
 After=influxdb3.service
-Requires=influxdb3.service
+Wants=influxdb3.service
 
 [Service]
 Type=simple
@@ -12,6 +12,8 @@ EnvironmentFile=/chronoracer/core.env
 ExecStart=/chronoracer/core
 # Needed for long export sequence
 TimeoutStopSec=900
+# Keep Core alive under system memory pressure; InfluxDB is the intended OOM victim.
+OOMScoreAdjust=-900
 Restart=on-failure
 RestartSec=5
 

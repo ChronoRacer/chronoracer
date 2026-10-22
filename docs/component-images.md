@@ -78,6 +78,10 @@ overlays as `/chronoracer/gce-metadata.sh`. Boot scripts source it and read proj
 the GCE metadata server. They do not call the Compute API. Race VM service accounts do not need
 `compute.instances.get`.
 
+**Time sync (Core and Kafka):** [`configure-timesync.sh`](../infra/packer/scripts/configure-timesync.sh) bakes a
+`systemd-timesyncd` drop-in (`NTP=metadata.google.internal`, poll 16-32 s). Core latency metrics depend on
+cross-VM clock offset.
+
 **Kafka** `/chronoracer/`: overlay from [`kafka/startup`](../kafka/startup) (scripts, `kafka.service`, Ops Agent
 configuration),
 `gce-metadata.sh`, `enable-ops-agent.sh`, plus `names.json` and `platform.json`. No Core dirs (`influxdb-plugins`, `redpanda`). Broker bits at

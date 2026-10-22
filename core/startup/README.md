@@ -40,7 +40,9 @@ keys: [Terraform](../../docs/component-terraform.md).
    unit with the host receiver. Monitoring contract: [Dashboard](../../docs/component-dashboard.md#data-path).
    Ingest counters: [Core](../../docs/component-core.md#cloud-monitoring-write-counters).
 
-4. `systemctl enable --now chronoracer-core`. Unit `UMask=0077`, `HOME=/root`, `TimeoutStopSec=900`, and
+4. `systemctl enable --now chronoracer-core`. The unit `Wants=` (not `Requires=`) `influxdb3.service`, so an InfluxDB
+   stop or OOM restart does not stop Core; at startup Core retries the InfluxDB ping with backoff for up to 180 s
+   (WAL replay) before failing. Unit `UMask=0077`, `HOME=/root`, `TimeoutStopSec=900`, and
    `EnvironmentFile=/chronoracer/core.env` (`CORE_CONFIG_PATH=/chronoracer/core-config.yaml`). Redpanda Connect is
    installed in the image; the VM does not download it. Core opens a private plaintext gRPC `Watch` listener on the
    telemetry port; contract: [Core telemetry](../../docs/component-core.md#telemetry-stream).

@@ -39,6 +39,16 @@ Dashboard ingest signals are Core write counters, not this process: [Core](compo
 Boot starts InfluxDB 3 Core before the Core process: [Core startup](../core/startup/README.md). Image + plugin
 payload: [Compute images](component-images.md).
 
+## Memory budget
+
+[`influxdb3.service`](../core/startup/influxdb3.service) runs InfluxDB in its own cgroup: `MemoryHigh=70%`,
+`MemoryMax=80%` of RAM. Under pressure the kernel throttles and then OOM-kills only InfluxDB; `Restart=on-failure`
+restarts it and replays the WAL while Core keeps its batches and Kafka buffers. Core has `OOMScoreAdjust=-900`.
+Inside the limit: write buffer `--force-snapshot-mem-size 30%`, `--exec-mem-pool-size 20%`, `--file-cache-size 10%`
+(Core never queries at runtime), `--force-snapshot-max-age 10m`. `--wal-flush-interval 100ms` shortens write
+acknowledgement. Values are starting points pending the L150 plus full-count-query verification run
+([proposal](proposals/runtime-performance.md)).
+
 ## Plugin Python environment
 
 Core VM has no internet access. The Core image build installs all required plugin python packages before

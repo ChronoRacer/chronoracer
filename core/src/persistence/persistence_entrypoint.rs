@@ -13,7 +13,12 @@ use compact_str::CompactString;
 use influxdb3_client::{Client, ClientConfig, RetryConfig, WriteOptions};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use std::time::Duration;
+use tracing::{info, warn};
+
+const INFLUX_CONNECT_TIMEOUT: Duration = Duration::from_secs(180);
+const INFLUX_CONNECT_INITIAL_BACKOFF: Duration = Duration::from_millis(500);
+const INFLUX_CONNECT_MAX_BACKOFF: Duration = Duration::from_secs(5);
 
 pub type SensorDataBatch = Vec<Arc<UnwoundSensorDataMessage>>;
 pub type SensorDataRx = tokio::sync::mpsc::Receiver<SensorDataBatch>;
@@ -92,19 +97,32 @@ impl PersistenceLayerEntryPoint {
             .await
             .context("Failed to create InfluxDb client")?;
 
-        client
-            .ping()
-            .await
-            .map(|version| {
-                if version == "unknown" {
-                    return Err(anyhow!(
-                        "InfluxDB reachable, but version ping failed. Probably invalid access token"
+        // InfluxDB may still be replaying its WAL after boot or an OOM restart, so a refused
+        // ping is retried with backoff. A reachable server with a bad token is not.
+        let deadline = tokio::time::Instant::now() + INFLUX_CONNECT_TIMEOUT;
+        let mut backoff = INFLUX_CONNECT_INITIAL_BACKOFF;
+        let version = loop {
+            match client.ping().await {
+                Ok(version) => break version,
+                Err(e) if tokio::time::Instant::now() + backoff < deadline => {
+                    warn!("InfluxDb not reachable yet ({e}); retrying in {backoff:?}");
+                    tokio::time::sleep(backoff).await;
+                    backoff = (backoff * 2).min(INFLUX_CONNECT_MAX_BACKOFF);
+                }
+                Err(e) => {
+                    return Err(anyhow!(e)).context(format!(
+                        "Failed to connect to InfluxDb within {INFLUX_CONNECT_TIMEOUT:?}"
                     ));
                 }
-                info!("Connected to InfluxDb. Using version {version}");
-                Ok(client)
-            })
-            .context("Failed to connect to InfluxDb")?
+            }
+        };
+        if version == "unknown" {
+            return Err(anyhow!(
+                "InfluxDB reachable, but version ping failed. Probably invalid access token"
+            ));
+        }
+        info!("Connected to InfluxDb. Using version {version}");
+        Ok(client)
     }
 
     /// The flusher owns write concurrency, batching and retries. The client is configured so it

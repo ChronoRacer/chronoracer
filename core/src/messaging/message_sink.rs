@@ -509,7 +509,7 @@ impl InstantMessageSink {
             |config| {
                 config
                     .set("fetch.min.bytes", "1")
-                    .set("fetch.wait.max.ms", "0");
+                    .set("fetch.wait.max.ms", "500");
             },
         )?;
         Ok(Self {

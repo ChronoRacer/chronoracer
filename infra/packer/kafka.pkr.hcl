@@ -29,6 +29,11 @@ build {
 
   provisioner "shell" {
     execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash '{{ .Path }}'"
+    script          = "scripts/configure-timesync.sh"
+  }
+
+  provisioner "shell" {
+    execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash '{{ .Path }}'"
     environment_vars = [
       "KAFKA_VERSION=${var.kafka_version}",
       "KAFKA_SCALA_BINARY=${var.kafka_scala_binary}",

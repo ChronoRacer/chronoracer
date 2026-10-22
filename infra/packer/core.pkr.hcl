@@ -29,6 +29,11 @@ build {
 
   provisioner "shell" {
     execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash '{{ .Path }}'"
+    script          = "scripts/configure-timesync.sh"
+  }
+
+  provisioner "shell" {
+    execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash '{{ .Path }}'"
     environment_vars = [
       "YQ_VERSION=${var.yq_version}",
       "RPK_VERSION=${var.rpk_version}",

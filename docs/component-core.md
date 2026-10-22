@@ -75,7 +75,7 @@ writes are idempotent per series and timestamp. Retries are logged on the first 
 an auth or config rejection is logged as an auth/config problem.
 
 The control path is intentionally separate: a different message sink forwards each control record immediately on a
-single-message channel and uses `fetch.min.bytes=1`/`fetch.wait.max.ms=0` Kafka settings. Control events are not subject
+single-message channel and uses `fetch.min.bytes=1`/`fetch.wait.max.ms=500` Kafka settings (the broker answers as soon as one record exists; the wait only slows empty polls). Control events are not subject
 to the sensor-data batch size or timer because control events must be acted on as soon as they are available. The control
 filter parses and applies each event inline on the async task, in Kafka arrival order — not on the sensor-data rayon
 pool — so SHUTDOWN and CHDRV are never stalled behind data backpressure or reordered by parallel workers.
