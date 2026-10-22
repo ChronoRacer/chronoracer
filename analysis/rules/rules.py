@@ -57,7 +57,6 @@ class RulesEngine:
         self.sensors : dict[str,Sensor] = self.fetch_sensor()
         logger.info("Loaded {} sensors", len(self.sensors))
         self.time_cache : dict[str,int] = {} # (rule_id) ---> time in ns
-        # maybe cache made by tuple alert_id, state
     def fetch_sensor(self):
         sensors = {}
         blob = self.bucket.blob("analysis/sensors.json")
@@ -132,7 +131,6 @@ class RulesEngine:
             timestamp=time.time_ns() // 1000,
             alert_id=alert_id,
             sensors=_get_sensors_pair(),
-            # TODO MOZNA DODAĆ CZAS WYSTĄPIENIA JAKO W JS CZAS PRÓBKI (CURRENTVAL - X) W SENSIE POCZĄTEK CIĄGU
             analysis_message=decision["result"]["analysis_message"],
             analysis_reason=decision["result"]["analysis_reason"]
         )
@@ -159,6 +157,8 @@ def main():
 
     context = zmq.Context()
     sub_socket = context.socket(zmq.SUB)
+    sub_socket.setsockopt(zmq.RCVTIMEO, 60 * 1_000)
+
     sub_socket.setsockopt(zmq.SUBSCRIBE, b"sensor_agg")
 
     sub_socket.connect("tcp://127.0.0.1:6767")
@@ -166,16 +166,16 @@ def main():
     logger.info("Rules engine running")
 
     while True:
-        topic, raw_payload = sub_socket.recv_multipart()
-        data = orjson.loads(raw_payload.decode("utf-8"))
-        if topic == b"sensor_agg":
-            available_sensors = set([msg["sensor_id"] for msg in data])
-            rules_engine.handle_message(message=data,sensors=available_sensors)
-
+        try:
+            topic, raw_payload = sub_socket.recv_multipart()
+            data = orjson.loads(raw_payload.decode("utf-8"))
+            if topic == b"sensor_agg":
+                available_sensors = set([msg["sensor_id"] for msg in data])
+                rules_engine.handle_message(message=data,sensors=available_sensors)
+        except zmq.Again:
+            logger.warning("DISCONNECT - NO MESSAGES FOR DELTA TIME")
+            break
 if __name__ == "__main__":
     main()
 
-# TODO retries - when server is not up yet, we should retry to connect to it.
-# TODO - NO DATA TO CHANGE STATE == OLD STATE
 
-# TODO co jeśl dostane paiety z przeszłości bo byly byforowane ???

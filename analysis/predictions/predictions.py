@@ -80,7 +80,7 @@ def main():
 
     pred_engine.on_stop()
     logger.info("Predictions engine stopped")
-
+    # TODO HERE ALSO TIMEOUT FOR SOCKET sub_socket.setsockopt(zmq.RCVTIMEO, 5000)  # 5 sekund
 
 if __name__ == "__main__":
     main()
