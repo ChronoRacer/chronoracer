@@ -23,6 +23,7 @@ for unit in "${UNITS[@]}"; do
 done
 systemctl daemon-reload
 
+"${CHRONORACER_DIR}/fetch-payload.sh"
 "${CHRONORACER_DIR}/render-env.sh"
 "${CHRONORACER_DIR}/enable-ops-agent.sh"
 
