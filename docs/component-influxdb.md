@@ -66,11 +66,13 @@ Schema: `iox` (InfluxDB default)
 
 One table per sensor, created lazily on first write. Table name = sensor id.
 
-Line protocol Core writes (`SimplePoint`):
+Line protocol Core writes (formatted by `LineWriter` in the batcher, one line per reading):
 
 ```
 {sensorId},race={raceId},driver={driverId} val={value} {timestampNanos}
 ```
+
+`value` is always written as a float (shortest round-trip form with a decimal point or exponent, for example `3.0`, `12.5`, `1e21`).
 
 | Column   | Kind      | Meaning                                                    |
 |----------|-----------|------------------------------------------------------------|

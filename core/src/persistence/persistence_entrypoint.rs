@@ -1,7 +1,7 @@
 use crate::configuration::{CoreConfig, PersistenceConfig};
 use crate::messaging::offset_ledger::OffsetLedger;
 use crate::persistence::database_exporter::InfluxDbExporter;
-use crate::persistence::sensor_data_batcher::{PointBatch, SensorDataBatcher, SimplePoint};
+use crate::persistence::sensor_data_batcher::{PointBatch, SensorDataBatcher};
 use crate::persistence::sensor_data_flusher::{BatcherWiring, BatcherWiringType, InfluxDbFlusher};
 use crate::persistence::sensor_data_splitter::SensorDataSplitter;
 use crate::persistence::write_metrics::WriteMetrics;
@@ -50,10 +50,18 @@ impl PersistenceLayerEntryPoint {
             splitter_channel_capacity,
             persistence_config,
         );
+        if splitter.is_some() {
+            info!("Splitter enabled - fast flush sensor path wired")
+        } else {
+            info!("Splitter disabled - fast flush sensor path skipped")
+        }
+        
+        let race_id = config.race.race_id.clone();
         let (fast_batcher, fast_batcher_wiring) = fast_rx
             .map(|rx| {
                 Self::create_batcher(
                     rx,
+                    Arc::from(race_id.as_str()),
                     driver_id_holder,
                     persistence_config,
                     BatcherWiringType::Fast,
@@ -62,16 +70,15 @@ impl PersistenceLayerEntryPoint {
             .unzip();
         let (normal_batcher, normal_batcher_wiring) = PersistenceLayerEntryPoint::create_batcher(
             normal_rx,
+            Arc::from(race_id.as_str()),
             driver_id_holder,
             persistence_config,
             BatcherWiringType::Normal,
         );
 
-        let race_id = config.race.race_id.clone();
         let write_metrics = Arc::new(WriteMetrics::new());
         let flusher = InfluxDbFlusher::from_config(
             persistence_config,
-            race_id,
             fast_batcher_wiring,
             normal_batcher_wiring,
             Arc::clone(&db_client),
@@ -160,11 +167,12 @@ impl PersistenceLayerEntryPoint {
 
     fn create_batcher(
         batcher_rx: SensorDataRx,
+        race_id: Arc<str>,
         driver_id_holder: &'static RetainReadTimeValue<CompactString>,
         persistence_config: &PersistenceConfig,
         batcher_wiring_type: BatcherWiringType,
     ) -> (SensorDataBatcher, BatcherWiring) {
-        let (pool_tx, pool_rx) = tokio::sync::mpsc::channel::<Vec<SimplePoint>>(10);
+        let (pool_tx, pool_rx) = tokio::sync::mpsc::channel::<String>(10);
         let (batch_tx, batch_rx) = tokio::sync::mpsc::channel::<PointBatch>(10);
         let (batch_size, flush_interval) = match batcher_wiring_type {
             BatcherWiringType::Normal => (
@@ -183,6 +191,7 @@ impl PersistenceLayerEntryPoint {
             batcher_rx,
             batch_tx,
             pool_rx,
+            race_id,
             driver_id_holder,
             batcher_wiring_type,
         );
