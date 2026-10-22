@@ -12,6 +12,8 @@ actual rate.
 Optionally a change-driver and a shutdown message are sent per [config file](config.json). For a remote cluster with
 OAuth, fill in the `oauth` block and set `enabled`.
 
+Warning: with randomizer inside, expect birthday paradox effects with high point counts.
+
 ## Run
 
 ```bash
