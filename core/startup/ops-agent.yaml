@@ -9,7 +9,7 @@ logging:
     only_chronoracer_units:
       type: exclude_logs
       match_any:
-        - 'NOT jsonPayload._SYSTEMD_UNIT = "chronoracer-core.service" AND NOT jsonPayload._SYSTEMD_UNIT = "influxdb3.service"'
+        - 'NOT jsonPayload._SYSTEMD_UNIT = "chronoracer-core.service"'
   service:
     pipelines:
       default_pipeline:

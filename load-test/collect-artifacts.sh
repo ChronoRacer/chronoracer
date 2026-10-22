@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pull Core/Influx/Kafka/Telemetry logs and Cloud Monitoring series for one generator run.
+# Pull Core/Kafka/Telemetry logs and Cloud Monitoring series for one generator run.
 # Usage: RACE_ID=<id> collect-artifacts.sh RUN_DIR [PAD_BEFORE_S] [PAD_AFTER_S]
 # RUN_DIR is the directory run-generators.sh wrote (needs run-metadata.json with start/end).
 # Run it >= 3 min after the run ends: Ops Agent and the 60 s write counters lag behind.
@@ -51,8 +51,8 @@ journal() { # output-name instance-id systemd-unit
 }
 
 journal core.log "${CORE_ID}" chronoracer-core.service
-journal influxdb3.log "${CORE_ID}" influxdb3.service
 journal kafka.log "${KAFKA_ID}" kafka.service
+# influxdb3.service is not shipped by Ops Agent; pull via journalctl on the Core VM (see load-test/observability.md).
 read_logs telemetry.log \
   "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"telemetry\" AND resource.labels.location=\"${REGION}\"" \
   'value(timestamp,jsonPayload.type,jsonPayload,textPayload)'

@@ -43,7 +43,7 @@ After upload, restart Core or re-run race apply so `render-config.sh` runs if th
 
 - Core/Kafka images: [`enable-ops-agent.sh`](../infra/packer/scripts/enable-ops-agent.sh) installs [`core/startup/ops-agent.yaml`](../core/startup/ops-agent.yaml) / [`kafka/startup/ops-agent.yaml`](../kafka/startup/ops-agent.yaml).
 - **Receivers:** `systemd_journald` only (no syslog files).
-- **Processors:** exclude everything except `chronoracer-core.service` + `influxdb3.service` (Core VM) or `kafka.service` (Kafka VM).
+- **Processors:** exclude everything except `chronoracer-core.service` (Core VM) or `kafka.service` (Kafka VM). `influxdb3.service` journal lines are not shipped (use journal on the Core VM); it spams too much on INFO (at least 10 logs per second) and loses observability on warn.
 - Core stdout (Rust `tracing` → journal) lands in `jsonPayload.MESSAGE` with `jsonPayload._SYSTEMD_UNIT`.
 - Project log **exclusions** drop Ops Agent self-noise on GCE ([`infra/always-on/logging.tf`](../infra/always-on/logging.tf)); they do not drop application journal lines.
 
@@ -127,16 +127,7 @@ Include **ERROR** ingest/DLQ/Kafka lines at INFO if needed: add `OR jsonPayload.
 
 ### (d) InfluxDB logs (`influxdb3.service`)
 
-```bash
-gcloud logging read \
-'resource.type="gce_instance"
- resource.labels.project_id="chronoracer"
- resource.labels.instance_id="'"${CORE_ID}"'"
- jsonPayload._SYSTEMD_UNIT="influxdb3.service"
- timestamp>="<START>" AND timestamp<="<END>"' \
-  --project=chronoracer --limit=10000 --order=asc \
-  --format='table(timestamp.date("%Y-%m-%dT%H:%M:%E*S%:z"),severity,jsonPayload.MESSAGE)'
-```
+Not in Cloud Logging (Ops Agent excludes `influxdb3.service`). Use the journal commands in [Journal fallback (Core VM)](#journal-fallback-core-vm) below.
 
 ### (e) DLQ handler aggregated lines (10 s window)
 
