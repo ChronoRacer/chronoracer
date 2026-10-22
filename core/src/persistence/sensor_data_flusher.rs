@@ -10,7 +10,7 @@ use influxdb3_client::error::Error as InfluxError;
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
@@ -166,13 +166,9 @@ impl FlushContext {
 
         let mut retries: u32 = 0;
         loop {
-            let started = Instant::now();
-            let result = self.client.write(line_protocol.as_str()).await;
-            self.stats.record_write(started.elapsed());
-            match result {
+            match self.client.write(line_protocol.as_str()).await {
                 Ok(()) => {
                     self.write_metrics.record_success(lines, bytes);
-                    self.stats.add_written_lines(lines);
                     if retries > 0 {
                         info!(
                             "Database write recovered after {retries} retries, flush_type={wiring_type:?}"
@@ -183,8 +179,6 @@ impl FlushContext {
                 Err(InfluxError::PartialWrite(error)) => {
                     let failed_lines = u64::try_from(error.line_errors.len()).unwrap_or(u64::MAX);
                     self.write_metrics.record_partial(lines, failed_lines);
-                    self.stats
-                        .add_written_lines(lines.saturating_sub(failed_lines));
                     error!(%error,
                         "Database write partially failed. failed_lines={}, flush_type={wiring_type:?}",
                         failed_lines
@@ -224,26 +218,21 @@ impl FlushContext {
         batch: PointBatch,
         wiring_type: BatcherWiringType,
     ) -> Vec<SimplePoint> {
+        let oldest_created = batch.oldest_created();
         let PointBatch {
             mut points,
             offsets,
-            oldest_created_ms,
+            ..
         } = batch;
         // Messages without readings have nothing to write.
         if !points.is_empty() {
-            let outcome = self.flush_batch(&points, wiring_type).await;
-            if outcome == FlushOutcome::Written {
-                info!(
-                    "Flushed data points: batch_size={}, flush_type={:?}",
-                    points.len(),
-                    wiring_type
-                );
-            }
+            // The outcome is counted by `WriteMetrics`; failures are logged inside.
+            let _ = self.flush_batch(&points, wiring_type).await;
         }
         // Durable point. Every line of the batch is settled, and so is every message it came
         // from (one message never spans batches); the outcome only says how.
         self.offsets.settle(&offsets);
-        self.stats.record_settled(oldest_created_ms);
+        self.stats.record_settled(oldest_created);
 
         points.clear();
         points
@@ -658,12 +647,6 @@ mod tests {
             !metrics.writes_failing_longer_than(Duration::ZERO),
             "success ends the streak"
         );
-        let report = context.stats.take_report();
-        assert_eq!(
-            (report.write.count(), report.written_lines),
-            (4, 2),
-            "every attempt is timed, accepted lines are counted once"
-        );
         assert_eq!(server.join().unwrap(), vec![EXPECTED_BODY; 4]);
     }
 
@@ -738,7 +721,6 @@ mod tests {
             (1, 0, 0)
         );
         assert_eq!(snapshot.lines, 1);
-        assert_eq!(context.stats.take_report().written_lines, 1);
         assert_eq!(server.join().unwrap().len(), 1);
     }
 
@@ -756,7 +738,7 @@ mod tests {
         PointBatch {
             points,
             offsets: set,
-            oldest_created_ms: None,
+            oldest_created_ms: crate::persistence::sensor_data_batcher::NO_TIMESTAMP,
         }
     }
 
@@ -841,7 +823,7 @@ mod tests {
         let mut context = context_for(closed_port, Arc::new(WriteMetrics::new())).await;
         let sink = recording_context(&mut context);
         let mut batch = point_batch(&context, &[(0, 3)], Vec::new());
-        batch.oldest_created_ms = Some(crate::pipeline_stats::unix_now_ms());
+        batch.oldest_created_ms = crate::pipeline_stats::unix_now_ms();
 
         timeout(
             Duration::from_secs(2),
@@ -851,10 +833,9 @@ mod tests {
         .expect("an empty batch must not write");
 
         assert_eq!(sink.stored(), [(0, 4)]);
-        let report = context.stats.take_report();
         assert_eq!(
-            (report.write.count(), report.persist.count()),
-            (0, 1),
+            context.stats.take_persist().count(),
+            1,
             "settled without a write, still counted as persisted"
         );
     }

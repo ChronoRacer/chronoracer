@@ -3,7 +3,6 @@ use crate::messaging::message_sink::BatchSinkRx;
 use crate::messaging::offset_tracker::OffsetSet;
 use crate::messaging::partial_message::{MessageOrigin, PartialMessage, PartialMessageWithError};
 use crate::persistence::persistence_entrypoint::SensorDataBatch;
-use crate::pipeline_stats::{PipelineStats, age_ms, unix_now_ms};
 use crate::processing::sensor_data_message::{SensorIdInterner, UnwoundSensorDataMessage};
 use crate::telemetry::PreviewHub;
 use std::cell::RefCell;
@@ -23,7 +22,6 @@ pub struct ReadingCollector {
     rayon_pool: Arc<rayon::ThreadPool>,
     processing_slots: Arc<Semaphore>,
     preview: PreviewHub,
-    stats: Arc<PipelineStats>,
 }
 
 impl ReadingCollector {
@@ -34,7 +32,6 @@ impl ReadingCollector {
         processed_data_tx: tokio::sync::mpsc::Sender<SensorDataBatch>,
         rayon_pool: Arc<rayon::ThreadPool>,
         preview: PreviewHub,
-        stats: Arc<PipelineStats>,
     ) -> Self {
         Self {
             flush_rx,
@@ -43,7 +40,6 @@ impl ReadingCollector {
             processing_slots: Arc::new(Semaphore::new(rayon_pool.current_num_threads())),
             rayon_pool,
             preview,
-            stats,
         }
     }
 
@@ -63,13 +59,11 @@ impl ReadingCollector {
             let success_tx = self.processed_data_tx.clone();
             let dlq_tx = self.dlq_tx.clone();
             let preview = self.preview.clone();
-            let stats = Arc::clone(&self.stats);
             self.rayon_pool.spawn(move || {
                 let _processing_slot = processing_slot;
                 let processed = decode_batch(partial_messages, &dlq_tx);
 
                 if !processed.is_empty() {
-                    record_decoded(&stats, &processed);
                     preview.offer(&processed);
                     if let Err(error) = success_tx.blocking_send(processed) {
                         error!(%error, "Failed to send processed batch downstream");
@@ -107,19 +101,6 @@ fn decode_batch(batch: Vec<PartialMessage>, dlq_tx: &InvalidMessageTx) -> Sensor
         .settler()
         .settle_set(MessageOrigin::SensorData, &dropped, InvalidOutcome::Dropped);
     processed
-}
-
-/// Points are available to the preview from this moment on, so this is where their latency ends.
-fn record_decoded(stats: &PipelineStats, processed: &SensorDataBatch) {
-    let now_ms = unix_now_ms();
-    let mut points = 0;
-    for message in processed {
-        points += message.readings.len() as u64;
-        if let Some(created_ms) = message.created_ms {
-            stats.record_preview_latency(age_ms(created_ms, now_ms));
-        }
-    }
-    stats.add_decoded_points(points);
 }
 
 /// Parsing must not wait on the DLQ: a bad-schema deploy makes every message invalid, and a
@@ -232,7 +213,6 @@ mod tests {
         dlq_rx: InvalidMessageRx,
         processed_rx: mpsc::Receiver<SensorDataBatch>,
         ingest_handle: tokio::task::JoinHandle<()>,
-        stats: Arc<PipelineStats>,
     }
 
     fn start(dlq_capacity: usize, preview: PreviewHub) -> Harness {
@@ -243,15 +223,8 @@ mod tests {
         let (flush_tx, flush_rx) = mpsc::channel::<Vec<PartialMessage>>(10);
         let (dlq_tx, dlq_rx) = invalid_message_channel(dlq_capacity, settler);
         let (processed_tx, processed_rx) = mpsc::channel::<SensorDataBatch>(10);
-        let stats = Arc::new(PipelineStats::default());
-        let mut collector = ReadingCollector::new(
-            flush_rx,
-            dlq_tx,
-            processed_tx,
-            build_pool().into(),
-            preview,
-            Arc::clone(&stats),
-        );
+        let mut collector =
+            ReadingCollector::new(flush_rx, dlq_tx, processed_tx, build_pool().into(), preview);
         let ingest_handle = tokio::spawn(async move {
             collector.ingest().await;
         });
@@ -260,38 +233,7 @@ mod tests {
             dlq_rx,
             processed_rx,
             ingest_handle,
-            stats,
         }
-    }
-
-    #[tokio::test]
-    async fn decoded_points_and_preview_latency_are_recorded_before_the_offer() {
-        let schema = load_avro_schema();
-        let mut harness = start(10, idle_preview());
-        let mut stamped = valid_message(&schema, 1);
-        stamped.created_ms = Some(unix_now_ms() - 50);
-
-        harness
-            .flush_tx
-            .send(vec![stamped, valid_message(&schema, 2), corrupt_message(3)])
-            .await
-            .unwrap();
-        timeout(Duration::from_secs(2), harness.processed_rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-
-        let report = harness.stats.take_report();
-        assert_eq!(report.decoded_points, 2, "invalid messages have no points");
-        assert_eq!(
-            report.preview.count(),
-            1,
-            "only messages with a Kafka timestamp have a latency"
-        );
-        assert!(report.preview.quantile_bound_ms(0.5) >= Some(50));
-
-        drop(harness.flush_tx);
-        let _ = harness.ingest_handle.await;
     }
 
     #[tokio::test]

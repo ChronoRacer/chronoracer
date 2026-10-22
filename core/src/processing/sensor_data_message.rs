@@ -26,7 +26,7 @@ pub struct UnwoundSensorDataMessage {
     pub readings: Box<[AbsoluteSensorReading]>,
     /// The Kafka message these readings came from: the offset that settles once they are written.
     pub source: SourceOffset,
-    /// Kafka record timestamp of that message, for the pipeline report only.
+    /// Kafka record timestamp of that message, for the persist latency metric.
     pub created_ms: Option<i64>,
 }
 

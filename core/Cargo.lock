@@ -595,7 +595,7 @@ dependencies = [
 
 [[package]]
 name = "chronoracer-core"
-version = "0.1.4-load"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "apache-avro",

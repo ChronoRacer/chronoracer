@@ -65,10 +65,7 @@ fn run() -> Result<()> {
     let config_val = CoreConfig::load_from_env()?;
     let config: &'static CoreConfig = Box::leak(Box::new(config_val));
     info!("Configuration loaded: {:#?}", config);
-    info!(
-        "Starting Core for race_id={}",
-        config.race.race_id
-    );
+    info!("Starting Core for race_id={}", config.race.race_id);
 
     // Runtime
     let tokio_runtime = tokio::runtime::Builder::new_multi_thread()
@@ -124,7 +121,6 @@ fn run() -> Result<()> {
             messaging_wrapper.control_offsets.clone(),
             rayon_pool,
             preview.clone(),
-            Arc::clone(&pipeline_stats),
         )?;
         info!("Processing layer initialized");
 
@@ -134,7 +130,7 @@ fn run() -> Result<()> {
             processing_layer.processed_data_rx,
             handler,
             messaging_wrapper.sensor_offsets.clone(),
-            pipeline_stats,
+            Arc::clone(&pipeline_stats),
         )
         .await?;
         info!("Persistence layer initialized");
@@ -192,6 +188,7 @@ fn run() -> Result<()> {
         let write_metrics_stop = CancellationToken::new();
         if config.gcp.enabled {
             let write_metrics = Arc::clone(&persistence_wrapper.write_metrics);
+            let pipeline_stats = Arc::clone(&pipeline_stats);
             let project_id = config.gcp.project_id.clone();
             let max_retries = config.gcp.max_retries;
             let stop = write_metrics_stop.clone();
@@ -200,6 +197,7 @@ fn run() -> Result<()> {
                     project_id,
                     max_retries,
                     write_metrics,
+                    pipeline_stats,
                     config.gcp.allow_unknown_gce_metrics,
                     stop,
                 )

@@ -1,5 +1,7 @@
 # Race-stack load test harness
 
+[IMPORTANT!] Current load testing harness relies on Core metrics that are no longer logged. Add back again for testing purposes (if Cloud Monitoring not enough).
+
 End-to-end load testing for the race stack (Kafka VM, Core + InfluxDB VM, Telemetry Cloud Run). The Kafka producer lives in [`curls/load_test/`](../curls/load_test/); this directory owns orchestration, Core operator overlays, artifact collection, and analysis helpers.
 
 ## Prerequisites

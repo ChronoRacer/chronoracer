@@ -1,7 +1,7 @@
 use crate::configuration::KafkaConfig;
 use crate::messaging::offset_ledger::{OffsetLedger, OffsetSink, SharedTracker, lock_tracker};
 use crate::messaging::partial_message::{MessageOrigin, PartialMessage};
-use crate::pipeline_stats::PipelineStats;
+use crate::pipeline_stats::{PipelineStats, SAMPLE_INTERVAL};
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use rdkafka::ClientContext;
@@ -281,8 +281,6 @@ impl BatchMessageSink {
         let [topic] = topics[..] else {
             anyhow::bail!("The sensor data sink reads exactly one topic");
         };
-        let lag_log_interval =
-            Duration::from_secs(u64::from(consumer_config.offset_lag_log_interval_s.get()));
         let consumer = ManagedConsumer::open(
             "sensor_data",
             &kafka_config.data_group_id(),
@@ -315,10 +313,10 @@ impl BatchMessageSink {
                         "socket.receive.buffer.bytes",
                         consumer_config.socket_receive_buffer_bytes.to_string(),
                     )
-                    // Feeds `unconsumed` in the pipeline report, once per report.
+                    // Feeds the `unconsumed` metric, once per sample.
                     .set(
                         "statistics.interval.ms",
-                        lag_log_interval.as_millis().to_string(),
+                        SAMPLE_INTERVAL.as_millis().to_string(),
                     );
             },
         )?;
@@ -328,7 +326,9 @@ impl BatchMessageSink {
             topics,
             batch_size,
             batch_flush_interval_ms,
-            lag_log_interval,
+            lag_log_interval: Duration::from_secs(u64::from(
+                consumer_config.offset_lag_log_interval_s.get(),
+            )),
             pause_after: PAUSE_AFTER,
             stats,
         })
@@ -406,10 +406,7 @@ impl BatchMessageSink {
                     }
                 }
 
-                _ = lag_interval.tick() => {
-                    self.consumer.ledger.log_lag(&mut last_lag);
-                    info!("Pipeline report: {}", self.stats.take_report());
-                }
+                _ = lag_interval.tick() => self.consumer.ledger.log_lag(&mut last_lag),
             }
         }
         warn!(
@@ -687,7 +684,7 @@ mod tests {
         assert!(!paused_while_full);
         assert_eq!(offsets(&rx.recv().await.unwrap()), [1, 2]);
         assert!(
-            sink.stats.take_report().sink_blocked >= Duration::from_millis(40),
+            sink.stats.snapshot().sink_blocked >= Duration::from_millis(40),
             "the wait for room is reported"
         );
     }

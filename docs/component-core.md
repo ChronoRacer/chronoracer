@@ -238,47 +238,41 @@ isolation before production use.
 
 ## Cloud Monitoring write counters
 
-Core publishes three cumulative custom metrics for [Dashboard](component-dashboard.md) ingest panels. Names:
+Core publishes custom metrics for [Dashboard](component-dashboard.md) ingest panels and for pipeline health. Names:
 
-| Metric                                                    | Meaning                                                    |
-|-----------------------------------------------------------|------------------------------------------------------------|
-| `custom.googleapis.com/chronoracer/influx_write_lines`    | Lines Influx accepted                                      |
-| `custom.googleapis.com/chronoracer/influx_write_bytes`    | Bytes in fully successful writes                           |
-| `custom.googleapis.com/chronoracer/influx_write_requests` | Write attempts, label `outcome` = `ok`, `partial`, `error`, or `retry` |
+| Metric                                                          | Kind                  | Meaning                                                                          |
+|-----------------------------------------------------------------|-----------------------|----------------------------------------------------------------------------------|
+| `custom.googleapis.com/chronoracer/influx_write_lines`          | cumulative            | Lines Influx accepted                                                            |
+| `custom.googleapis.com/chronoracer/influx_write_bytes`          | cumulative            | Bytes in fully successful writes                                                 |
+| `custom.googleapis.com/chronoracer/influx_write_requests`       | cumulative            | Write attempts, label `outcome` = `ok`, `partial`, `error`, or `retry`           |
+| `custom.googleapis.com/chronoracer/pipeline_consumed_messages`  | cumulative            | Data messages the sink took from Kafka                                           |
+| `custom.googleapis.com/chronoracer/pipeline_sink_blocked_ms`    | cumulative            | Time the sink waited for a free collector slot (backpressure from downstream)    |
+| `custom.googleapis.com/chronoracer/pipeline_unconsumed_messages`| gauge                 | Data messages on the broker not yet delivered to Core, summed over partitions    |
+| `custom.googleapis.com/chronoracer/pipeline_persist_latency_ms` | delta distribution    | Per point batch: oldest record timestamp in the batch to its settlement          |
 
 Counters increment once per write attempt, off the per-point path. Each attempt is counted under one outcome: `ok`
 (accepted, including after retries), `partial`, `error` (non-retryable, batch dropped), or `retry` (transient failure,
 the batch is sent again). `ok`, `partial`, and `error` therefore still count once per batch, and lines and bytes are added
 once when the batch ends. A growing `retry` with a flat `ok` is an outage being absorbed, not data loss. A background task sends one `CreateTimeSeries` every 60 seconds while `gcp.enabled` is true. After the data pipeline drains on race-end or signal shutdown, the publisher sends one final sample (bounded by `runtime.write_metrics_final_timeout_s`) before export or exit. Partial writes count accepted lines and the `partial` outcome, and do not add bytes. Publish failure is logged and does not stop ingest.
-Missing GCE metadata can either disable metric sending or fallback to sending sentinel labels for time series, decided by configuration property `gcp.allow_unknown_gce_metrics`. 
+Missing GCE metadata can either disable metric sending or fallback to sending sentinel labels for time series, decided by configuration property `gcp.allow_unknown_gce_metrics`.
 
-## Pipeline report
+### Pipeline report
 
-One `Pipeline report:` log line every `kafka.sensor_data_consumer.offset_lag_log_interval_s`, covering the window since
-the previous line. It locates a throughput or latency limit: generator, Kafka, Core consumption, or InfluxDB. Set the
-interval to 10 s for load tests. Counters cost one atomic add per message or batch; nothing is published.
+The `pipeline_*` metrics locate a throughput or latency limit: Kafka, Core consumption, or InfluxDB. Counters cost one
+atomic add per message or batch; the latency costs one histogram record per batch. Each sample is also logged as one
+`Pipeline report:` line covering the window since the previous sample: `window_s`, `consumed_msg_s`,
+`sink_blocked_pct`, `unconsumed` (`unknown` until the first statistics arrive), and
+`persist_ms=p50<=bound,p99<=bound,max,mean,n` (`n=0` for an empty window).
 
-| Field              | Meaning                                                                                       |
-|--------------------|-----------------------------------------------------------------------------------------------|
-| `consumed_msg_s`   | Data messages the sink took from Kafka                                                        |
-| `decoded_pts_s`    | Points from valid messages, before the telemetry copy                                         |
-| `written_lines_s`  | Lines InfluxDB accepted                                                                       |
-| `sink_blocked_pct` | Share of the window the sink waited for a free collector slot (backpressure from downstream) |
-| `unconsumed`       | Data messages on the broker not yet delivered to Core, summed over partitions                 |
-| `preview_ms`       | Per message: record timestamp to the [telemetry](#telemetry-stream) copy                      |
-| `write_ms`         | Per InfluxDB write attempt, retries and failures included                                     |
-| `persist_ms`       | Per point batch: oldest record timestamp in the batch to its settlement                       |
+`persist_latency_ms` uses the Kafka record timestamp, which the producer sets when it creates the record, so it includes
+the producer's own queueing but not the reading `delta` window, and it assumes the producer and Core clocks are
+NTP-synced (a negative age counts as 0). Buckets have the bounds 1 ms to 60 s; the log shows the bucket bound holding
+the percentile. A sample whose publish failed loses its latency window.
 
-Latencies are fixed-bucket histograms (bounds 1 ms to 60 s) printed as `p50<=bound,p99<=bound,max,mean,n`. Ages use
-the Kafka record timestamp, which the producer sets when it creates the record, so they include the producer's own
-queueing but not the reading `delta` window, and they assume the producer and Core clocks are NTP-synced (a negative
-age counts as 0).
-
-`unconsumed` is the broker high watermark minus the position Core's application has reached (librdkafka
-prefetch included), from librdkafka statistics on the data consumer (`statistics.interval.ms` equals the report
-interval). It reads `unknown` until the first statistics arrive. A growing `unconsumed` with `sink_blocked_pct` near
-100 means decode or persistence is the limit (`write_ms` and `written_lines_s` tell which); with `sink_blocked_pct`
-near 0 it means Kafka fetch is.
+`unconsumed` is the broker high watermark minus the position Core's application has reached (librdkafka prefetch
+included), from librdkafka statistics on the data consumer (`statistics.interval.ms` is the 60 s sample interval). A
+growing `unconsumed` with `sink_blocked_pct` near 100 means decode or persistence is the limit (`persist_latency_ms`
+and `influx_write_*` tell which); with `sink_blocked_pct` near 0 it means Kafka fetch is.
 
 ## Startup
 

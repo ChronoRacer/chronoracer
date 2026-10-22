@@ -1,19 +1,22 @@
-//! Windowed counters behind the periodic pipeline report, see `docs/component-core.md`.
+//! Pipeline counters published to Cloud Monitoring and logged with each sample, see
+//! `docs/component-core.md#cloud-monitoring-metrics`.
 //!
-//! Every report takes and resets the counters, so each line covers exactly its own window.
-//! Latencies are measured against the Kafka record timestamp (producer `CreateTime`), so they
-//! include any clock difference between the producer and this VM.
+//! Counters are cumulative; the persist latency histogram is taken (and reset) per sample.
+//! Latency is measured against the Kafka record timestamp (producer `CreateTime`), so it
+//! includes any clock difference between the producer and this VM.
 
 use std::fmt;
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
-use std::sync::{Mutex, PoisonError};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Inclusive upper bounds of the latency buckets. One more bucket counts everything above.
-const BUCKET_BOUNDS_MS: [u64; 15] = [
+pub const BUCKET_BOUNDS_MS: [u64; 15] = [
     1, 2, 5, 10, 20, 50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000, 30_000, 60_000,
 ];
-const BUCKETS: usize = BUCKET_BOUNDS_MS.len() + 1;
+pub const BUCKETS: usize = BUCKET_BOUNDS_MS.len() + 1;
+
+/// Cadence of Cloud Monitoring samples, and of the librdkafka statistics behind `unconsumed`.
+pub const SAMPLE_INTERVAL: Duration = Duration::from_mins(1);
 
 /// `unconsumed` before the first librdkafka statistics arrived.
 const UNKNOWN: i64 = -1;
@@ -60,10 +63,6 @@ impl LatencyHistogram {
         self.max_ms.fetch_max(ms, Ordering::Relaxed);
     }
 
-    pub fn record_duration(&self, duration: Duration) {
-        self.record(u64::try_from(duration.as_millis()).unwrap_or(u64::MAX));
-    }
-
     /// Everything recorded since the previous `take`. Records racing with it land in either window.
     pub fn take(&self) -> HistogramWindow {
         HistogramWindow {
@@ -85,6 +84,22 @@ impl HistogramWindow {
     #[must_use]
     pub fn count(&self) -> u64 {
         self.buckets.iter().sum()
+    }
+
+    /// Per-bucket counts, one per `BUCKET_BOUNDS_MS` bound plus the overflow bucket.
+    #[must_use]
+    pub fn bucket_counts(&self) -> &[u64; BUCKETS] {
+        &self.buckets
+    }
+
+    #[must_use]
+    pub fn sum_ms(&self) -> u64 {
+        self.sum_ms
+    }
+
+    #[must_use]
+    pub fn max_ms(&self) -> u64 {
+        self.max_ms
     }
 
     /// Upper bound of the bucket holding quantile `q`; `None` when it is in the overflow bucket
@@ -134,17 +149,12 @@ impl fmt::Display for HistogramWindow {
     }
 }
 
-/// Shared by the sensor data sink, the collector, and the flusher. The sink logs the report.
+/// Shared by the sensor data sink and the flusher; read by the Cloud Monitoring publisher.
 pub struct PipelineStats {
     consumed_messages: AtomicU64,
     sink_blocked_us: AtomicU64,
-    decoded_points: AtomicU64,
-    written_lines: AtomicU64,
     unconsumed: AtomicI64,
-    preview: LatencyHistogram,
-    write: LatencyHistogram,
     persist: LatencyHistogram,
-    window_start: Mutex<Instant>,
 }
 
 impl Default for PipelineStats {
@@ -152,13 +162,8 @@ impl Default for PipelineStats {
         Self {
             consumed_messages: AtomicU64::new(0),
             sink_blocked_us: AtomicU64::new(0),
-            decoded_points: AtomicU64::new(0),
-            written_lines: AtomicU64::new(0),
             unconsumed: AtomicI64::new(UNKNOWN),
-            preview: LatencyHistogram::default(),
-            write: LatencyHistogram::default(),
             persist: LatencyHistogram::default(),
-            window_start: Mutex::new(Instant::now()),
         }
     }
 }
@@ -175,25 +180,6 @@ impl PipelineStats {
         self.sink_blocked_us.fetch_add(micros, Ordering::Relaxed);
     }
 
-    pub fn add_decoded_points(&self, points: u64) {
-        self.decoded_points.fetch_add(points, Ordering::Relaxed);
-    }
-
-    /// From the Kafka record timestamp to the moment the points are offered to the preview.
-    pub fn record_preview_latency(&self, ms: u64) {
-        self.preview.record(ms);
-    }
-
-    /// One database write attempt.
-    pub fn record_write(&self, duration: Duration) {
-        self.write.record_duration(duration);
-    }
-
-    /// Lines the database accepted.
-    pub fn add_written_lines(&self, lines: u64) {
-        self.written_lines.fetch_add(lines, Ordering::Relaxed);
-    }
-
     /// A point batch settled; its oldest message was created at `oldest_created_ms`.
     pub fn record_settled(&self, oldest_created_ms: Option<i64>) {
         if let Some(created_ms) = oldest_created_ms {
@@ -206,68 +192,60 @@ impl PipelineStats {
         self.unconsumed.store(messages, Ordering::Relaxed);
     }
 
-    /// Takes the counters of the window that ends now.
-    pub fn take_report(&self) -> PipelineReport {
-        let window = {
-            let mut start = self
-                .window_start
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            let now = Instant::now();
-            let window = now.duration_since(*start);
-            *start = now;
-            window
-        };
-        PipelineReport {
-            window,
-            consumed_messages: self.consumed_messages.swap(0, Ordering::Relaxed),
-            sink_blocked: Duration::from_micros(self.sink_blocked_us.swap(0, Ordering::Relaxed)),
-            decoded_points: self.decoded_points.swap(0, Ordering::Relaxed),
-            written_lines: self.written_lines.swap(0, Ordering::Relaxed),
+    /// Cumulative counters and the gauge, as of now.
+    #[must_use]
+    pub fn snapshot(&self) -> PipelineSnapshot {
+        PipelineSnapshot {
+            consumed_messages: self.consumed_messages.load(Ordering::Relaxed),
+            sink_blocked: Duration::from_micros(self.sink_blocked_us.load(Ordering::Relaxed)),
             unconsumed: Some(self.unconsumed.load(Ordering::Relaxed)).filter(|lag| *lag >= 0),
-            preview: self.preview.take(),
-            write: self.write.take(),
-            persist: self.persist.take(),
         }
+    }
+
+    /// Persist latencies recorded since the previous call.
+    pub fn take_persist(&self) -> HistogramWindow {
+        self.persist.take()
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PipelineReport {
-    pub(crate) window: Duration,
-    pub(crate) consumed_messages: u64,
-    pub(crate) sink_blocked: Duration,
-    pub(crate) decoded_points: u64,
-    pub(crate) written_lines: u64,
-    pub(crate) unconsumed: Option<i64>,
-    pub(crate) preview: HistogramWindow,
-    pub(crate) write: HistogramWindow,
-    pub(crate) persist: HistogramWindow,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PipelineSnapshot {
+    pub consumed_messages: u64,
+    pub sink_blocked: Duration,
+    pub unconsumed: Option<i64>,
 }
 
-impl fmt::Display for PipelineReport {
+/// One sample window as logged: rates and shares computed from two snapshots.
+pub struct PipelineReport<'a> {
+    pub window: Duration,
+    pub previous: &'a PipelineSnapshot,
+    pub current: &'a PipelineSnapshot,
+    pub persist: &'a HistogramWindow,
+}
+
+impl fmt::Display for PipelineReport<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let seconds = self.window.as_secs_f64().max(0.001);
+        let consumed = self
+            .current
+            .consumed_messages
+            .saturating_sub(self.previous.consumed_messages);
+        let blocked = self
+            .current
+            .sink_blocked
+            .saturating_sub(self.previous.sink_blocked);
         #[allow(clippy::cast_precision_loss)]
-        let per_second = |count: u64| (count as f64 / seconds).round();
+        let consumed_per_second = (consumed as f64 / seconds).round();
         write!(
             f,
-            "window_s={:.1} consumed_msg_s={} decoded_pts_s={} written_lines_s={} sink_blocked_pct={:.1} unconsumed=",
-            seconds,
-            per_second(self.consumed_messages),
-            per_second(self.decoded_points),
-            per_second(self.written_lines),
-            self.sink_blocked.as_secs_f64() / seconds * 100.0,
+            "window_s={seconds:.1} consumed_msg_s={consumed_per_second} sink_blocked_pct={:.1} unconsumed=",
+            blocked.as_secs_f64() / seconds * 100.0,
         )?;
-        match self.unconsumed {
+        match self.current.unconsumed {
             Some(messages) => write!(f, "{messages}")?,
             None => write!(f, "unknown")?,
         }
-        write!(
-            f,
-            " preview_ms={} write_ms={} persist_ms={}",
-            self.preview, self.write, self.persist
-        )
+        write!(f, " persist_ms={}", self.persist)
     }
 }
 
@@ -287,7 +265,7 @@ mod tests {
         assert_eq!(window.buckets[2], 1, "3 is <= 5");
         assert_eq!(window.buckets[BUCKETS - 2], 1, "60 000 is the last bound");
         assert_eq!(window.buckets[BUCKETS - 1], 1, "above every bound");
-        assert_eq!((window.max_ms, window.count()), (60_001, 6));
+        assert_eq!((window.max_ms(), window.count()), (60_001, 6));
     }
 
     #[test]
@@ -314,7 +292,7 @@ mod tests {
         histogram.record(4);
         assert_eq!(histogram.take().count(), 1);
         let empty = histogram.take();
-        assert_eq!((empty.count(), empty.max_ms), (0, 0));
+        assert_eq!((empty.count(), empty.max_ms()), (0, 0));
         assert_eq!(empty.quantile_bound_ms(0.5), None);
         assert_eq!(empty.to_string(), "n=0");
     }
@@ -327,60 +305,50 @@ mod tests {
     }
 
     #[test]
-    fn report_takes_and_resets_every_counter() {
+    fn counters_are_cumulative_and_persist_is_windowed() {
         let stats = PipelineStats::default();
         stats.add_consumed(10);
-        stats.add_decoded_points(80);
         stats.add_sink_blocked(Duration::from_millis(5));
-        stats.record_preview_latency(12);
-        stats.record_write(Duration::from_millis(700));
-        stats.add_written_lines(80);
         stats.record_settled(None);
+        stats.record_settled(Some(unix_now_ms()));
 
-        let report = stats.take_report();
+        let first = stats.snapshot();
         assert_eq!(
             (
-                report.consumed_messages,
-                report.decoded_points,
-                report.written_lines,
-                report.sink_blocked,
-                report.unconsumed,
+                first.consumed_messages,
+                first.sink_blocked,
+                first.unconsumed
             ),
-            (10, 80, 80, Duration::from_millis(5), None)
+            (10, Duration::from_millis(5), None)
         );
-        assert_eq!(
-            (
-                report.preview.count(),
-                report.write.count(),
-                report.persist.count()
-            ),
-            (1, 1, 0),
-            "a batch without a timestamp has no persist latency"
-        );
+        assert_eq!(stats.take_persist().count(), 1, "no timestamp, no latency");
 
         stats.set_unconsumed(37);
-        let next = stats.take_report();
-        assert_eq!((next.consumed_messages, next.preview.count()), (0, 0));
-        assert_eq!(next.unconsumed, Some(37), "a gauge, not a window counter");
+        stats.add_consumed(5);
+        let second = stats.snapshot();
+        assert_eq!(second.consumed_messages, 15);
+        assert_eq!(second.unconsumed, Some(37));
+        assert_eq!(stats.take_persist().count(), 0);
     }
 
     #[test]
-    fn report_line_names_every_field() {
+    fn report_line_uses_the_window_delta() {
         let stats = PipelineStats::default();
-        stats.record_settled(Some(unix_now_ms()));
-        let line = stats.take_report().to_string();
-        for field in [
-            "window_s=",
-            "consumed_msg_s=0",
-            "decoded_pts_s=0",
-            "written_lines_s=",
-            "sink_blocked_pct=0.0",
-            "unconsumed=unknown",
-            "preview_ms=n=0",
-            "write_ms=n=0",
-            "persist_ms=p50<=",
-        ] {
-            assert!(line.contains(field), "{field} missing in {line}");
+        let previous = stats.snapshot();
+        stats.add_consumed(200);
+        stats.add_sink_blocked(Duration::from_secs(1));
+        let current = stats.snapshot();
+        let persist = stats.take_persist();
+        let line = PipelineReport {
+            window: Duration::from_secs(10),
+            previous: &previous,
+            current: &current,
+            persist: &persist,
         }
+        .to_string();
+        assert_eq!(
+            line,
+            "window_s=10.0 consumed_msg_s=20 sink_blocked_pct=10.0 unconsumed=unknown persist_ms=n=0"
+        );
     }
 }

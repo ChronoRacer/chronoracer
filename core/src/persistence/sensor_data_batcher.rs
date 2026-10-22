@@ -40,11 +40,20 @@ impl SimplePoint {
 pub struct PointBatch {
     pub points: Vec<SimplePoint>,
     pub offsets: OffsetSet,
-    /// Earliest Kafka record timestamp of the batch's messages, for the pipeline report only.
-    pub oldest_created_ms: Option<i64>,
+    /// Earliest Kafka record timestamp of the batch's messages, for the persist latency metric.
+    /// `NO_TIMESTAMP` when none has one.
+    pub oldest_created_ms: i64,
 }
 
+/// `oldest_created_ms` of a batch with no timestamped message.
+pub const NO_TIMESTAMP: i64 = i64::MAX;
+
 impl PointBatch {
+    #[must_use]
+    pub fn oldest_created(&self) -> Option<i64> {
+        (self.oldest_created_ms != NO_TIMESTAMP).then_some(self.oldest_created_ms)
+    }
+
     /// A message without readings has no points but still has an offset to settle.
     fn is_empty(&self) -> bool {
         self.points.is_empty() && self.offsets.is_empty()
@@ -99,7 +108,7 @@ impl SensorDataBatcher {
                 .try_recv()
                 .unwrap_or_else(|_| Vec::with_capacity(self.flush_max_combined_batch_size)),
             offsets: OffsetSet::default(),
-            oldest_created_ms: None,
+            oldest_created_ms: NO_TIMESTAMP,
         };
 
         let mut buffer = fresh_batch();
@@ -122,10 +131,10 @@ impl SensorDataBatcher {
                         buffer
                             .offsets
                             .push(data.source.partition, data.source.offset);
-                        buffer.oldest_created_ms =
-                            earliest(buffer.oldest_created_ms, data.created_ms);
+                        buffer.oldest_created_ms = buffer
+                            .oldest_created_ms
+                            .min(data.created_ms.unwrap_or(NO_TIMESTAMP));
 
-                        // Checked per message, never inside one: a message stays in one batch.
                         if buffer.points.len() >= self.flush_max_combined_batch_size {
                             let to_flush = std::mem::replace(&mut buffer, fresh_batch());
                             if !send_batch(&self.batch_tx, to_flush, wiring_type).await {
@@ -166,13 +175,6 @@ async fn send_batch(
         return false;
     }
     true
-}
-
-fn earliest(current: Option<i64>, candidate: Option<i64>) -> Option<i64> {
-    match (current, candidate) {
-        (Some(current), Some(candidate)) => Some(current.min(candidate)),
-        (current, candidate) => current.or(candidate),
-    }
 }
 
 fn sensor_data_into_points(
@@ -322,20 +324,11 @@ mod tests {
         assert_eq!((first.points.len(), ranges(&first)), (6, vec![(0, 0, 1)]));
         assert_eq!((second.points.len(), ranges(&second)), (1, vec![(0, 2, 2)]));
         assert_eq!(
-            (first.oldest_created_ms, second.oldest_created_ms),
+            (first.oldest_created(), second.oldest_created()),
             (Some(1_000), Some(1_002)),
             "each batch reports the oldest of its own messages"
         );
         ingest.await.unwrap();
-    }
-
-    #[test]
-    fn earliest_ignores_messages_without_a_timestamp() {
-        assert_eq!(earliest(None, None), None);
-        assert_eq!(earliest(None, Some(5)), Some(5));
-        assert_eq!(earliest(Some(5), None), Some(5));
-        assert_eq!(earliest(Some(7), Some(5)), Some(5));
-        assert_eq!(earliest(Some(5), Some(7)), Some(5));
     }
 
     #[tokio::test]
