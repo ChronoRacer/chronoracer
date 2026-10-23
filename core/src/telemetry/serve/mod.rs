@@ -1,7 +1,7 @@
 use crate::processing::sensor_data_message::MAX_SENSOR_ID_BYTES;
-use crate::telemetry::proto::watch_response::Payload;
 use crate::telemetry::proto::telemetry_service_server::{TelemetryService, TelemetryServiceServer};
 use crate::telemetry::proto::watch_request::Selection;
+use crate::telemetry::proto::watch_response::Payload;
 use crate::telemetry::proto::{Gap, Hello, Point, PointBatch, WatchRequest, WatchResponse};
 use crate::telemetry::queue::{
     Chunk, Drain, FIRST_SEQUENCE, Filter, GapSpan, MAX_POINTS_PER_BATCH, PreviewHub,
@@ -144,7 +144,9 @@ async fn run_server(
         .max_concurrent_streams(MAX_CONCURRENT_STREAMS)
         .http2_keepalive_interval(Some(KEEPALIVE_INTERVAL))
         .http2_keepalive_timeout(Some(KEEPALIVE_TIMEOUT))
-        .add_service(TelemetryServiceServer::new(service).max_decoding_message_size(MAX_REQUEST_BYTES))
+        .add_service(
+            TelemetryServiceServer::new(service).max_decoding_message_size(MAX_REQUEST_BYTES),
+        )
         .serve_with_incoming_shutdown(incoming, cancel.clone().cancelled_owned())
         .await?;
     Ok(())

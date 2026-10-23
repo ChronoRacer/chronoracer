@@ -58,7 +58,8 @@ processing:
   message_channel_buffer_size: 64
   message_batch_size: 1000
   message_batch_flush_interval_ms: 5
-  dlq_channel_buffer_size: 10000
+  dlq_channel_buffer_size: 1000
+  dlq_sample_every: 100
 persistence:
   db_host: "http://localhost"
   db_port: 8181

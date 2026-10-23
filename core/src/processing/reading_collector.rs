@@ -221,7 +221,7 @@ mod tests {
 
     fn start_with(dlq_capacity: usize, preview: PreviewHub, settler: InvalidSettler) -> Harness {
         let (flush_tx, flush_rx) = mpsc::channel::<Vec<PartialMessage>>(10);
-        let (dlq_tx, dlq_rx) = invalid_message_channel(dlq_capacity, settler);
+        let (dlq_tx, dlq_rx) = invalid_message_channel(dlq_capacity, 1, settler);
         let (processed_tx, processed_rx) = mpsc::channel::<SensorDataBatch>(10);
         let mut collector =
             ReadingCollector::new(flush_rx, dlq_tx, processed_tx, build_pool().into(), preview);

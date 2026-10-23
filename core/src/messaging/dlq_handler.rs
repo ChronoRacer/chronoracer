@@ -18,7 +18,7 @@ use tokio::time::{Instant, MissedTickBehavior};
 use tracing::{error, info, trace, warn};
 
 /// Cadence of the aggregated DLQ log line. Failures are also logged immediately, once per window.
-const DLQ_REPORT_INTERVAL: Duration = Duration::from_secs(10);
+const DLQ_REPORT_INTERVAL: Duration = Duration::from_mins(1);
 
 /// How an invalid message's source offset left the pipeline. Every invalid message gets exactly
 /// one of these, reported through [`InvalidSettler`].
@@ -97,8 +97,20 @@ pub enum DlqOffer {
 #[derive(Clone)]
 pub struct InvalidMessageTx {
     tx: mpsc::Sender<PartialMessageWithError>,
-    dropped: Arc<AtomicU64>,
+    counters: Arc<DlqCounters>,
+    sample_every: u64,
     settler: InvalidSettler,
+}
+
+/// Shared by every sender and drained by the handler's report.
+#[derive(Default)]
+struct DlqCounters {
+    /// Invalid sensor messages seen by `try_offer`; drives the one-in-N sampling.
+    offered: AtomicU64,
+    /// Discarded by sampling (expected under a flood, not an error).
+    sampled_out: AtomicU64,
+    /// Discarded because the queue was full or closed.
+    dropped: AtomicU64,
 }
 
 impl InvalidMessageTx {
@@ -108,13 +120,19 @@ impl InvalidMessageTx {
         &self.settler
     }
 
-    /// Never waits. For the data parse path, which must not stall on the DLQ.
+    /// Never waits. For the data parse path, which must not stall on the DLQ. Samples: the first
+    /// message and then one in `sample_every` is queued, the rest are handed back.
     #[must_use]
     pub fn try_offer(&self, message: PartialMessageWithError) -> DlqOffer {
+        let seen = self.counters.offered.fetch_add(1, Ordering::Relaxed);
+        if !seen.is_multiple_of(self.sample_every) {
+            self.counters.sampled_out.fetch_add(1, Ordering::Relaxed);
+            return DlqOffer::Dropped(message);
+        }
         match self.tx.try_send(message) {
             Ok(()) => DlqOffer::Queued,
             Err(TrySendError::Full(message) | TrySendError::Closed(message)) => {
-                self.dropped.fetch_add(1, Ordering::Relaxed);
+                self.counters.dropped.fetch_add(1, Ordering::Relaxed);
                 DlqOffer::Dropped(message)
             }
         }
@@ -131,7 +149,7 @@ impl InvalidMessageTx {
 
 pub struct InvalidMessageRx {
     rx: mpsc::Receiver<PartialMessageWithError>,
-    dropped: Arc<AtomicU64>,
+    counters: Arc<DlqCounters>,
     settler: InvalidSettler,
 }
 
@@ -149,19 +167,21 @@ impl InvalidMessageRx {
 #[must_use]
 pub fn invalid_message_channel(
     capacity: usize,
+    sample_every: u32,
     settler: InvalidSettler,
 ) -> (InvalidMessageTx, InvalidMessageRx) {
     let (tx, rx) = mpsc::channel(capacity);
-    let dropped = Arc::new(AtomicU64::new(0));
+    let counters = Arc::new(DlqCounters::default());
     (
         InvalidMessageTx {
             tx,
-            dropped: Arc::clone(&dropped),
+            counters: Arc::clone(&counters),
+            sample_every: u64::from(sample_every.max(1)),
             settler: settler.clone(),
         },
         InvalidMessageRx {
             rx,
-            dropped,
+            counters,
             settler,
         },
     )
@@ -269,9 +289,9 @@ impl DlqWindow {
         }
     }
 
-    fn report(&mut self, dropped: u64) {
+    fn report(&mut self, sampled_out: u64, dropped: u64) {
         if self.dead_lettered > 0 {
-            info!(
+            warn!(
                 redirected = self.dead_lettered,
                 "Redirected messages to DLQ"
             );
@@ -280,6 +300,12 @@ impl DlqWindow {
             error!(
                 failed = self.failed,
                 %last_error, "Failed to write to DLQ (first failure of the window logged above)"
+            );
+        }
+        if sampled_out > 0 {
+            warn!(
+                sampled_out,
+                "DLQ sampling: discarded invalid sensor messages without a DLQ record"
             );
         }
         if dropped > 0 {
@@ -329,7 +355,7 @@ impl<P: KafkaProducer> DLQHandler<P> {
         } = self;
         info!(max_inflight, "Starting DLQ ingestion loop");
 
-        let dropped = Arc::clone(&dlq_rx.dropped);
+        let counters = Arc::clone(&dlq_rx.counters);
         let settler = dlq_rx.settler.clone();
         let mut in_flight = FuturesUnordered::new();
         let mut window = DlqWindow::default();
@@ -340,17 +366,23 @@ impl<P: KafkaProducer> DLQHandler<P> {
 
         while receiving || !in_flight.is_empty() {
             tokio::select! {
-                message = dlq_rx.recv(), if receiving && in_flight.len() < max_inflight => {
-                    match message {
-                        Some(message) => in_flight.push(publisher.deliver(message)),
-                        None => receiving = false,
+                    message = dlq_rx.recv(), if receiving && in_flight.len() < max_inflight => {
+                        match message {
+                            Some(message) => in_flight.push(publisher.deliver(message)),
+                            None => receiving = false,
+                        }
                     }
+                    Some((at, result)) = in_flight.next() => window.record(&settler, at, result),
+                    _ = report.tick() => window.report(
+                counters.sampled_out.swap(0, Ordering::Relaxed),
+                counters.dropped.swap(0, Ordering::Relaxed),
+            ),
                 }
-                Some((at, result)) = in_flight.next() => window.record(&settler, at, result),
-                _ = report.tick() => window.report(dropped.swap(0, Ordering::Relaxed)),
-            }
         }
-        window.report(dropped.swap(0, Ordering::Relaxed));
+        window.report(
+            counters.sampled_out.swap(0, Ordering::Relaxed),
+            counters.dropped.swap(0, Ordering::Relaxed),
+        );
         warn!("DLQ ingestion loop terminated");
     }
 }
@@ -460,7 +492,7 @@ mod tests {
     #[tokio::test]
     async fn test_send_to_dlq_constructs_headers_and_fallback_key() {
         let config: &'static CoreConfig = Box::leak(Box::new(CoreConfig::mock_config()));
-        let (_tx, rx) = invalid_message_channel(10, InvalidSettler::detached());
+        let (_tx, rx) = invalid_message_channel(10, 1, InvalidSettler::detached());
         let mock_producer = MockKafkaProducer::default();
 
         let handler = DLQHandler::with_producer(config, rx, Arc::new(mock_producer.clone()));
@@ -505,7 +537,7 @@ mod tests {
     #[tokio::test]
     async fn test_ingest_loop_processes_multiple_messages() {
         let config: &'static CoreConfig = Box::leak(Box::new(CoreConfig::mock_config()));
-        let (tx, rx) = invalid_message_channel(10, InvalidSettler::detached());
+        let (tx, rx) = invalid_message_channel(10, 1, InvalidSettler::detached());
         let mock_producer = MockKafkaProducer::default();
 
         let handler = DLQHandler::with_producer(config, rx, Arc::new(mock_producer.clone()));
@@ -525,7 +557,7 @@ mod tests {
     #[tokio::test]
     async fn ingest_overlaps_deliveries_up_to_the_limit_and_drains_on_close() {
         let config = mock_config(8);
-        let (tx, rx) = invalid_message_channel(100, InvalidSettler::detached());
+        let (tx, rx) = invalid_message_channel(100, 1, InvalidSettler::detached());
         let mock_producer = MockKafkaProducer {
             delay: Duration::from_millis(20),
             ..MockKafkaProducer::default()
@@ -550,7 +582,7 @@ mod tests {
     #[tokio::test]
     async fn failed_deliveries_do_not_stop_the_loop() {
         let config = mock_config(4);
-        let (tx, rx) = invalid_message_channel(10, InvalidSettler::detached());
+        let (tx, rx) = invalid_message_channel(10, 1, InvalidSettler::detached());
         let mock_producer = MockKafkaProducer {
             should_fail: true,
             ..MockKafkaProducer::default()
@@ -569,7 +601,7 @@ mod tests {
 
     #[test]
     fn try_offer_hands_the_record_back_when_the_queue_is_full() {
-        let (tx, mut rx) = invalid_message_channel(1, InvalidSettler::detached());
+        let (tx, mut rx) = invalid_message_channel(1, 1, InvalidSettler::detached());
 
         assert!(matches!(
             tx.try_offer(failed_message(1, None)),
@@ -579,7 +611,7 @@ mod tests {
             panic!("second record should not fit");
         };
         assert_eq!(rejected.message.source_offset().offset, 2);
-        assert_eq!(rx.dropped.load(Ordering::Relaxed), 1);
+        assert_eq!(rx.counters.dropped.load(Ordering::Relaxed), 1);
 
         // Closed channel behaves the same: dropped, counted, offset recoverable.
         assert_eq!(rx.rx.try_recv().unwrap().message.offset, 1);
@@ -588,7 +620,23 @@ mod tests {
             tx.try_offer(failed_message(3, None)),
             DlqOffer::Dropped(_)
         ));
-        assert_eq!(rx.dropped.load(Ordering::Relaxed), 2);
+        assert_eq!(rx.counters.dropped.load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn try_offer_samples_one_in_n_and_always_keeps_the_first() {
+        let (tx, mut rx) = invalid_message_channel(10, 3, InvalidSettler::detached());
+
+        let queued: Vec<i64> = (0..7)
+            .filter(|&offset| {
+                matches!(tx.try_offer(failed_message(offset, None)), DlqOffer::Queued)
+            })
+            .collect();
+
+        assert_eq!(queued, [0, 3, 6]);
+        assert_eq!(rx.counters.sampled_out.load(Ordering::Relaxed), 4);
+        assert_eq!(rx.counters.dropped.load(Ordering::Relaxed), 0);
+        assert_eq!(rx.try_recv().unwrap().message.offset, 0);
     }
 
     fn registered_ledgers() -> (
@@ -621,7 +669,7 @@ mod tests {
     #[tokio::test]
     async fn delivered_records_settle_into_the_ledger_of_their_consumer() {
         let (settler, sensor_sink, control_sink) = registered_ledgers();
-        let (tx, rx) = invalid_message_channel(10, settler);
+        let (tx, rx) = invalid_message_channel(10, 1, settler);
         let handler =
             DLQHandler::with_producer(mock_config(1), rx, Arc::new(MockKafkaProducer::default()));
 
@@ -638,7 +686,7 @@ mod tests {
     #[tokio::test]
     async fn failed_deliveries_are_settled_too() {
         let (settler, sensor_sink, _control_sink) = registered_ledgers();
-        let (tx, rx) = invalid_message_channel(10, settler);
+        let (tx, rx) = invalid_message_channel(10, 1, settler);
         let producer = MockKafkaProducer {
             should_fail: true,
             ..MockKafkaProducer::default()
@@ -657,7 +705,7 @@ mod tests {
     #[test]
     fn dropped_records_settle_through_the_channels_settler() {
         let (settler, sensor_sink, control_sink) = registered_ledgers();
-        let (tx, _rx) = invalid_message_channel(1, settler);
+        let (tx, _rx) = invalid_message_channel(1, 1, settler);
 
         let mut dropped = OffsetSet::default();
         for offset in 0..4 {
@@ -677,7 +725,7 @@ mod tests {
     #[test]
     fn a_queued_record_is_not_settled_until_it_is_delivered() {
         let (settler, sensor_sink, _control_sink) = registered_ledgers();
-        let (tx, _rx) = invalid_message_channel(1, settler);
+        let (tx, _rx) = invalid_message_channel(1, 1, settler);
 
         assert!(matches!(
             tx.try_offer(failed_message(0, None)),
