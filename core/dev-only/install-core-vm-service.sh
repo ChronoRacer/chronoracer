@@ -8,7 +8,6 @@ CORE_EXE="$root_dir/bin/chronoracer-core"
 INFLUX_DB_EXE="$root_dir/bin/influxdb3-core/influxdb3"
 
 CORE_CONFIG_PATH=$(realpath "../default-config.yaml")
-INFLUX_DB_PLUGIN_DIR=$(realpath "../influxdb-plugins")
 TEMPLATES_PATH=$(realpath "../redpanda")
 
 [ -f "$CORE_EXE" ] || (echo "Compile Core first with compile-release.sh" && exit 1)
@@ -60,19 +59,6 @@ else
     --host http://localhost:8181 \
     --token "\$TOKEN"
 fi
-
-if $INFLUX_DB_EXE show database-triggers --host http://localhost:8181 --database chrono_db --token "\$TOKEN" 2>/dev/null | grep -q "database_export"; then
-  echo "Trigger 'database_export' already exists."
-else
-  echo "Registering 'database_export' trigger..."
-  $INFLUX_DB_EXE create trigger \
-    --host http://localhost:8181 \
-    --database chrono_db \
-    --token "\$TOKEN" \
-    --plugin-filename export_database.py \
-    --trigger-spec "request:export_database" \
-    database_export
-fi
 EOF
 chmod +x "$INFLUXDB_SETUP_SCRIPT"
 
@@ -85,8 +71,6 @@ Slice=corevm.slice
 Type=exec
 ExecStart=$INFLUX_DB_EXE serve \
   --node-id core \
-  --plugin-dir $INFLUX_DB_PLUGIN_DIR \
-  --disable-package-management \
   --object-store file \
   --data-dir /var/lib/influxdb3 \
   --admin-token-file /etc/influxdb3/admin-token.json

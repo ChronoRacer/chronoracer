@@ -87,7 +87,7 @@ impl PersistenceLayerEntryPoint {
             offsets,
         );
 
-        let exporter = InfluxDbExporter::new(db_client, &persistence_config.export);
+        let exporter = InfluxDbExporter::new(db_client, &persistence_config.export)?;
 
         Ok(Self {
             splitter,

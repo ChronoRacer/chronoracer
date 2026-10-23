@@ -80,6 +80,7 @@ persistence:
     nested_path_in_bucket: "export/db"
     max_retries: 3
     attempt_timeout_s: 600
+    query_window_s: 600
 gcp:
   enabled: false
   export_bucket: "chronoracer-race"

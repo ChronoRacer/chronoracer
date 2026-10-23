@@ -63,8 +63,7 @@ Structure (Terraform GCS backend layout):
 - Readers: Core SA (`roles/storage.objectViewer` on the whole bucket)
 - Storage class: `STANDARD`
 - Access: private. No secrets. Not race data.
-- Purpose: floating Core binary + InfluxDB plugins so the Core image family does not rebuild on every rust or plugin
-  change
+- Purpose: floating Core binary so the Core image family does not rebuild on every rust change
 
 Structure:
 
@@ -72,12 +71,10 @@ Structure:
 /core/current.json
 /core/releases/{release}
       |--- core (binary)
-      |--- /influxdb-plugins
-            |--- export_database.py
 ```
 
 The publish script uploads a complete release first, then replaces `core/current.json` as its final operation. Core reads
-the pointer once during boot and fetches the binary and plugins from that immutable release. Old releases are retained;
+the pointer once during boot and fetches the binary from that immutable release. Old releases are retained;
 the image family retention policy is separate and is owned by [Compute images](component-images.md).
 
 Do not put this payload on `chronoracer-race` (Core YAML IAM stays `endsWith("/core-config.yaml")`).

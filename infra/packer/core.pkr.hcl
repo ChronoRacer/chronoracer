@@ -14,12 +14,12 @@ source "googlecompute" "core" {
   image_name              = "${local.names.core_family}-{{timestamp}}"
   image_family            = local.names.core_family
   image_storage_locations = [local.image_storage_location]
-  image_description       = "Chronoracer Core base. InfluxDB 3 plus overlay. Binary and plugins from GCS at boot."
-  tags = ["packer"]
+  image_description       = "Chronoracer Core base. InfluxDB 3 plus overlay. Binary from GCS at boot."
+  tags                    = ["packer"]
 }
 
 build {
-  name = "chronoracer-core"
+  name    = "chronoracer-core"
   sources = ["source.googlecompute.core"]
 
   provisioner "shell" {
@@ -123,13 +123,10 @@ build {
       "test -x /chronoracer/enable-ops-agent.sh",
       "systemctl cat google-cloud-ops-agent.service >/dev/null",
       "test -f /chronoracer/default-config.yaml",
-      "test -x /chronoracer/influxdb-plugin-venv/bin/python",
-      "/chronoracer/influxdb-plugin-venv/bin/python -c 'import pyarrow'",
       "test -f /chronoracer/redpanda/export.gcs.yaml",
       "test -f /chronoracer/redpanda/export.local.yaml",
       "test -f /chronoracer/names.json",
       "test -f /chronoracer/platform.json",
-      "test -d /chronoracer/influxdb-plugins",
       "test ! -e /chronoracer/core",
     ]
     execute_command = "chmod +x {{ .Path }}; sudo bash '{{ .Path }}'"

@@ -215,3 +215,8 @@ InfluxDB count, Ops Agent metrics after 20:56.
 The breaking point is therefore on the **storage/query side**, not ingest. The export flow (stage 9, `SHUTDOWN`) was
 intentionally not run: it reads the same data under the same memory budget, so it is expected to fail the same way at
 this data volume. `rpk` export was not needed (DLQ empty, exporting the data topic is pointless).
+
+TODO (record the run): an export attempt on a very large database outside this run crashed the Core VM. Add its run
+ID, data volume and symptoms here. Cause: the export plugin used at the time ran `SELECT *` per table and held each
+whole table in memory inside `influxdb3`. It was replaced by Core's windowed streaming export
+([InfluxDB export](component-core.md#influxdb-export)), which still needs a re-run at L200 size.
