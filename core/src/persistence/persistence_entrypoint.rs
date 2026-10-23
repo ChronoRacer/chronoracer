@@ -55,7 +55,7 @@ impl PersistenceLayerEntryPoint {
         } else {
             info!("Splitter disabled - fast flush sensor path skipped")
         }
-        
+
         let race_id = config.race.race_id.clone();
         let (fast_batcher, fast_batcher_wiring) = fast_rx
             .map(|rx| {

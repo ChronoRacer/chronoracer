@@ -45,12 +45,10 @@ a sensor.
 
 Invalid messages remain individual DLQ records because their original partition, offset, and parse error are stored in
 per-record headers. The parse path never waits on the DLQ: a bad-schema deploy makes every message invalid, and a
-blocked parse thread would stop the whole ingest. The record is offered to the DLQ channel
-(`processing.dlq_channel_buffer_size`) without waiting. If the channel is full, the record is discarded, counted, and
-reported as an error by the DLQ handler; Kafka still holds the original message on `data`. The DLQ handler keeps up to
-`kafka.dlq_config.max_inflight_sends` deliveries outstanding, logs one aggregated line every 10 seconds (the first
-failure of each window is logged at once), and on channel close finishes every outstanding delivery before it ends.
-Control-path invalid messages are few and wait for room instead.
+blocked parse thread would stop the whole ingest. The record is offered to the DLQ channel (`processing.dlq_channel_buffer_size`)
+without waiting, and sampled: the first invalid message and then one in `processing.dlq_sample_every` is queued; 
+the rest are discarded, counted, and reported as a warning by the DLQ handler.
+
 When `persistence.fast_flush_sensor_ids` is non-empty, the splitter partitions each processed batch into one
 fast-flush and one normal batch. When the list is empty, processed batches go directly to the normal batcher;
 the splitter, fast batcher, fast flusher loop, and their channels are not created or spawned. The persistence

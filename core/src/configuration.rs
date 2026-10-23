@@ -81,6 +81,9 @@ pub struct ProcessingConfig {
     pub message_batch_size: NonZeroUsize,
     pub message_batch_flush_interval_ms: NonZeroU32,
     pub dlq_channel_buffer_size: NonZeroUsize,
+    /// Sensor data DLQ sampling: one invalid message in this many is dead-lettered, the rest are
+    /// discarded and counted. `1` keeps every message.
+    pub dlq_sample_every: NonZeroU32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -357,6 +360,7 @@ mod mock {
                 message_batch_size: NonZeroUsize::new(1_000).unwrap(),
                 message_batch_flush_interval_ms: NonZeroU32::new(5).unwrap(),
                 dlq_channel_buffer_size: NonZeroUsize::new(10_000).unwrap(),
+                dlq_sample_every: NonZeroU32::new(1).unwrap(),
             }
         }
     }
@@ -673,6 +677,7 @@ message_channel_buffer_size: 0
 message_batch_size: 1000
 message_batch_flush_interval_ms: 15
 dlq_channel_buffer_size: 10
+dlq_sample_every: 1
 "#;
         assert!(
             config::Config::builder()

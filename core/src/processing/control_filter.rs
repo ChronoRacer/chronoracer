@@ -114,7 +114,7 @@ mod tests {
         ))));
         let (ledger, sink) = recording_ledger();
         let settler = InvalidSettler::new(recording_ledger().0, ledger.clone());
-        let (dlq_tx, dlq_rx) = invalid_message_channel(1, settler);
+        let (dlq_tx, dlq_rx) = invalid_message_channel(1, 1, settler);
         if !dlq_open {
             drop(dlq_rx);
         } else {

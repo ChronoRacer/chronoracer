@@ -63,6 +63,7 @@ impl MessagingLayerEntrypoint {
         let control_offsets = control_sink.offsets();
         let (dlq_tx, dlq_rx) = invalid_message_channel(
             config.processing.dlq_channel_buffer_size.get(),
+            config.processing.dlq_sample_every.get(),
             InvalidSettler::new(sensor_offsets.clone(), control_offsets.clone()),
         );
 
