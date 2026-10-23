@@ -45,6 +45,8 @@ we cannot go for spot VM here - otherwise it would be three times cheaper.
 
 The only drawback of C4 is that for CPU native Core compilation, a dedicated builder VM is needed.
 
+Technically, from the latest load testing, picking a 2-core variant with slightly more memory would probably be more cost efficient.
+
 [In pricing calculator](https://cloud.google.com/products/calculator?dl=CjhDaVF3WVRSbU9XSTVNeTAyTTJRNUxUUXdOR1F0WWprellpMHdZbUV4TkRRM1kySmlNekFRQVE9PRAIGiRDQUQ5MTA4MC0zOUVDLTQ2NTYtQjg3OC05QTUxQjY0MzA2Rjg&_gl=1*hmvx65*_up*MQ..&gclid=CjwKCAjwqc_UBhBKEiwAWbl25q5jMtOk9eAmBdh9cuBnOYDnJZJLyO9afG3l6jbu6ZQ56lfLfq_q6BoCYFAQAvD_BwE&gclsrc=aw.ds)
 
 ## Kafka VM

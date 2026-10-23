@@ -240,15 +240,15 @@ isolation before production use.
 
 Core publishes custom metrics for [Dashboard](component-dashboard.md) ingest panels and for pipeline health. Names:
 
-| Metric                                                          | Kind                  | Meaning                                                                          |
-|-----------------------------------------------------------------|-----------------------|----------------------------------------------------------------------------------|
-| `custom.googleapis.com/chronoracer/influx_write_lines`          | cumulative            | Lines Influx accepted                                                            |
-| `custom.googleapis.com/chronoracer/influx_write_bytes`          | cumulative            | Bytes in fully successful writes                                                 |
-| `custom.googleapis.com/chronoracer/influx_write_requests`       | cumulative            | Write attempts, label `outcome` = `ok`, `partial`, `error`, or `retry`           |
-| `custom.googleapis.com/chronoracer/pipeline_consumed_messages`  | cumulative            | Data messages the sink took from Kafka                                           |
-| `custom.googleapis.com/chronoracer/pipeline_sink_blocked_ms`    | cumulative            | Time the sink waited for a free collector slot (backpressure from downstream)    |
-| `custom.googleapis.com/chronoracer/pipeline_unconsumed_messages`| gauge                 | Data messages on the broker not yet delivered to Core, summed over partitions    |
-| `custom.googleapis.com/chronoracer/pipeline_persist_latency_ms` | delta distribution    | Per point batch: oldest record timestamp in the batch to its settlement          |
+| Metric                                                           | Kind               | Meaning                                                                       |
+|------------------------------------------------------------------|--------------------|-------------------------------------------------------------------------------|
+| `custom.googleapis.com/chronoracer/influx_write_lines`           | cumulative         | Lines Influx accepted                                                         |
+| `custom.googleapis.com/chronoracer/influx_write_bytes`           | cumulative         | Bytes in fully successful writes                                              |
+| `custom.googleapis.com/chronoracer/influx_write_requests`        | cumulative         | Write attempts, label `outcome` = `ok`, `partial`, `error`, or `retry`        |
+| `custom.googleapis.com/chronoracer/pipeline_consumed_messages`   | cumulative         | Data messages the sink took from Kafka                                        |
+| `custom.googleapis.com/chronoracer/pipeline_sink_blocked_ms`     | cumulative         | Time the sink waited for a free collector slot (backpressure from downstream) |
+| `custom.googleapis.com/chronoracer/pipeline_unconsumed_messages` | gauge              | Data messages on the broker not yet delivered to Core, summed over partitions |
+| `custom.googleapis.com/chronoracer/pipeline_persist_latency_ms`  | delta distribution | Per point batch: oldest record timestamp in the batch to its settlement       |
 
 Counters increment once per write attempt, off the per-point path. Each attempt is counted under one outcome: `ok`
 (accepted, including after retries), `partial`, `error` (non-retryable, batch dropped), or `retry` (transient failure,

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-/// The `influxdb3_client::Point` implementation is overengineered for this use case and has in-built deduplication and sorting.
+/// The `influxdb3_client::Point` implementation is overengineered for this use case (including in-built deduplication and sorting).
 /// To avoid this overhead and with very slim points, the batcher writes line protocol directly,
 /// see [`LineWriter`].
 ///
@@ -17,8 +17,7 @@ use tracing::{error, info, warn};
 /// pre-size; longer lines make the buffer grow.
 pub const LINE_PROTOCOL_ESTIMATED_LENGTH: usize = 96;
 
-/// Appends `measurement,race=..,driver=.. val=.. timestamp\n` lines. The part up to `val=` is the
-/// same for every reading of a message, so it is built once per message.
+/// Appends `measurement,race=..,driver=.. val=.. timestamp\n` lines.
 pub struct LineWriter {
     race_id: Arc<str>,
     prefix: String,

@@ -11,23 +11,23 @@ Raw evidence (per run `run-metadata.json`, generator logs, `artifacts/steady-sum
 
 ## Setup
 
-| Item | Value |
-|------|-------|
-| Core + InfluxDB VM | `c4d-highcpu-4` (4 vCPU, 7 GB), Core release `v0.1.4-load`, InfluxDB 3 Core on the same VM |
-| Kafka VM | `n4-standard-2`, topic `data` with 4 partitions |
-| Telemetry | Cloud Run, 1 CPU / 512Mi |
-| Generator | Operator laptop, 1-24 parallel instances, public Kafka listener (TLS + OAuth), `CHDRV` driver change after 60 s |
+| Item               | Value                                                                                                           |
+|--------------------|-----------------------------------------------------------------------------------------------------------------|
+| Core + InfluxDB VM | `c4d-highcpu-4` (4 vCPU, 7 GB), Core release `v0.1.4-load`, InfluxDB 3 Core on the same VM                      |
+| Kafka VM           | `n4-standard-2`, topic `data` with 4 partitions                                                                 |
+| Telemetry          | Cloud Run, 1 CPU / 512Mi                                                                                        |
+| Generator          | Operator laptop, 1-24 parallel instances, public Kafka listener (TLS + OAuth), `CHDRV` driver change after 60 s |
 
 The laptop path adds producer-side limits that are not Core limits: at 150k pts/s the laptop used ~18% CPU and ~5 MB/s
 uplink, at 200k pts/s ~6.4 MB/s. Generator delivery p99 first reached 5 s once at 150k.
 
 Core configuration is an operator overlay uploaded to `gs://chronoracer-race/lt1021a/core-config.yaml`:
 
-| Overlay | Content | Runs |
-|---------|---------|------|
-| `core-config.yaml` | Baseline: report interval 10 s, initial driver; sink `flush_max_combined_batch_size` 7000 | S0-S2 |
-| `core-config-throughput.yaml` | `flush_max_combined_batch_size` 50000 | S3a-S5b |
-| `core-config-phase2.yaml` | Throughput overlay plus `fetch_min_bytes` 1, `fetch_wait_max_ms` 100, sink flush 5 ms | S2-p2, L50-L200 |
+| Overlay                       | Content                                                                                   | Runs            |
+|-------------------------------|-------------------------------------------------------------------------------------------|-----------------|
+| `core-config.yaml`            | Baseline: report interval 10 s, initial driver; sink `flush_max_combined_batch_size` 7000 | S0-S2           |
+| `core-config-throughput.yaml` | `flush_max_combined_batch_size` 50000                                                     | S3a-S5b         |
+| `core-config-phase2.yaml`     | Throughput overlay plus `fetch_min_bytes` 1, `fetch_wait_max_ms` 100, sink flush 5 ms     | S2-p2, L50-L200 |
 
 The overlay files were in `scratch/load-test/` at test time.
 
@@ -118,14 +118,14 @@ Conclusions:
 
 ## Resource usage
 
-| Resource | Observation |
-|----------|-------------|
-| Core CPU | 6% at 1k-15k, 11.6% at 50k, 14% at 100k, 17-24% at 150k, 21-25% at 200k (VM, 4 vCPU). At 15k, `top`: Core 8% of one core, `influxd` 3% |
-| Kafka CPU | ~40% idle (java ~50% of one core), 41-47% at 1k-25k, 55-58% at 50k, 62-64% at 75k, 66-69% at 100k, 66-72% at 150k, 75-76% at 200k (2 vCPU) |
-| Kafka network | ~2.6 MB/s idle traffic; Kafka NIC (rx / tx) 3.1 / 2.7 MB/s at 15k, 6.1 / 5.7 at 100k, 6.3 / 5.9 at 200k, mostly the idle floor (from `kafka_net.csv`) |
-| Laptop uplink | ~2.65 MB/s at 75k, ~5 MB/s at 150k, ~6.4 MB/s at 200k (~32-35 B per point) |
-| Kafka disk | ~17 B per point; before L50 Kafka had 15 GB free and Core 14 GB free |
-| Core VM memory | See below |
+| Resource       | Observation                                                                                                                                              |
+|----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Core CPU       | 6% at 1k-15k, 11.6% at 50k, 14% at 100k, 17-24% at 150k, 21-25% at 200k (VM, 4 vCPU). At 15k, `top`: Core 8% of one core, `influxd` 3%                   |
+| Kafka CPU      | ~40% idle (java ~50% of one core), 41-47% at 1k-25k, 55-58% at 50k, 62-64% at 75k, 66-69% at 100k, 66-72% at 150k, 75-76% at 200k (2 vCPU)               |
+| Kafka network  | ~2.6 MB/s idle traffic; Kafka NIC (rx / tx) 3.1 / 2.7 MB/s at 15k, 6.1 / 5.7 at 100k, 6.3 / 5.9 at 200k, mostly the idle floor (from `kafka_net.csv`)    |
+| Laptop uplink  | ~2.65 MB/s at 75k, ~5 MB/s at 150k, ~6.4 MB/s at 200k (~32-35 B per point)                                                                               |
+| Kafka disk     | ~17 B per point; before L50 Kafka had 15 GB free and Core 14 GB free                                                                                     |
+| Core VM memory | See below                                                                                                                                                |
 | Partition skew | End offsets of `data`: 5,038,798 / 2,930,793 / 5,873,126 / 2,098,758 (15,941,475 messages), 2.8x between the largest and smallest, from sensor-name keys |
 
 Kafka idles at ~40% CPU with 2.6 MB/s traffic and no load. This is consistent with the control sink's
@@ -148,13 +148,13 @@ ingest gain (the ack is the WAL flush) and takes query and export headroom (budg
 
 S2 (15k, 1200 s) passes all criteria from the runbook:
 
-| Criterion | Result |
-|-----------|--------|
-| `sent_pts_s` ≥ 15,000, `behind_max_s` < 1 s, `failed` = 0 | min 14,997 / median 15,000, behind max 0.008 s, failed 0 |
-| Core `decoded` / `written` track sent, `unconsumed` flat | decoded median 14,998, written median 14,716, `unconsumed` 0 in all windows, `sink_blocked` 0 |
-| No `Commit position has not advanced` warnings | None |
-| Influx count equals generator total | 18,000,025 vs 18,000,030: -5 is deduplication, accepted lines equal 18,000,030 |
-| Core and Kafka CPU below 80% | 6.5 / 8.7% and 46% |
+| Criterion                                                 | Result                                                                                        |
+|-----------------------------------------------------------|-----------------------------------------------------------------------------------------------|
+| `sent_pts_s` ≥ 15,000, `behind_max_s` < 1 s, `failed` = 0 | min 14,997 / median 15,000, behind max 0.008 s, failed 0                                      |
+| Core `decoded` / `written` track sent, `unconsumed` flat  | decoded median 14,998, written median 14,716, `unconsumed` 0 in all windows, `sink_blocked` 0 |
+| No `Commit position has not advanced` warnings            | None                                                                                          |
+| Influx count equals generator total                       | 18,000,025 vs 18,000,030: -5 is deduplication, accepted lines equal 18,000,030                |
+| Core and Kafka CPU below 80%                              | 6.5 / 8.7% and 46%                                                                            |
 
 Open: with the baseline config `preview_ms` mean drifted linearly from 61 to 79 ms over the 20 min (+0.9 ms/min) and
 reset between runs. The clock offset (below) is the identified cause, not a Core effect.
