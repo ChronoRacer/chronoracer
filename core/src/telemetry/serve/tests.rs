@@ -48,6 +48,7 @@ fn message(sensor_id: &str, points: u64) -> Arc<UnwoundSensorDataMessage> {
         sensor_id: Arc::from(sensor_id),
         readings,
         source: Default::default(),
+        created_ms: None,
     })
 }
 
@@ -83,6 +84,7 @@ fn fat_batch(index: usize) -> Arc<UnwoundSensorDataMessage> {
         sensor_id: Arc::from(sensor_id),
         readings,
         source: Default::default(),
+        created_ms: None,
     })
 }
 

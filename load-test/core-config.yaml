@@ -1,0 +1,11 @@
+# Operator overlay: defaults <- this file <- platform (render-config.sh). Platform pins broker,
+# race_id, topics (names), Influx port/db/password, telemetry port, and gcp.*.
+# Object must exist at gs://chronoracer-race/<RACE_ID>/core-config.yaml before Core boot.
+# Via Relay /race/start, initialDriverId overrides race.initial_driver_id; set it here for manual upload.
+
+kafka:
+  sensor_data_consumer:
+    offset_lag_log_interval_s: 10
+
+race:
+  initial_driver_id: loadtest

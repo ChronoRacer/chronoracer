@@ -16,3 +16,5 @@ crash.log
 /infra/packer/build/*.back
 **/__pycache__/*
 /infra/packer/build/core*
+/load-test/runs/
+/scratch/

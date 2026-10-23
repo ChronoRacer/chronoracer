@@ -94,6 +94,7 @@ mod tests {
                 timestamp: 1_000_000_000,
             }]),
             source: Default::default(),
+            created_ms: None,
         })
     }
 
@@ -102,6 +103,7 @@ mod tests {
             sensor_id: Arc::from(sensor_id),
             readings: Box::new([]),
             source: Default::default(),
+            created_ms: None,
         };
         message.source.partition = 2;
         message.source.offset = offset;

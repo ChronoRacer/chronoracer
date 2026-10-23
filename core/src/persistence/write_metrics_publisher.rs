@@ -1,13 +1,19 @@
 use super::write_metrics::{WriteMetricSnapshot, WriteMetrics};
+use crate::pipeline_stats::{
+    BUCKET_BOUNDS_MS, HistogramWindow, PipelineReport, PipelineSnapshot, PipelineStats,
+    SAMPLE_INTERVAL,
+};
 use anyhow::{Context, Result};
+use google_cloud_api::model::distribution::BucketOptions;
+use google_cloud_api::model::distribution::bucket_options::Explicit;
 use google_cloud_api::model::metric_descriptor::{MetricKind, ValueType};
-use google_cloud_api::model::{Metric, MonitoredResource};
+use google_cloud_api::model::{Distribution, Metric, MonitoredResource};
 use google_cloud_gax::retry_policy::{AlwaysRetry, RetryPolicyExt};
 use google_cloud_monitoring_v3::client::MetricService;
 use google_cloud_monitoring_v3::model::{Point, TimeInterval, TimeSeries, TypedValue};
 use google_cloud_wkt::{Timestamp, TimestampError};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
@@ -15,7 +21,16 @@ pub const WRITE_LINES: &str = "custom.googleapis.com/chronoracer/influx_write_li
 pub const WRITE_BYTES: &str = "custom.googleapis.com/chronoracer/influx_write_bytes";
 pub const WRITE_REQUESTS: &str = "custom.googleapis.com/chronoracer/influx_write_requests";
 
-const PUBLISH_INTERVAL: Duration = Duration::from_mins(1);
+pub const PIPELINE_CONSUMED_MESSAGES: &str =
+    "custom.googleapis.com/chronoracer/pipeline_consumed_messages";
+pub const PIPELINE_SINK_BLOCKED_MS: &str =
+    "custom.googleapis.com/chronoracer/pipeline_sink_blocked_ms";
+pub const PIPELINE_UNCONSUMED_MESSAGES: &str =
+    "custom.googleapis.com/chronoracer/pipeline_unconsumed_messages";
+pub const PIPELINE_PERSIST_LATENCY_MS: &str =
+    "custom.googleapis.com/chronoracer/pipeline_persist_latency_ms";
+
+const PUBLISH_INTERVAL: Duration = SAMPLE_INTERVAL;
 const METADATA_TIMEOUT: Duration = Duration::from_secs(2);
 const METADATA_ROOT: &str = "http://metadata.google.internal/computeMetadata/v1/instance";
 /// Must be in the correct format, not necessarily correct values
@@ -28,7 +43,7 @@ struct GceIdentity {
     zone: String,
 }
 
-/// Publishes cumulative write counters until `stop` is cancelled, then sends one final sample.
+/// Publishes cumulative write counters and the pipeline series until `stop` is cancelled, then sends one final sample.
 /// Metadata or client setup failure is logged and the task ends. A later
 /// `CreateTimeSeries` failure is logged and the loop continues. Neither path
 /// stops ingest.
@@ -36,6 +51,7 @@ pub async fn publish_write_metrics(
     project_id: String,
     max_retries: u16,
     metrics: Arc<WriteMetrics>,
+    stats: Arc<PipelineStats>,
     allow_unknown_gce_metrics: bool,
     stop: CancellationToken,
 ) {
@@ -77,16 +93,17 @@ pub async fn publish_write_metrics(
     ticker.tick().await;
 
     let name = format!("projects/{project_id}");
+    let mut pipeline = PipelineSampler::new(stats, started);
     loop {
         tokio::select! {
             biased;
             () = stop.cancelled() => {
-                publish_sample(&client, &name, &project_id, &identity, &started, &metrics).await;
+                publish_sample(&client, &name, &project_id, &identity, &started, &metrics, &mut pipeline).await;
                 info!("Final Cloud Monitoring write-metrics sample sent");
                 return;
             }
             _ = ticker.tick() => {
-                publish_sample(&client, &name, &project_id, &identity, &started, &metrics).await;
+                publish_sample(&client, &name, &project_id, &identity, &started, &metrics, &mut pipeline).await;
             }
         }
     }
@@ -99,13 +116,17 @@ async fn publish_sample(
     identity: &GceIdentity,
     started: &Timestamp,
     metrics: &WriteMetrics,
+    pipeline: &mut PipelineSampler,
 ) {
     let Ok(end) = timestamp_now() else {
         error!("Skipping Cloud Monitoring sample; system clock is before the unix epoch");
         return;
     };
     let snapshot = metrics.snapshot();
-    let series = write_time_series(project_id, identity, started, &end, &snapshot);
+    let mut series = write_time_series(project_id, identity, started, &end, &snapshot);
+    let sample = pipeline.sample(end);
+    series.extend(pipeline_time_series(project_id, identity, started, &sample));
+    let report = sample.report().to_string();
     match client
         .create_time_series()
         .set_name(name)
@@ -115,9 +136,10 @@ async fn publish_sample(
     {
         Ok(()) => {
             info!("{snapshot:?}");
+            info!("Pipeline report: {report}");
         }
         Err(error) => {
-            warn!(%error, "GCM write failed");
+            warn!(%error, "GCM write failed; the persist latency window of this sample is lost. Pipeline report: {report}");
         }
     }
 }
@@ -231,6 +253,138 @@ fn write_time_series(
     ]
 }
 
+/// Pipeline stats since the previous sample: cumulative counters, the gauge, and the persist
+/// latency window (delta).
+struct PipelineSampler {
+    stats: Arc<PipelineStats>,
+    previous: PipelineSnapshot,
+    previous_end: Timestamp,
+    previous_at: Instant,
+}
+
+struct PipelineSample {
+    previous: PipelineSnapshot,
+    current: PipelineSnapshot,
+    persist: HistogramWindow,
+    window_start: Timestamp,
+    window_end: Timestamp,
+    window: Duration,
+}
+
+impl PipelineSampler {
+    fn new(stats: Arc<PipelineStats>, started: Timestamp) -> Self {
+        Self {
+            previous: stats.snapshot(),
+            stats,
+            previous_end: started,
+            previous_at: Instant::now(),
+        }
+    }
+
+    fn sample(&mut self, end: Timestamp) -> PipelineSample {
+        let now = Instant::now();
+        let sample = PipelineSample {
+            previous: self.previous,
+            current: self.stats.snapshot(),
+            persist: self.stats.take_persist(),
+            window_start: self.previous_end,
+            window_end: end,
+            window: now.duration_since(self.previous_at),
+        };
+        self.previous = sample.current;
+        self.previous_end = end;
+        self.previous_at = now;
+        sample
+    }
+}
+
+impl PipelineSample {
+    fn report(&self) -> PipelineReport<'_> {
+        PipelineReport {
+            window: self.window,
+            previous: &self.previous,
+            current: &self.current,
+            persist: &self.persist,
+        }
+    }
+}
+
+#[must_use]
+fn pipeline_time_series(
+    project_id: &str,
+    identity: &GceIdentity,
+    started: &Timestamp,
+    sample: &PipelineSample,
+) -> Vec<TimeSeries> {
+    let resource = gce_resource(project_id, identity);
+    let end = &sample.window_end;
+    let current = &sample.current;
+    let mut series = vec![
+        cumulative_series(
+            PIPELINE_CONSUMED_MESSAGES,
+            "1",
+            &resource,
+            started,
+            end,
+            current.consumed_messages,
+            None,
+        ),
+        cumulative_series(
+            PIPELINE_SINK_BLOCKED_MS,
+            "ms",
+            &resource,
+            started,
+            end,
+            u64::try_from(current.sink_blocked.as_millis()).unwrap_or(u64::MAX),
+            None,
+        ),
+    ];
+    // Unknown until the first librdkafka statistics arrive: no point rather than a false zero.
+    if let Some(unconsumed) = current.unconsumed {
+        series.push(series_with_point(
+            PIPELINE_UNCONSUMED_MESSAGES,
+            "1",
+            &resource,
+            MetricKind::Gauge,
+            None,
+            end,
+            TypedValue::new().set_int64_value(unconsumed),
+            None,
+        ));
+    }
+    if sample.persist.count() > 0 {
+        series.push(series_with_point(
+            PIPELINE_PERSIST_LATENCY_MS,
+            "ms",
+            &resource,
+            MetricKind::Delta,
+            Some(&sample.window_start),
+            end,
+            TypedValue::new().set_distribution_value(latency_distribution(&sample.persist)),
+            None,
+        ));
+    }
+    series
+}
+
+/// Explicit buckets at the histogram bounds. Cloud Monitoring buckets are `[lower, upper)`
+/// while ours are inclusive of the upper bound, so a value equal to a bound sits one bucket
+/// higher there. The sum of squared deviation is not tracked and is reported as 0.
+fn latency_distribution(window: &HistogramWindow) -> Distribution {
+    let count = window.count();
+    #[allow(clippy::cast_precision_loss)]
+    let mean = window.sum_ms() as f64 / count.max(1) as f64;
+    Distribution::new()
+        .set_count(as_i64(count))
+        .set_mean(mean)
+        .set_sum_of_squared_deviation(0.0)
+        .set_bucket_options(BucketOptions::new().set_explicit_buckets(
+            #[allow(clippy::cast_precision_loss)]
+            Explicit::new().set_bounds(BUCKET_BOUNDS_MS.iter().map(|bound| *bound as f64)),
+        ))
+        .set_bucket_counts(window.bucket_counts().iter().map(|count| as_i64(*count)))
+}
+
 fn gce_resource(project_id: &str, identity: &GceIdentity) -> MonitoredResource {
     MonitoredResource::new()
         .set_type("gce_instance")
@@ -250,23 +404,49 @@ fn cumulative_series(
     value: u64,
     outcome: Option<&str>,
 ) -> TimeSeries {
+    series_with_point(
+        metric_type,
+        unit,
+        resource,
+        MetricKind::Cumulative,
+        Some(started),
+        end,
+        TypedValue::new().set_int64_value(as_i64(value)),
+        outcome,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn series_with_point(
+    metric_type: &str,
+    unit: &str,
+    resource: &MonitoredResource,
+    kind: MetricKind,
+    start: Option<&Timestamp>,
+    end: &Timestamp,
+    value: TypedValue,
+    outcome: Option<&str>,
+) -> TimeSeries {
     let mut metric = Metric::new().set_type(metric_type);
     if let Some(outcome) = outcome {
         metric = metric.set_labels([("outcome", outcome)]);
     }
+    let value_type = if value.distribution_value().is_some() {
+        ValueType::Distribution
+    } else {
+        ValueType::Int64
+    };
+    let mut interval = TimeInterval::new().set_end_time(*end);
+    if let Some(start) = start {
+        interval = interval.set_start_time(*start);
+    }
     TimeSeries::new()
         .set_metric(metric)
         .set_resource(resource.clone())
-        .set_metric_kind(MetricKind::Cumulative)
-        .set_value_type(ValueType::Int64)
+        .set_metric_kind(kind)
+        .set_value_type(value_type)
         .set_unit(unit)
-        .set_points([Point::new()
-            .set_interval(
-                TimeInterval::new()
-                    .set_start_time(*started)
-                    .set_end_time(*end),
-            )
-            .set_value(TypedValue::new().set_int64_value(as_i64(value)))])
+        .set_points([Point::new().set_interval(interval).set_value(value)])
 }
 
 fn as_i64(value: u64) -> i64 {
@@ -369,6 +549,80 @@ mod tests {
         let interval = series[0].points[0].interval.as_ref().expect("interval");
         assert_eq!(interval.start_time, Some(started));
         assert_eq!(interval.end_time, Some(end));
+    }
+
+    #[test]
+    fn pipeline_time_series_covers_counters_gauge_and_latency_distribution() {
+        use crate::pipeline_stats::unix_now_ms;
+        let stats = Arc::new(PipelineStats::default());
+        let mut sampler = PipelineSampler::new(Arc::clone(&stats), timestamp(1_700_000_000));
+        stats.add_consumed(30);
+        stats.add_sink_blocked(Duration::from_millis(1_500));
+        stats.set_unconsumed(12);
+        stats.record_settled(Some(unix_now_ms() - 7));
+        stats.record_settled(Some(unix_now_ms() - 7));
+
+        let sample = sampler.sample(timestamp(1_700_000_060));
+        let series = pipeline_time_series(
+            "chronoracer",
+            &sample_identity(),
+            &timestamp(1_700_000_000),
+            &sample,
+        );
+        let types: Vec<&str> = series
+            .iter()
+            .map(|series| series.metric.as_ref().unwrap().r#type.as_str())
+            .collect();
+        assert_eq!(
+            types,
+            [
+                PIPELINE_CONSUMED_MESSAGES,
+                PIPELINE_SINK_BLOCKED_MS,
+                PIPELINE_UNCONSUMED_MESSAGES,
+                PIPELINE_PERSIST_LATENCY_MS
+            ]
+        );
+        assert_eq!(point_value(&series[0]), Some(30));
+        assert_eq!(point_value(&series[1]), Some(1_500));
+        assert_eq!(series[2].metric_kind, MetricKind::Gauge);
+        assert_eq!(point_value(&series[2]), Some(12));
+        let gauge_interval = series[2].points[0].interval.as_ref().unwrap();
+        assert_eq!(gauge_interval.start_time, None);
+
+        let latency = &series[3];
+        assert_eq!(latency.metric_kind, MetricKind::Delta);
+        assert_eq!(latency.value_type, ValueType::Distribution);
+        let interval = latency.points[0].interval.as_ref().unwrap();
+        assert_eq!(interval.start_time, Some(timestamp(1_700_000_000)));
+        let distribution = latency.points[0]
+            .value
+            .as_ref()
+            .unwrap()
+            .distribution_value()
+            .unwrap();
+        assert_eq!(distribution.count, 2);
+        assert_eq!(distribution.bucket_counts.len(), BUCKET_BOUNDS_MS.len() + 1);
+        assert_eq!(distribution.bucket_counts.iter().sum::<i64>(), 2);
+
+        // Next window starts where this one ended; with nothing recorded, no latency series.
+        let next = sampler.sample(timestamp(1_700_000_120));
+        assert_eq!(next.window_start, timestamp(1_700_000_060));
+        let series = pipeline_time_series(
+            "chronoracer",
+            &sample_identity(),
+            &timestamp(1_700_000_000),
+            &next,
+        );
+        assert_eq!(series.len(), 3);
+    }
+
+    #[test]
+    fn unknown_unconsumed_emits_no_gauge() {
+        let stats = Arc::new(PipelineStats::default());
+        let mut sampler = PipelineSampler::new(stats, timestamp(1));
+        let sample = sampler.sample(timestamp(2));
+        let series = pipeline_time_series("p", &sample_identity(), &timestamp(1), &sample);
+        assert_eq!(series.len(), 2);
     }
 
     fn point_value(series: &TimeSeries) -> Option<i64> {

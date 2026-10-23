@@ -10,17 +10,16 @@ For target VMs used, see [ADR - VM types](adr-vm-types.md).
 
 ## Split
 
+All VMs have Google Cloud Ops Agent with whole-VM host metrics (no process scraper) and log sink installed on them.
+
 **Analysis:** full bake. Debian 13 with the shared packages, Google Cloud Ops Agent, contract JSON, the module's Python
 venv and code, and its startup overlay. Rebuild the family when Analysis code, `requirements.txt`, overlay scripts,
 units, agent config, or contract JSON change.
 
-**Kafka:** full bake. Overlay + Apache Kafka at `/opt/kafka` + Google Cloud Ops Agent with whole-VM host metrics (no process scraper).
-Rebuild the family when Kafka, Java, agent config, overlay scripts, or contract JSON change.
+**Kafka:** full bake. Overlay + Apache Kafka at `/opt/kafka`. Rebuild the family when Kafka, Java, agent config, overlay scripts, or contract JSON change.
 
-**Core:** hybrid. Packer bakes Debian, InfluxDB 3 Core, Google Cloud Ops Agent with whole-VM host metrics (no process
-scraper), `rpk` and its pinned Redpanda Connect package (do not install manually with sudo or it will fail), `yq`,
-Google Cloud CLI, overlay scripts,
-`default-config.yaml`, Redpanda templates, contract JSON, and the build-time InfluxDB plugin environment. It does
+**Core:** hybrid. Packer bakes Debian, InfluxDB 3 Core, `rpk` and its pinned Redpanda Connect package (do not install manually with sudo or it will fail), `yq`,
+Google Cloud CLI, overlay scripts, `default-config.yaml`, Redpanda templates, contract JSON, and the build-time InfluxDB plugin environment. It does
 **not** bake the Core rust binary or InfluxDB plugin source files.
 
 Publish the binary and plugins with
@@ -78,6 +77,10 @@ Shared helper [`infra/packer/scripts/gce-metadata.sh`](../infra/packer/scripts/g
 overlays as `/chronoracer/gce-metadata.sh`. Boot scripts source it and read project, zone, and instance attributes from
 the GCE metadata server. They do not call the Compute API. Race VM service accounts do not need
 `compute.instances.get`.
+
+**Time sync (Core and Kafka):** [`configure-timesync.sh`](../infra/packer/scripts/configure-timesync.sh) bakes a
+`systemd-timesyncd` drop-in (`NTP=metadata.google.internal`, poll 16-32 s). Core latency metrics depend on
+cross-VM clock offset.
 
 **Kafka** `/chronoracer/`: overlay from [`kafka/startup`](../kafka/startup) (scripts, `kafka.service`, Ops Agent
 configuration),

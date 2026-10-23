@@ -158,6 +158,7 @@ mod tests {
             partition: 2,
             payload: payload.map(Box::from),
             origin: crate::messaging::partial_message::MessageOrigin::Control,
+            created_ms: None,
         }
     }
 

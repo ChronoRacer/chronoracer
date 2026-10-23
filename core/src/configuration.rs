@@ -338,8 +338,8 @@ mod mock {
     impl KafkaConsumerConfig {
         pub fn mock_config() -> KafkaConsumerConfig {
             Self {
-                fetch_min_bytes: 32 * 1024,
-                fetch_wait_max_ms: 25,
+                fetch_min_bytes: 1,
+                fetch_wait_max_ms: 100,
                 fetch_message_max_bytes: 5 * 1024 * 1024,
                 queued_min_messages: 200_000,
                 queued_max_messages_kbytes: 256 * 1024,
@@ -355,7 +355,7 @@ mod mock {
             Self {
                 message_channel_buffer_size: NonZeroUsize::new(64).unwrap(),
                 message_batch_size: NonZeroUsize::new(1_000).unwrap(),
-                message_batch_flush_interval_ms: NonZeroU32::new(15).unwrap(),
+                message_batch_flush_interval_ms: NonZeroU32::new(5).unwrap(),
                 dlq_channel_buffer_size: NonZeroUsize::new(10_000).unwrap(),
             }
         }
