@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start InfluxDB 3 and ensure the configured database + export trigger.
+# Start InfluxDB 3 and ensure the configured database.
 set -euo pipefail
 umask 077
 
@@ -8,7 +8,6 @@ umask 077
 TOKEN_FILE="${CHRONORACER_DIR}/admin-token.json"
 CONFIG="${CHRONORACER_DIR}/core-config.yaml"
 PLATFORM_JSON="${CHRONORACER_DIR}/platform.json"
-PLUGIN_DIR="${CHRONORACER_DIR}/influxdb-plugins"
 INFLUX_ENV="${CHRONORACER_DIR}/influxdb3.env"
 DATA_DIR="/var/lib/influxdb3"
 TRIES="${CHRONORACER_INFLUX_TRIES:-60}"
@@ -30,10 +29,6 @@ need yq
 }
 [[ -s "${TOKEN_FILE}" ]] || {
   echo "admin token file missing: ${TOKEN_FILE}" >&2
-  exit 1
-}
-[[ -d "${PLUGIN_DIR}" ]] || {
-  echo "plugin dir not found: ${PLUGIN_DIR}" >&2
   exit 1
 }
 [[ -f "${PLATFORM_JSON}" ]] || {
@@ -95,19 +90,5 @@ if db_exists; then
 else
   influxdb3 create database "${DB_NAME}" --host "${HOST}" --token "${TOKEN}"
 fi
-
-if influxdb3 show database-triggers --host "${HOST}" --database "${DB_NAME}" --token "${TOKEN}" 2>/dev/null \
-  | grep -Fwq -- "database_export"; then
-  echo "Trigger 'database_export' already exists. Dropping"
-  influxdb3 delete trigger --force --host "${HOST}" --database "${DB_NAME}" --token "${TOKEN}" database_export
-fi
-
-influxdb3 create trigger \
-  --host "${HOST}" \
-  --database "${DB_NAME}" \
-  --token "${TOKEN}" \
-  --plugin-filename export_database.py \
-  --trigger-spec "request:export_database" \
-  database_export
 
 echo "InfluxDB 3 ready (database ${DB_NAME})"

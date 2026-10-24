@@ -318,7 +318,7 @@ sequenceDiagram
 | Google Managed Kafka                                                  | Private-only (PSC) with Google IAM auth only; cannot validate Auth0 device tokens                                         |
 | Confluent Cloud                                                       | Viable; adds an external vendor and cost on top of GKE                                                                    |
 | Per-race Kafka inside the race namespace                              | N brokers, N sets of public IPs and N certificates: today's problem again                                                 |
-| Separate InfluxDB pod                                                 | Breaks the localhost write path and the shared export directory; needs an RWX volume or direct GCS upload from the plugin |
+| Separate InfluxDB pod                                                 | Breaks the localhost write and export query path                                                                          |
 | Manually provisioned nodes                                            | Brings back VM management                                                                                                 |
 | Autopilot                                                             | Viable; node sysctls and pinning are simpler on Standard                                                                  |
 | Whole cluster created on demand                                       | extra 10 minute create time, and Relay must live outside the cluster (might need extra LB)                                |

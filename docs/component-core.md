@@ -8,14 +8,16 @@ Shared VM pain points: Core and database share similar load spikes which means t
 it does, it's from both components at the same time. Telemetry streaming adds bounded serialization and network work;
 it must never backpressure the ingest pipeline: [Telemetry stream](#telemetry-stream).
 
-Lifecycle: race-scoped. Created at the start. The VM is destroyed after export-done: [Race destruction](flow-race_destruction.md).
+Lifecycle: race-scoped. Created at the start. The VM is destroyed after
+export-done: [Race destruction](flow-race_destruction.md).
 
 Access: private
 
 Core responsibility:
 
 - ingest data from Kafka
-- decode Avro and apply control events. What is checked: [data pipeline](#data-pipeline-batch-contract) and [control events](#control-event-handling)
+- decode Avro and apply control events. What is checked: [data pipeline](#data-pipeline-batch-contract)
+  and [control events](#control-event-handling)
 - batch and write to the database, retrying transient failures so a slow database backpressures into Kafka
 - expose accepted logical points on a private, best-effort telemetry gRPC stream to a few named clients
 - publish cumulative Influx write counters to Cloud Monitoring
@@ -45,8 +47,9 @@ a sensor.
 
 Invalid messages remain individual DLQ records because their original partition, offset, and parse error are stored in
 per-record headers. The parse path never waits on the DLQ: a bad-schema deploy makes every message invalid, and a
-blocked parse thread would stop the whole ingest. The record is offered to the DLQ channel (`processing.dlq_channel_buffer_size`)
-without waiting, and sampled: the first invalid message and then one in `processing.dlq_sample_every` is queued; 
+blocked parse thread would stop the whole ingest. The record is offered to the DLQ channel
+(`processing.dlq_channel_buffer_size`)
+without waiting, and sampled: the first invalid message and then one in `processing.dlq_sample_every` is queued;
 the rest are discarded, counted, and reported as a warning by the DLQ handler.
 
 When `persistence.fast_flush_sensor_ids` is non-empty, the splitter partitions each processed batch into one
@@ -61,7 +64,8 @@ on concurrent writes: the InfluxDB client is configured not to split, limit, or 
 permits are reserved when the fast path is enabled and the rest are shared. With no fast sensors, all permits are
 available to the normal path. With the fast path enabled, the reserved count is at least one whenever more than
 one permit exists, and one permit always stays shared, so with two or more permits normal batches cannot take every
-permit and starve fast flushes. A single permit is shared by both paths. A transient failure (connection error, timeout, 429, any 5xx, or 401, 403, or 404)
+permit and starve fast flushes. A single permit is shared by both paths. A transient failure (connection error, timeout,
+429, any 5xx, or 401, 403, or 404)
 sends the same batch again after a backoff that starts at `persistence.write_retry_initial_backoff_ms`, doubles per
 retry up to `persistence.write_retry_max_backoff_ms`, and is jittered. The batch keeps its permit throughout, so a
 slow or restarting database slows the pipeline, the bounded channels fill, and the backpressure reaches the Kafka
@@ -73,8 +77,10 @@ writes are idempotent per series and timestamp. Retries are logged on the first 
 an auth or config rejection is logged as an auth/config problem.
 
 The control path is intentionally separate: a different message sink forwards each control record immediately on a
-single-message channel and uses `fetch.min.bytes=1`/`fetch.wait.max.ms=500` Kafka settings (the broker answers as soon as one record exists; the wait only slows empty polls). Control events are not subject
-to the sensor-data batch size or timer because control events must be acted on as soon as they are available. The control
+single-message channel and uses `fetch.min.bytes=1`/`fetch.wait.max.ms=500` Kafka settings (the broker answers as soon
+as one record exists; the wait only slows empty polls). Control events are not subject
+to the sensor-data batch size or timer because control events must be acted on as soon as they are available. The
+control
 filter parses and applies each event inline on the async task, in Kafka arrival order — not on the sensor-data rayon
 pool — so SHUTDOWN and CHDRV are never stalled behind data backpressure or reordered by parallel workers.
 
@@ -167,15 +173,16 @@ is a new id.
 
 Each point has the same logical fields as the persisted Influx point:
 
-| Field             | Protobuf type | Meaning                                                                 |
-|-------------------|---------------|-------------------------------------------------------------------------|
-| `sensor_id`       | `string`      | Sensor identifier and Influx measurement name                           |
-| `timestamp_nanos` | `uint64`      | Absolute Unix timestamp in nanoseconds                                  |
-| `value`           | `double`      | Accepted IEEE-754 sensor value                                          |
-| `driver_id`       | `string`      | Driver read at the unwind copy, not the later persistence stamp         |
+| Field             | Protobuf type | Meaning                                                         |
+|-------------------|---------------|-----------------------------------------------------------------|
+| `sensor_id`       | `string`      | Sensor identifier and Influx measurement name                   |
+| `timestamp_nanos` | `uint64`      | Absolute Unix timestamp in nanoseconds                          |
+| `value`           | `double`      | Accepted IEEE-754 sensor value                                  |
+| `driver_id`       | `string`      | Driver read at the unwind copy, not the later persistence stamp |
 
 “Accepted” means Core produced a logical point. It does not promise the later database write succeeds. Kafka delivery
-is at-least-once ([Kafka delivery](#kafka-delivery)), processing batches run concurrently, and source timestamps are authoritative.
+is at-least-once ([Kafka delivery](#kafka-delivery)), processing batches run concurrently, and source timestamps are
+authoritative.
 
 ### Clients and sensor selection
 
@@ -250,9 +257,15 @@ Core publishes custom metrics for [Dashboard](component-dashboard.md) ingest pan
 
 Counters increment once per write attempt, off the per-point path. Each attempt is counted under one outcome: `ok`
 (accepted, including after retries), `partial`, `error` (non-retryable, batch dropped), or `retry` (transient failure,
-the batch is sent again). `ok`, `partial`, and `error` therefore still count once per batch, and lines and bytes are added
-once when the batch ends. A growing `retry` with a flat `ok` is an outage being absorbed, not data loss. A background task sends one `CreateTimeSeries` every 60 seconds while `gcp.enabled` is true. After the data pipeline drains on race-end or signal shutdown, the publisher sends one final sample (bounded by `runtime.write_metrics_final_timeout_s`) before export or exit. Partial writes count accepted lines and the `partial` outcome, and do not add bytes. Publish failure is logged and does not stop ingest.
-Missing GCE metadata can either disable metric sending or fallback to sending sentinel labels for time series, decided by configuration property `gcp.allow_unknown_gce_metrics`.
+the batch is sent again). `ok`, `partial`, and `error` therefore still count once per batch, and lines and bytes are
+added
+once when the batch ends. A growing `retry` with a flat `ok` is an outage being absorbed, not data loss. A background
+task sends one `CreateTimeSeries` every 60 seconds while `gcp.enabled` is true. After the data pipeline drains on
+race-end or signal shutdown, the publisher sends one final sample (bounded by `runtime.write_metrics_final_timeout_s`)
+before export or exit. Partial writes count accepted lines and the `partial` outcome, and do not add bytes. Publish
+failure is logged and does not stop ingest.
+Missing GCE metadata can either disable metric sending or fallback to sending sentinel labels for time series, decided
+by configuration property `gcp.allow_unknown_gce_metrics`.
 
 ### Pipeline report
 
@@ -322,7 +335,6 @@ Live telemetry stream of clean data, GCM metric push of database write rates.
 - Preview queue
 - metrics publisher
 
-
 ## Data ingestion and serving flow
 
 ```mermaid
@@ -343,7 +355,7 @@ flowchart TB
         batcherNormal["Normal batcher"]
         flusher[("Flusher")]
     end
-    
+
     subgraph telemetry["Telemetry layer"]
         tel_queue["Preview queue"]
         tel_stream["Streaming server"]
@@ -351,16 +363,16 @@ flowchart TB
     end
 
     dataSink -->|message batches| decode
-    decode --> |invalid messages| dlqPublisher
+    decode -->|invalid messages| dlqPublisher
     decode -->|processed batches| splitter
     decode -->|no fast sensors| batcherNormal
     decode -->|processed batches| tel_queue
-    tel_queue --> |stream into| tel_stream
+    tel_queue -->|stream into| tel_stream
     splitter -->|fast batches| batcherFast
     splitter -->|normal batches| batcherNormal
     batcherFast --> flusher
     batcherNormal --> flusher
-    flusher -->|write metrics|metrics
+    flusher -->|write metrics| metrics
 ```
 
 ### Core heartbeat
@@ -388,7 +400,6 @@ flowchart TB
     end
 
     driver["Current driver id"]
-
     kafkaControl -->|control events| filterControl
     filterControl -->|CHDRV| driver
 
@@ -399,7 +410,8 @@ Control keys:
 - `CHDRV`: payload is the new driver id. Validated at parse time (non-empty, ≤ 24 bytes, no ASCII control
   characters, no Influx line-protocol tag specials `,` `=` space `\` `"`). Invalid payloads go to the DLQ and leave
   the current driver unchanged. The same rules apply to `race.initial_driver_id` at config load.
-- `SHUTDOWN`: relays race-end to the supervisor, then the filter stops consuming so its DLQ sender is dropped. Its offset is committed only after the exports ([Kafka delivery](#control-consumer-and-shutdown-replay)).
+- `SHUTDOWN`: relays race-end to the supervisor, then the filter stops consuming so its DLQ sender is dropped. Its
+  offset is committed only after the exports ([Kafka delivery](#control-consumer-and-shutdown-replay)).
 - Other keys: logged as unknown; ignored.
 
 ### Shutdown, signals, and failure policy
@@ -408,59 +420,61 @@ Race-end (`SHUTDOWN`) only. A signal stops after the final metrics sample and do
 
 ```mermaid
 flowchart TB
-  subgraph kafka["Messaging layer"]
-    kafkaControl["Control event listener"]
-  end
+    subgraph kafka["Messaging layer"]
+        kafkaControl["Control event listener"]
+    end
 
-  subgraph process["Processing layer"]
-    filterControl["Control event filter"]
-  end
+    subgraph process["Processing layer"]
+        filterControl["Control event filter"]
+    end
 
-  subgraph shutdown["Shutdown layer"]
-    dataStop["Stop data ingestion"]
-    pipelineDrain["Wait until data pipeline drained"]
-    dlqDrain["Wait until DLQ queue flushed"]
-    commitOffsets["Commit Kafka offsets"]
-    finalMetrics["Final write-metrics sample"]
-    exportKafka[("Export Kafka (via Redpanda)")]
-    exportDb["Export database"]
-    gcsWriter[("Upload database export to GCS")]
-    notify["Broadcast export done"]
-    commitShutdown["Commit SHUTDOWN offset"]
-  end
+    subgraph shutdown["Shutdown layer"]
+        dataStop["Stop data ingestion"]
+        pipelineDrain["Wait until data pipeline drained"]
+        dlqDrain["Wait until DLQ queue flushed"]
+        commitOffsets["Commit Kafka offsets"]
+        finalMetrics["Final write-metrics sample"]
+        exportKafka[("Export Kafka (via Redpanda)")]
+        exportDb["Export database"]
+        gcsWriter[("Upload database export to GCS")]
+        notify["Broadcast export done"]
+        commitShutdown["Commit SHUTDOWN offset"]
+    end
 
-  shutdownCore["Terminate Core"]
-
-  kafkaControl -->|SHUTDOWN control event| filterControl
-  filterControl --> dataStop
-  dataStop --> pipelineDrain
-  pipelineDrain --> dlqDrain
-  dlqDrain --> commitOffsets
-  commitOffsets --> finalMetrics
-  finalMetrics --> exportKafka
-  finalMetrics --> exportDb
-  exportDb --> gcsWriter
-  exportKafka --> notify
-  gcsWriter --> notify
-  notify --> commitShutdown
-  commitShutdown --> shutdownCore
+    shutdownCore["Terminate Core"]
+    kafkaControl -->|SHUTDOWN control event| filterControl
+    filterControl --> dataStop
+    dataStop --> pipelineDrain
+    pipelineDrain --> dlqDrain
+    dlqDrain --> commitOffsets
+    commitOffsets --> finalMetrics
+    finalMetrics --> exportKafka
+    finalMetrics --> exportDb
+    exportDb --> gcsWriter
+    exportKafka --> notify
+    gcsWriter --> notify
+    notify --> commitShutdown
+    commitShutdown --> shutdownCore
 ```
 
 Successful race-end shutdown means sending the export-done event to Google Pub/Sub. It is sent only when both exports
 allow it: a failed Kafka export still allows it when `runtime.notify_shutdown_on_failed_kafka_export` is true, and a
-failed database export (plugin `failures`, `tables_exported < tables_found`, or a GCS upload error) still allows it
+failed database export (a failed table, `tables_exported < tables_found`, or a GCS upload error) still allows it
 when `runtime.notify_shutdown_on_failed_db_export` is true. Both keys live in
 [`core/default-config.yaml`](../core/default-config.yaml). Not sending the event forces the operator to invoke the
 force-destroy flow after optional manual intervention.
 
 **Race-end order (SHUTDOWN control event):** stop the data sink → drain tracked data-pipeline tasks (bounded by
 `runtime.data_pipeline_drain_timeout_s`) → ensure the control filter has stopped and all DLQ senders are dropped →
-await the DLQ handler finishing its queue and in-flight deliveries (same timeout budget; log and continue on timeout) → final synchronous offset commit of both consumers (bounded by `runtime.offset_final_commit_timeout_s`) → publish a final
+await the DLQ handler finishing its queue and in-flight deliveries (same timeout budget; log and continue on timeout) →
+final synchronous offset commit of both consumers (bounded by `runtime.offset_final_commit_timeout_s`) → publish a final
 Cloud Monitoring write-metrics sample (bounded by `runtime.write_metrics_final_timeout_s`; failure is non-fatal) →
 export Kafka and InfluxDB (heartbeat keeps running through export; each export/upload/publish step has a per-attempt
-timeout — see export subsections) → GCS upload → export-done → commit the `SHUTDOWN` offset → abort remaining control tasks.
+timeout — see export subsections) → GCS upload → export-done → commit the `SHUTDOWN` offset → abort remaining control
+tasks.
 
-**OS signal (SIGTERM / SIGINT, or Ctrl-C on Windows):** same data and DLQ drain and final offset commit, then the final write-metrics sample,
+**OS signal (SIGTERM / SIGINT, or Ctrl-C on Windows):** same data and DLQ drain and final offset commit, then the final
+write-metrics sample,
 then exit successfully **without** export and **without** export-done. A signal is not a race end. A signal received
 after SHUTDOWN has already started export is logged and ignored so the export sequence is not aborted.
 
@@ -473,11 +487,13 @@ ignored. The DLQ handler finishing as part of the race-end or signal drain does 
 Release builds use `panic = "abort"`: a panic aborts the process immediately without export or export-done; systemd is
 expected to restart Core. The supervisor does not treat panics as a distinct recoverable path.
 
-**Startup:** Core logs its release first (`core/version.txt`, baked in at build time). Core creates its topics, then waits
+**Startup:** Core logs its release first (`core/version.txt`, baked in at build time). Core creates its topics, then
+waits
 until each is visible in broker metadata (up to 60 seconds) before any consumer subscribes. If a topic never becomes
 visible, Core exits with failure and the supervisor restarts it.
 
-**Logs:** plain text by default. Set `CORE_LOG_COLOR=1` (or `true`) in the environment to enable ANSI colour, for local runs.
+**Logs:** plain text by default. Set `CORE_LOG_COLOR=1` (or `true`) in the environment to enable ANSI colour, for local
+runs.
 
 Race stop sequence around this: [Race destruction](flow-race_destruction.md).
 
@@ -493,9 +509,30 @@ on expiry) and retried up to `kafka.export.max_retries`. Bucket directory is `{r
 
 #### InfluxDB export
 
-InfluxDB export handled via InfluxDB plugin: [plugin directory](../core/influxdb-plugins/README.md). The HTTP trigger
-uses `persistence.export.attempt_timeout_s` per attempt and does not retry 4xx responses. A plugin response with any
-table `failures`, or with `tables_exported < tables_found`, is an export failure. After exporting, each file is uploaded
-as `{raceId}/{persistence.export.nested_path_in_bucket}/{file name}` (layout: [GCS](component-gcs_buckets.md)). Each
-upload is bounded by `gcp.upload_timeout_s`; export-done Pub/Sub by `gcp.pubsub_publish_timeout_s`. Effect on
-export-done: [failure policy](#shutdown-signals-and-failure-policy).
+Core exports InfluxDB itself. It writes one `{persistence.export.vm_export_dir}/{table}.parquet` per table. Tables are
+exported one at a time:
+
+1. Delete stale `*.parquet.partial` files left by an earlier crash, then list the tables from
+   `information_schema.tables` (schema `iox`).
+2. Read the table's `min(time)` and `max(time)`. A table without rows produces no file and still counts as exported.
+3. Query the table in half-open time windows of `persistence.export.query_window_s`
+   (`SELECT * ... WHERE time >= start AND time < end ORDER BY time`) over Arrow Flight. Stream each batch into
+   `{table}.parquet.partial`, using compression `persistence.export.compression_type` (ZSTD only, validated at startup)
+   at `compression_level`. Row groups use the Parquet writer default.
+4. Close the file and rename it to `{table}.parquet`.
+
+Memory stays bounded, so the export does not depend on database size. Core holds one Flight batch plus one row-group
+buffer; InfluxDB sorts and streams one window. The default 600 s window matches InfluxDB's default 10-minute file
+grouping (`gen1-duration`), so each window reads about one persisted Parquet file per table.
+
+Each table attempt is bounded by `persistence.export.attempt_timeout_s`. A failed or timed-out attempt deletes its
+partial file and retries only that table, up to `persistence.export.max_retries` times, with a doubling backoff from
+1 s. Any table that still fails, or `tables_exported < tables_found`, is an export failure, and nothing is uploaded.
+
+Limit: the bounds query for a single table reads every persisted file of that table. A table spanning more than
+`--query-file-limit` × `gen1-duration` (432 × 10 min = 72 h with InfluxDB defaults) needs that limit raised in
+[`influxdb3.service`](../core/startup/influxdb3.service).
+
+After exporting, each file is uploaded as `{raceId}/{persistence.export.nested_path_in_bucket}/{file name}` (layout:
+[GCS](component-gcs_buckets.md)). Each upload is bounded by `gcp.upload_timeout_s`; export-done Pub/Sub by
+`gcp.pubsub_publish_timeout_s`. Effect on export-done: [failure policy](#shutdown-signals-and-failure-policy).

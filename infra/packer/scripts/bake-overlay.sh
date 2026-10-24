@@ -29,7 +29,6 @@ fi
 
 if [[ -f /tmp/default-config.yaml ]]; then
   install -m 644 /tmp/default-config.yaml /chronoracer/default-config.yaml
-  install -d -m 755 /chronoracer/influxdb-plugins
 fi
 
 [[ -x /chronoracer/entrypoint.sh ]]

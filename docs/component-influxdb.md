@@ -8,7 +8,7 @@ Responsibility:
 
 - store sensor measurements for the race
 - serve queries from Core on the same VM
-- dump tables on export (plugin) so Core can upload to GCS
+- serve export queries (Arrow Flight) to Core: [InfluxDB export](component-core.md#influxdb-export)
 
 Core owns Kafka consume and control flow. The Influx Kafka plugin is unused.
 
@@ -36,8 +36,8 @@ Dashboard ingest signals are Core write counters, not this process: [Core](compo
 
 ## Startup
 
-Boot starts InfluxDB 3 Core before the Core process: [Core startup](../core/startup/README.md). Image + plugin
-payload: [Compute images](component-images.md).
+Boot starts InfluxDB 3 Core before the Core process: [Core startup](../core/startup/README.md). Image:
+[Compute images](component-images.md). No `--plugin-dir`, so no plugins are loaded.
 
 ## Memory budget
 
@@ -47,18 +47,8 @@ restarts it and replays the WAL while Core keeps its batches and Kafka buffers. 
 Inside the limit: write buffer `--force-snapshot-mem-size 30%`, `--exec-mem-pool-size 20%`, `--file-cache-size 10%`
 (Core never queries at runtime), `--force-snapshot-max-age 10m`. `--wal-flush-interval 100ms` shortens write
 acknowledgement. Values are starting points pending the L150 plus full-count-query verification run
-([proposal](proposals/runtime-performance.md)).
-
-## Plugin Python environment
-
-Core VM has no internet access. The Core image build installs all required plugin python packages before
-the image is published. It uses the Python bundled with the installed InfluxDB package to create
-`/chronoracer/influxdb-plugin-venv` and installs the package into that venv with its `pip`.
-
-The InfluxDB systemd unit sets `VIRTUAL_ENV` to this venv and disables InfluxDB bundled package manager. The venv is
-kept outside `/chronoracer/influxdb-plugins` because boot fetch replaces that directory with the current plugin
-payload. This makes the preinstalled dependency available to every fetched plugin without any boot-time package
-installation.
+([proposal](proposals/runtime-performance.md)). Export queries run inside the same limits, one bounded time window at
+a time: [InfluxDB export](component-core.md#influxdb-export).
 
 ## Tables
 
@@ -80,11 +70,3 @@ Line protocol Core writes (formatted by `LineWriter` in the batcher, one line pe
 | `driver` | tag       | driver id (may change mid-race via `CHDRV`)                |
 | `val`    | field     | measurement                                                |
 | `time`   | timestamp | nanosecond Unix time                                       |
-
-## Plugins
-
-Runtime files: [plugin directory](../core/influxdb-plugins/README.md). Payload layout: [GCS](component-gcs_buckets.md).
-
-| Plugin          | Code at                                                           |
-|-----------------|-------------------------------------------------------------------|
-| Export database | [export_database.py](../core/influxdb-plugins/export_database.py) |

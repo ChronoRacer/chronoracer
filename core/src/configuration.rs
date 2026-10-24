@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, bail};
 use compact_str::CompactString;
 use config::{Config, File};
+use parquet::basic::{Compression, ZstdLevel};
 use serde::Deserialize;
 use std::num::{NonZeroU16, NonZeroU32, NonZeroUsize};
 use std::path::PathBuf;
@@ -94,8 +95,29 @@ pub struct DatabaseExportConfig {
     /// Object-key prefix under `{raceId}/` in the race bucket (file name only after this).
     pub nested_path_in_bucket: String,
     pub max_retries: u16,
-    /// Per-attempt HTTP timeout for the `InfluxDB` export-plugin trigger.
+    /// Per-attempt wall-clock limit for exporting one table.
     pub attempt_timeout_s: NonZeroU16,
+    /// Time span of one export query. Bounds the rows `InfluxDB` sorts and streams per query.
+    pub query_window_s: NonZeroU32,
+}
+
+impl DatabaseExportConfig {
+    /// Only ZSTD is compiled into the Parquet writer.
+    pub fn parquet_compression(&self) -> Result<Compression> {
+        if !self.compression_type.eq_ignore_ascii_case("zstd") {
+            bail!(
+                "persistence.export.compression_type must be ZSTD, got '{}'",
+                self.compression_type
+            );
+        }
+        let level = ZstdLevel::try_new(i32::from(self.compression_level)).with_context(|| {
+            format!(
+                "persistence.export.compression_level must be in 1..=22, got {}",
+                self.compression_level
+            )
+        })?;
+        Ok(Compression::ZSTD(level))
+    }
 }
 
 #[derive(Deserialize)]
@@ -262,6 +284,8 @@ impl CoreConfig {
             );
         }
 
+        persistence.export.parquet_compression()?;
+
         for sensor_id in &self.persistence.fast_flush_sensor_ids {
             if sensor_id.len() > MAX_SENSOR_ID_BYTES {
                 bail!("Sensor ID '{sensor_id}' too long. At most {MAX_SENSOR_ID_BYTES} bytes");
@@ -374,6 +398,7 @@ mod mock {
                 nested_path_in_bucket: "export/db".to_string(),
                 max_retries: 2,
                 attempt_timeout_s: NonZeroU16::new(600).unwrap(),
+                query_window_s: NonZeroU32::new(600).unwrap(),
             }
         }
     }
@@ -732,6 +757,7 @@ export:
   nested_path_in_bucket: "export/db"
   max_retries: 3
   attempt_timeout_s: 600
+  query_window_s: 600
 "#;
         assert!(
             config::Config::builder()
@@ -741,6 +767,37 @@ export:
                 .try_deserialize::<crate::configuration::PersistenceConfig>()
                 .is_err()
         );
+    }
+
+    #[test]
+    fn validate_accepts_zstd_case_insensitively() {
+        let mut config = CoreConfig::mock_config();
+        for name in ["zstd", "ZSTD", "Zstd"] {
+            config.persistence.export.compression_type = CompactString::from(name);
+            assert!(config.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn validate_rejects_non_zstd_compression() {
+        let mut config = CoreConfig::mock_config();
+        config.persistence.export.compression_type = CompactString::from("SNAPPY");
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("compression_type"));
+    }
+
+    #[test]
+    fn validate_rejects_out_of_range_zstd_level() {
+        let mut config = CoreConfig::mock_config();
+        for invalid in [0, 23] {
+            config.persistence.export.compression_level = invalid;
+            let err = config.validate().unwrap_err().to_string();
+            assert!(err.contains("compression_level"));
+        }
+        for valid in [1, 22] {
+            config.persistence.export.compression_level = valid;
+            assert!(config.validate().is_ok());
+        }
     }
 
     #[test]

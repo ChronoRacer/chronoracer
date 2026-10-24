@@ -17,7 +17,7 @@ Each concept has one owner. Other docs link it. Do not copy or rephrase the same
 | Kafka boot scripts                                                                     | [Kafka startup](../kafka/startup/README.md)                       |
 | Core layers and in-process flows                                                       | [Core](component-core.md)                                         |
 | Core boot scripts                                                                      | [Core startup](../core/startup/README.md)                         |
-| Influx tables and plugins                                                              | [InfluxDB](component-influxdb.md)                                 |
+| Influx tables, access, memory budget                                                   | [InfluxDB](component-influxdb.md)                                 |
 | Race-fleet health dashboards and datasource                                            | [Dashboard](component-dashboard.md)                               |
 | Near-real-time race preview                                                            | [Telemetry](component-telemetry.md)                               |
 | Dashboard/Telemetry split and rejected options                                         | [ADR - Dashboard](adr-dashboard.md)                               |
