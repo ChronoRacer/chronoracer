@@ -1,4 +1,5 @@
 use super::*;
+use crate::messaging::partial_message::SourceOffset;
 use crate::processing::sensor_data_message::{AbsoluteSensorReading, UnwoundSensorDataMessage};
 use crate::runtime_configuration::RetainReadTimeValue;
 use crate::telemetry::proto::telemetry_service_client::TelemetryServiceClient;
@@ -47,7 +48,7 @@ fn message(sensor_id: &str, points: u64) -> Arc<UnwoundSensorDataMessage> {
     Arc::new(UnwoundSensorDataMessage {
         sensor_id: Arc::from(sensor_id),
         readings,
-        source: Default::default(),
+        source: SourceOffset::default(),
         created_ms: None,
     })
 }
@@ -83,7 +84,7 @@ fn fat_batch(index: usize) -> Arc<UnwoundSensorDataMessage> {
     Arc::new(UnwoundSensorDataMessage {
         sensor_id: Arc::from(sensor_id),
         readings,
-        source: Default::default(),
+        source: SourceOffset::default(),
         created_ms: None,
     })
 }

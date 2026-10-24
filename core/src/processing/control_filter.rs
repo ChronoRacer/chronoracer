@@ -115,11 +115,11 @@ mod tests {
         let (ledger, sink) = recording_ledger();
         let settler = InvalidSettler::new(recording_ledger().0, ledger.clone());
         let (dlq_tx, dlq_rx) = invalid_message_channel(1, 1, settler);
-        if !dlq_open {
-            drop(dlq_rx);
-        } else {
+        if dlq_open {
             // Keep the receiver alive for the test's duration.
             Box::leak(Box::new(dlq_rx));
+        } else {
+            drop(dlq_rx);
         }
         let (control_tx, control_rx) = tokio::sync::mpsc::channel(8);
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
@@ -207,7 +207,7 @@ mod tests {
         assert_eq!(fixture.shutdown_rx.try_recv().unwrap(), at(0));
         assert_eq!(fixture.driver_id.get().as_str(), "initial");
         assert!(fixture.filter.shutdown_handler_tx.is_none());
-        assert!(fixture.sink.stored().is_empty());
+        assert_eq!(fixture.sink.stored(), [] as [(i32, i64); 0]);
         assert_eq!(fixture.ledger.lag()[0].pending, 1);
     }
 
@@ -263,7 +263,7 @@ mod tests {
 
         fixture.filter.ingest().await;
 
-        assert!(fixture.sink.stored().is_empty());
+        assert_eq!(fixture.sink.stored(), [] as [(i32, i64); 0]);
         assert_eq!(fixture.ledger.lag()[0].pending, 1);
     }
 

@@ -80,6 +80,7 @@ impl SensorDataSplitter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::messaging::partial_message::SourceOffset;
     use crate::processing::sensor_data_message::{AbsoluteSensorReading, UnwoundSensorDataMessage};
     use std::sync::Arc;
     use std::time::Duration;
@@ -93,7 +94,7 @@ mod tests {
                 value: 10.0,
                 timestamp: 1_000_000_000,
             }]),
-            source: Default::default(),
+            source: SourceOffset::default(),
             created_ms: None,
         })
     }
@@ -102,7 +103,7 @@ mod tests {
         let mut message = UnwoundSensorDataMessage {
             sensor_id: Arc::from(sensor_id),
             readings: Box::new([]),
-            source: Default::default(),
+            source: SourceOffset::default(),
             created_ms: None,
         };
         message.source.partition = 2;

@@ -1,4 +1,5 @@
 use super::*;
+use crate::messaging::partial_message::SourceOffset;
 use crate::processing::sensor_data_message::AbsoluteSensorReading;
 use std::thread;
 use std::time::Duration;
@@ -66,7 +67,7 @@ fn message(sensor_id: &str, points: u64) -> Arc<UnwoundSensorDataMessage> {
     Arc::new(UnwoundSensorDataMessage {
         sensor_id: Arc::from(sensor_id),
         readings,
-        source: Default::default(),
+        source: SourceOffset::default(),
         created_ms: None,
     })
 }
@@ -624,7 +625,7 @@ fn full_handoff_misses_are_split_by_each_subscribers_sensors() {
         (as_u64(HANDOFF_SLOTS) + 1, 6)
     );
     let read = drained(&preview, &b);
-    assert!(read.chunks.is_empty());
+    assert_eq!(read.chunks, [] as [(u64, std::string::String, usize); 0]);
     let gap = read.gap.expect("b lost refused points");
     assert_eq!((gap.first_sequence, gap.dropped), (1, 6));
 }

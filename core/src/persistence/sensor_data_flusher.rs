@@ -769,7 +769,7 @@ mod tests {
         .await;
 
         assert!(pending.is_err());
-        assert!(sink.stored().is_empty());
+        assert_eq!(sink.stored(), [] as [(i32, i64); 0]);
         assert_eq!(context.offsets.lag()[0].pending, 1);
     }
 
@@ -874,7 +874,7 @@ mod tests {
             .expect("normal-only flusher must drain and terminate");
 
         assert_eq!(sink.positions(), [(0, 2)]);
-        assert!(pool_rx.try_recv().unwrap().is_empty());
+        assert_eq!(pool_rx.try_recv().unwrap(), "");
         assert_eq!(server.join().unwrap().len(), 1);
     }
 
