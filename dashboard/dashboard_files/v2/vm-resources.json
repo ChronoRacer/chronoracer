@@ -1,0 +1,1076 @@
+{
+  "annotations": [
+    {
+      "kind": "AnnotationQuery",
+      "spec": {
+        "builtIn": true,
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "query": {
+          "datasource": {
+            "name": "-- Grafana --"
+          },
+          "group": "grafana",
+          "kind": "DataQuery",
+          "spec": {},
+          "version": "v0"
+        }
+      }
+    }
+  ],
+  "cursorSync": "Crosshair",
+  "description": "Uptime and whole-VM CPU, memory, disk, and network for Core, Kafka, and Analysis.",
+  "editable": true,
+  "elements": {
+    "1": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "gcp-monitoring"
+                    },
+                    "group": "stackdriver",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "queryType": "timeSeriesList",
+                      "timeSeriesList": {
+                        "alignmentPeriod": "cloud-monitoring-auto",
+                        "crossSeriesReducer": "REDUCE_MEAN",
+                        "filters": [
+                          "metric.type",
+                          "=",
+                          "compute.googleapis.com/instance/uptime_total",
+                          "AND",
+                          "metadata.system_labels.name",
+                          "=",
+                          "core"
+                        ],
+                        "groupBys": [
+                          "resource.label.instance_id"
+                        ],
+                        "perSeriesAligner": "ALIGN_MAX",
+                        "preprocessor": "none",
+                        "projectName": "$project",
+                        "view": "FULL"
+                      }
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 1,
+        "links": [],
+        "title": "Core",
+        "vizConfig": {
+          "group": "stat",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "thresholds"
+                },
+                "min": 0,
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": 0
+                    },
+                    {
+                      "color": "green",
+                      "value": 60
+                    }
+                  ]
+                },
+                "unit": "s"
+              },
+              "overrides": []
+            },
+            "options": {
+              "colorMode": "value",
+              "graphMode": "none",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "percentChangeColorMode": "standard",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ],
+                "fields": "",
+                "values": false
+              },
+              "showPercentChange": false,
+              "textMode": "auto",
+              "wideLayout": true
+            }
+          },
+          "version": "13.0.2"
+        }
+      }
+    },
+    "2": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "gcp-monitoring"
+                    },
+                    "group": "stackdriver",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "queryType": "timeSeriesList",
+                      "timeSeriesList": {
+                        "alignmentPeriod": "cloud-monitoring-auto",
+                        "crossSeriesReducer": "REDUCE_MEAN",
+                        "filters": [
+                          "metric.type",
+                          "=",
+                          "compute.googleapis.com/instance/uptime_total",
+                          "AND",
+                          "metadata.system_labels.name",
+                          "=",
+                          "kafka"
+                        ],
+                        "groupBys": [
+                          "resource.label.instance_id"
+                        ],
+                        "perSeriesAligner": "ALIGN_MAX",
+                        "preprocessor": "none",
+                        "projectName": "$project",
+                        "view": "FULL"
+                      }
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 2,
+        "links": [],
+        "title": "Kafka",
+        "vizConfig": {
+          "group": "stat",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "thresholds"
+                },
+                "min": 0,
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": 0
+                    },
+                    {
+                      "color": "green",
+                      "value": 60
+                    }
+                  ]
+                },
+                "unit": "s"
+              },
+              "overrides": []
+            },
+            "options": {
+              "colorMode": "value",
+              "graphMode": "none",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "percentChangeColorMode": "standard",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ],
+                "fields": "",
+                "values": false
+              },
+              "showPercentChange": false,
+              "textMode": "auto",
+              "wideLayout": true
+            }
+          },
+          "version": "13.0.2"
+        }
+      }
+    },
+    "3": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "gcp-monitoring"
+                    },
+                    "group": "stackdriver",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "queryType": "timeSeriesList",
+                      "timeSeriesList": {
+                        "alignmentPeriod": "cloud-monitoring-auto",
+                        "crossSeriesReducer": "REDUCE_MEAN",
+                        "filters": [
+                          "metric.type",
+                          "=",
+                          "compute.googleapis.com/instance/uptime_total",
+                          "AND",
+                          "metadata.system_labels.name",
+                          "=",
+                          "analysis"
+                        ],
+                        "groupBys": [
+                          "resource.label.instance_id"
+                        ],
+                        "perSeriesAligner": "ALIGN_MAX",
+                        "preprocessor": "none",
+                        "projectName": "$project",
+                        "view": "FULL"
+                      }
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 3,
+        "links": [],
+        "title": "Analysis",
+        "vizConfig": {
+          "group": "stat",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "thresholds"
+                },
+                "min": 0,
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": 0
+                    },
+                    {
+                      "color": "green",
+                      "value": 60
+                    }
+                  ]
+                },
+                "unit": "s"
+              },
+              "overrides": []
+            },
+            "options": {
+              "colorMode": "value",
+              "graphMode": "none",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "percentChangeColorMode": "standard",
+              "reduceOptions": {
+                "calcs": [
+                  "lastNotNull"
+                ],
+                "fields": "",
+                "values": false
+              },
+              "showPercentChange": false,
+              "textMode": "auto",
+              "wideLayout": true
+            }
+          },
+          "version": "13.0.2"
+        }
+      }
+    },
+    "4": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "gcp-monitoring"
+                    },
+                    "group": "stackdriver",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "aliasBy": "{{resource.label.instance_id}}",
+                      "queryType": "timeSeriesList",
+                      "timeSeriesList": {
+                        "alignmentPeriod": "cloud-monitoring-auto",
+                        "crossSeriesReducer": "REDUCE_MEAN",
+                        "filters": [
+                          "metric.type",
+                          "=",
+                          "compute.googleapis.com/instance/cpu/utilization",
+                          "AND",
+                          "metadata.system_labels.name",
+                          "=",
+                          "$vm"
+                        ],
+                        "groupBys": [
+                          "resource.label.instance_id"
+                        ],
+                        "perSeriesAligner": "ALIGN_MEAN",
+                        "preprocessor": "none",
+                        "projectName": "$project",
+                        "view": "FULL"
+                      }
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 4,
+        "links": [],
+        "title": "$vm CPU",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "line",
+                  "fillOpacity": 10,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "smooth",
+                  "lineWidth": 1,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "never",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "percentunit"
+              },
+              "overrides": []
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [],
+                "displayMode": "list",
+                "placement": "bottom",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "single",
+                "sort": "none"
+              }
+            }
+          },
+          "version": "13.0.2"
+        }
+      }
+    },
+    "5": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "gcp-monitoring"
+                    },
+                    "group": "stackdriver",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "aliasBy": "{{resource.label.instance_id}} used",
+                      "queryType": "timeSeriesList",
+                      "timeSeriesList": {
+                        "alignmentPeriod": "cloud-monitoring-auto",
+                        "crossSeriesReducer": "REDUCE_MEAN",
+                        "filters": [
+                          "metric.type",
+                          "=",
+                          "agent.googleapis.com/memory/percent_used",
+                          "AND",
+                          "metadata.system_labels.name",
+                          "=",
+                          "$vm",
+                          "AND",
+                          "metric.label.state",
+                          "=",
+                          "used"
+                        ],
+                        "groupBys": [
+                          "resource.label.instance_id"
+                        ],
+                        "perSeriesAligner": "ALIGN_MEAN",
+                        "preprocessor": "none",
+                        "projectName": "$project",
+                        "view": "FULL"
+                      }
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 5,
+        "links": [],
+        "title": "$vm Memory used",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "line",
+                  "fillOpacity": 10,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "smooth",
+                  "lineWidth": 1,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "never",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "percent"
+              },
+              "overrides": []
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [],
+                "displayMode": "list",
+                "placement": "bottom",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "single",
+                "sort": "none"
+              }
+            }
+          },
+          "version": "13.0.2"
+        }
+      }
+    },
+    "6": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "gcp-monitoring"
+                    },
+                    "group": "stackdriver",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "aliasBy": "{{resource.label.instance_id}} {{metric.label.device}}",
+                      "queryType": "timeSeriesList",
+                      "timeSeriesList": {
+                        "alignmentPeriod": "cloud-monitoring-auto",
+                        "crossSeriesReducer": "REDUCE_MEAN",
+                        "filters": [
+                          "metric.type",
+                          "=",
+                          "agent.googleapis.com/disk/percent_used",
+                          "AND",
+                          "metadata.system_labels.name",
+                          "=",
+                          "$vm",
+                          "AND",
+                          "metric.label.state",
+                          "=",
+                          "used"
+                        ],
+                        "groupBys": [
+                          "resource.label.instance_id",
+                          "metric.label.device"
+                        ],
+                        "perSeriesAligner": "ALIGN_MEAN",
+                        "preprocessor": "none",
+                        "projectName": "$project",
+                        "view": "FULL"
+                      }
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 6,
+        "links": [],
+        "title": "$vm Disk used",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "line",
+                  "fillOpacity": 10,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "smooth",
+                  "lineWidth": 1,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "never",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
+                  ]
+                },
+                "unit": "percent"
+              },
+              "overrides": []
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [],
+                "displayMode": "list",
+                "placement": "bottom",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "single",
+                "sort": "none"
+              }
+            }
+          },
+          "version": "13.0.2"
+        }
+      }
+    },
+    "7": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "gcp-monitoring"
+                    },
+                    "group": "stackdriver",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "aliasBy": "{{resource.label.instance_id}} {{metric.label.direction}}",
+                      "queryType": "timeSeriesList",
+                      "timeSeriesList": {
+                        "alignmentPeriod": "cloud-monitoring-auto",
+                        "crossSeriesReducer": "REDUCE_SUM",
+                        "filters": [
+                          "metric.type",
+                          "=",
+                          "agent.googleapis.com/interface/traffic",
+                          "AND",
+                          "metadata.system_labels.name",
+                          "=",
+                          "$vm"
+                        ],
+                        "groupBys": [
+                          "resource.label.instance_id",
+                          "metric.label.direction"
+                        ],
+                        "perSeriesAligner": "ALIGN_RATE",
+                        "preprocessor": "none",
+                        "projectName": "$project",
+                        "view": "FULL"
+                      }
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 7,
+        "links": [],
+        "title": "$vm Network",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                },
+                "custom": {
+                  "drawStyle": "line",
+                  "fillOpacity": 10,
+                  "lineInterpolation": "smooth",
+                  "showPoints": "never",
+                  "spanNulls": false
+                },
+                "unit": "Bps"
+              },
+              "overrides": []
+            },
+            "options": {}
+          },
+          "version": "13.0.2"
+        }
+      }
+    }
+  },
+  "layout": {
+    "kind": "RowsLayout",
+    "spec": {
+      "rows": [
+        {
+          "kind": "RowsLayoutRow",
+          "spec": {
+            "collapse": false,
+            "layout": {
+              "kind": "GridLayout",
+              "spec": {
+                "items": [
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "1"
+                      },
+                      "height": 4,
+                      "width": 8,
+                      "x": 0,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "2"
+                      },
+                      "height": 4,
+                      "width": 8,
+                      "x": 8,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "3"
+                      },
+                      "height": 4,
+                      "width": 8,
+                      "x": 16,
+                      "y": 0
+                    }
+                  }
+                ]
+              }
+            },
+            "title": "VM uptime"
+          }
+        },
+        {
+          "kind": "RowsLayoutRow",
+          "spec": {
+            "collapse": false,
+            "layout": {
+              "kind": "GridLayout",
+              "spec": {
+                "items": [
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "4"
+                      },
+                      "height": 8,
+                      "repeat": {
+                        "direction": "h",
+                        "mode": "variable",
+                        "value": "vm"
+                      },
+                      "width": 24,
+                      "x": 0,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "5"
+                      },
+                      "height": 8,
+                      "repeat": {
+                        "direction": "h",
+                        "mode": "variable",
+                        "value": "vm"
+                      },
+                      "width": 24,
+                      "x": 0,
+                      "y": 8
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "6"
+                      },
+                      "height": 8,
+                      "repeat": {
+                        "direction": "h",
+                        "mode": "variable",
+                        "value": "vm"
+                      },
+                      "width": 24,
+                      "x": 0,
+                      "y": 16
+                    }
+                  },
+                  {
+                    "kind": "GridLayoutItem",
+                    "spec": {
+                      "element": {
+                        "kind": "ElementReference",
+                        "name": "7"
+                      },
+                      "height": 8,
+                      "repeat": {
+                        "direction": "h",
+                        "mode": "variable",
+                        "value": "vm"
+                      },
+                      "width": 24,
+                      "x": 0,
+                      "y": 24
+                    }
+                  }
+                ]
+              }
+            },
+            "title": "Whole-VM resources"
+          }
+        }
+      ]
+    }
+  },
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "apps",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [
+        "race-fleet"
+      ],
+      "targetBlank": false,
+      "title": "Dashboards",
+      "tooltip": "Open another race operations dashboard",
+      "type": "dashboards"
+    }
+  ],
+  "liveNow": false,
+  "preload": false,
+  "tags": [
+    "race-fleet"
+  ],
+  "timeSettings": {
+    "autoRefresh": "",
+    "autoRefreshIntervals": [
+      "5s",
+      "20s",
+      "60s"
+    ],
+    "fiscalYearStartMonth": 0,
+    "from": "now-1h",
+    "hideTimepicker": false,
+    "timezone": "browser",
+    "to": "now"
+  },
+  "title": "VM Resources",
+  "variables": [
+    {
+      "kind": "ConstantVariable",
+      "spec": {
+        "current": {
+          "text": "chronoracer",
+          "value": "chronoracer"
+        },
+        "hide": "hideVariable",
+        "name": "project",
+        "query": "chronoracer",
+        "skipUrlSync": true
+      }
+    },
+    {
+      "kind": "CustomVariable",
+      "spec": {
+        "allowCustomValue": false,
+        "current": {
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        },
+        "hide": "dontHide",
+        "includeAll": true,
+        "label": "VM",
+        "multi": true,
+        "name": "vm",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "kafka",
+            "value": "kafka"
+          },
+          {
+            "selected": false,
+            "text": "core",
+            "value": "core"
+          },
+          {
+            "selected": false,
+            "text": "analysis",
+            "value": "analysis"
+          }
+        ],
+        "query": "kafka,core,analysis",
+        "skipUrlSync": false,
+        "valuesFormat": "csv"
+      }
+    }
+  ]
+}
