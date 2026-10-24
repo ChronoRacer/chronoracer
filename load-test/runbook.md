@@ -1,7 +1,6 @@
 # Core load-test runbook
 
-Use [`load-testing-core-config.yaml`](load-testing-core-config.yaml) throughout. It selects the initial driver and
-10-second offset diagnostics; it does **not** change the 60-second Monitoring publication interval.
+Use [`load-testing-core-config.yaml`](load-testing-core-config.yaml) throughout. Tune if necessary.
 Configuration semantics: [Core startup](../core/startup/README.md). Evidence interpretation:
 [observability](observability.md). Historical measurements: [previous results](../docs/load-test-results.md).
 
