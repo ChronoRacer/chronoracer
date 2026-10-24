@@ -1,8 +1,12 @@
 # Load test results
 
+Historical evidence from the 2026-10-22 release. Metric fields, phase overlays, service dependencies and rates below
+describe that test only; current procedure and baseline are owned by the [load-test runbook](../load-test/runbook.md).
+
 Test of the race stack on GCP, 2026-10-22, `RACE_ID=lt1021a`, 17:55-21:11Z. The stack was destroyed afterwards.
 Machine types and their rationale: [ADR - VM types](adr-vm-types.md). Harness: [`../load-test/`](../load-test/README.md).
-Field meanings: Core [Pipeline report](component-core.md#pipeline-report), generator
+The historical Core reports included decoded, preview and write-RPC fields that are no longer published; the current
+contract is [Core Monitoring](component-core.md#cloud-monitoring-write-counters). Generator field meanings:
 [Report](../curls/load_test/README.md#report).
 
 Raw evidence (per run `run-metadata.json`, generator logs, `artifacts/steady-summary.json`, `summary.txt`,

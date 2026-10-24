@@ -1,4 +1,4 @@
-# Load-test race stack — infra readiness (read-only audit)
+# Load-test race stack infrastructure
 
 **Project:** `chronoracer` · **Region/zone:** `europe-west1` / `europe-west1-b` · **Kafka FQDN:** `ingest.chronoracer.live.`
 
@@ -58,8 +58,8 @@ terraform destroy -input=false -auto-approve -lock-timeout=5m \
 Order for a manual load test:
 
 1. **Choose `<RACE_ID>`** (1–12 chars, `[a-z0-9_-]`, matches Terraform validation).
-2. **Upload Core operator YAML** — required for boot (`render-config.sh` `gcloud storage cat` the metadata URI). Example: `load-test/core-config.yaml` → `gs://chronoracer-race/<RACE_ID>/core-config.yaml` (controller `apply` HEAD-check; Terraform does not).
-3. **Core binary** — boot pulls `artifacts_bucket` via `core/current.json` (today `0.1.4-load`). If you ship your own build instead: publish to artifacts + bump pointer, **or** after IAP SSH to `core`, replace `/chronoracer/core` and restart `chronoracer-core` (bypasses controller/Relay).
+2. **Upload Core operator YAML** — required for boot (`render-config.sh` `gcloud storage cat` the metadata URI). Example: `load-test/load-testing-core-config.yaml` → `gs://chronoracer-race/<RACE_ID>/core-config.yaml` (controller `apply` HEAD-check; Terraform does not).
+3. **Core binary** — boot pulls the published payload via `core/current.json`. Verify the deployed release against the current source before testing; follow [payload publishing](../core/startup/README.md) if the pointer is stale. Do not use the historical `0.1.4-load` release as the current baseline.
 4. **`terraform init` + targeted apply** (commands above). Expect state lock on `race/default.tfstate` (5m timeout; no force-unlock).
 5. **Wait for boot** — Kafka: TLS from Secret Manager, topics (`event` at Kafka boot; `data`/`control`/`heartbeat`/`dlq` from Core). Core: Influx token secret, payload fetch, merged config. No manual Kafka OAuth/ACL setup (OAuth validator in broker config; clients use Auth0 per `platform.json`).
 6. **DNS** — A record created by apply (TTL 30s). Load generators use `ingest.chronoracer.live:9094` (TLS + OAuth).
@@ -67,11 +67,11 @@ Order for a manual load test:
 8. **Readiness** — Relay/Firestore `applied` phase and heartbeat-gated status are **not** updated; verify Kafka listener, Core logs, and heartbeat on private topic yourself.
 9. **Telemetry** — public `run.app` URL from terraform output `telemetry_url`; browser Auth0 login (same secret as Dashboard).
 
-**Not required for this stack:** Analysis VM, Relay race start, Cloud Build controller, Firestore mutex/`runToken`, controller output persistence, Pub/Sub wiring (Core uses existing `export-done` topic if export runs).
+**Not required for the manual ingest stack:** Analysis VM, Relay race start, Cloud Build controller, Firestore mutex/`runToken`, controller output persistence. For the final Core export test, the existing `export-done` topic and Core publish IAM are required. The manual stack does not set Relay's `exporting` state: do not expect a direct SHUTDOWN to exercise Relay teardown. See the [export procedure](runbook.md#4-export-flow-last).
 
 ## Notes / surprises
 
 - Targeted plan: **6 adds**, analysis data sources skipped; `analysis_instance` output omitted from plan (resource not in graph).
-- Full plan without `-target` still resolves analysis image/SA (would plan 7 VMs worth of deps).
+- Full plan without `-target` still resolves analysis image/SA (would plan the Analysis VM and its dependencies).
 - `outputs.tf` still defines `analysis_instance`; harmless if analysis never applied.
 - Core config GCS path is **mandatory** at boot, not optional.

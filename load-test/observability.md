@@ -1,305 +1,107 @@
-# Load test observability (15k pts/s baseline)
+# Load-test evidence and Monitoring interpretation
 
-Project `chronoracer`, region `europe-west1`, zone `europe-west1-b`. Placeholders: `<RACE_ID>`, `<START>`, `<END>` (RFC3339, e.g. `2026-10-21T18:00:00+02:00`).
+The metric contract, kinds, units, cadence and outcome semantics are owned by
+[Core's Cloud Monitoring documentation](../docs/component-core.md#cloud-monitoring-write-counters).
+This document owns how the harness collects and interprets that evidence.
 
-Race bucket: `chronoracer-race` ([`infra/contract/names.json`](../infra/contract/names.json)). VM **names** are always `core` and `kafka`; disambiguate races with label `race-id=<RACE_ID>` or the test time window.
+## Collection
 
-## 1. Core operator overlay (`core-config.yaml`)
+`run-scenario.sh` invokes `collect-artifacts.sh` after the run. Defaults are 120 s before generation and 180 s after
+final producer flush, with a 420 s wait after generation (drain padding plus native metric visibility latency).
+`METRIC_WAIT_S` overrides the wait; increasing the collection's after-padding also requires a longer wait.
+These delays do not guarantee drain: inspect post-run lag and re-collect if needed.
 
-### Merge order
-
-[`render-config.sh`](../core/startup/render-config.sh): `default-config.yaml` ← operator GCS object ← platform YAML (platform wins). [`merge_config.py`](../core/startup/merge_config.py) deep-merges dicts.
-
-**Required:** `gs://chronoracer-race/<RACE_ID>/core-config.yaml` must exist; boot runs `gcloud storage cat` on metadata `core-config-gcs-uri` (fail closed if missing). Empty mapping `{}` is valid YAML but leaves `race.initial_driver_id` at default `placeholder` (valid); Relay `/race/start` injects `race.initial_driver_id` from `initialDriverId` and overrides operator values.
-
-**Platform overlay forces** (operator cannot override): `race.race_id`, `kafka.brokers`, `kafka.sensor_data_topic.name`, `kafka.control_event_topic.name`, `kafka.heartbeat_topic.name`, `persistence.db_port`, `persistence.db_name`, `persistence.db_password` (Influx admin token from VM secret), `telemetry.port`, `gcp.enabled`, `gcp.project_id`, `gcp.export_bucket`, `gcp.pubsub_topic_id`.
-
-**Core validation** ([`configuration.rs`](../core/src/configuration.rs)): non-empty `kafka.group_id`; `race.initial_driver_id` driver-id rules; telemetry subscriber bounds; persistence retry backoff ordering. Operator YAML is not schema-validated by Relay.
-
-**Minimal overlay for this test** (see [`core-config.yaml`](./core-config.yaml)):
-
-```yaml
-kafka:
-  sensor_data_consumer:
-    offset_lag_log_interval_s: 10
-race:
-  initial_driver_id: loadtest
-```
-
-Upload (do not run from automation; read-only rule):
+Monitoring uses Application Default Credentials (`gcloud auth application-default login` for an operator).
+Cloud Logging/SSH use gcloud credentials. The operator needs Monitoring time-series read, Logging read,
+Compute instance discovery, IAP SSH, bucket read/write for baseline and evidence, plus the infrastructure permissions
+in [infra-readiness](infra-readiness.md). Core's own metric-write permissions are part of the deployed service account.
 
 ```bash
-gcloud storage cp load-test/core-config.yaml \
-  gs://chronoracer-race/<RACE_ID>/core-config.yaml
+# After the padded window and visibility lag have elapsed:
+RACE_ID=<race-id> load-test/collect-artifacts.sh load-test/runs/L100
+/tmp/lt-venv/bin/python load-test/steady_summary.py load-test/runs/L100
+
+# Standalone raw Monitoring export:
+/tmp/lt-venv/bin/python load-test/collect_metrics.py --race-id <race-id> \
+  --start '<RFC3339-with-timezone>' --end '<RFC3339-with-timezone>' \
+  --output-dir load-test/runs/L100/artifacts/metrics
 ```
 
-After upload, restart Core or re-run race apply so `render-config.sh` runs if the VM already booted with an older object.
+All seven Core metric families are collected, along with Core/Kafka host CPU, memory, disk, network, and native
+Telemetry Cloud Run instance count, request count and request latency. VMs are resolved by race label, then queries
+use numeric instance IDs. Cloud Run queries use service and region and retain revision/resource labels.
+No cross-series reduction or API alignment is applied.
 
----
+CSV columns include interval start/end, metric kind/value type, resource type/labels, metric labels and value.
+Labels are JSON, so `outcome`, memory `state`, disks, interfaces and Cloud Run revisions remain separate.
+Distribution values retain bucket options/counts and moments as JSON. Empty CSVs are **missing data**.
+`metrics/meta.json` records point counts, missing series and individual API errors; collection returns nonzero for
+missing required Core scalar families or API errors. Missing idle latency or Cloud Run activity is recorded without
+inventing samples. The steady summary separately requires usable in-run samples.
 
-## 2. Logs (Cloud Logging + journal fallback)
+## Steady summary
 
-### Path to Cloud Logging
+The first 60 s are warmup. Cumulative rates use adjacent samples in the same resource/metric-label set and process
+epoch. Only intervals fully inside the steady window are used, avoiding interpolation at the edges. Counter resets
+are identified by `start_time`, including a restart whose new value exceeds the previous value.
+Sink blocked milliseconds divided by elapsed seconds and by ten gives percentage.
 
-- Core/Kafka images: [`enable-ops-agent.sh`](../infra/packer/scripts/enable-ops-agent.sh) installs [`core/startup/ops-agent.yaml`](../core/startup/ops-agent.yaml) / [`kafka/startup/ops-agent.yaml`](../kafka/startup/ops-agent.yaml).
-- **Receivers:** `systemd_journald` only (no syslog files).
-- **Processors:** exclude everything except `chronoracer-core.service` (Core VM) or `kafka.service` (Kafka VM). `influxdb3.service` journal lines are not shipped (use journal on the Core VM); it spams too much on INFO (at least 10 logs per second) and loses observability on warn.
-- Core stdout (Rust `tracing` → journal) lands in `jsonPayload.MESSAGE` with `jsonPayload._SYSTEMD_UNIT`.
-- Project log **exclusions** drop Ops Agent self-noise on GCE ([`infra/always-on/logging.tf`](../infra/always-on/logging.tf)); they do not drop application journal lines.
+Lag is a gauge: first/last/max describe sampled backlog, not a count of lost points. Missing lag remains unknown.
+Post-run values help check drain; inspect the full raw series when a fault creates a short spike between samples.
+Persistence latency distributions are merged by bucket counts, with count-weighted means. Percentiles are bucket
+bounds, including an explicit overflow indication; they are not exact percentiles or averages of per-window p99s.
+Samples represent batches, not every individual point. Missing distribution windows cannot be recovered from counters.
 
-Resolve Core `instance_id` for tight filters (recommended when VM names are reused):
+Current metrics do not provide decoded-point throughput, preview latency or write-RPC latency. Those historical
+fields are listed as unavailable in the summary. Direct [Watch probe](watch_probe.md) lag includes generator reading
+batch age and transport delay; it is a separate measure from Core persistence latency.
 
-```bash
-CORE_ID="$(gcloud compute instances list --project=chronoracer \
-  --filter='labels.race-id=<RACE_ID> AND name=core' \
-  --format='value(id)')"
-```
+Producer evidence remains local because the producer does not publish Monitoring metrics. Final `[Summary]` counters
+are authoritative delivery totals; periodic `failed` values are window counts. Never add summary totals to report
+counts. Aggregate steady producer rate uses each process's elapsed report windows, not an assumed six reports per
+minute. Report-index CSV output is diagnostic only; processes do not have identical UTC report boundaries.
 
-Shared filter prefix:
+## Loss checks
 
-```text
-resource.type="gce_instance"
-resource.labels.project_id="chronoracer"
-resource.labels.instance_id="${CORE_ID}"
-timestamp>="<START>" AND timestamp<="<END>"
-```
+Under exclusive traffic, an idle pre-run accepted-lines sample and a fully drained post-run sample enclose the
+producer's actual point total. `accepted_lines_check` records these timestamps and compares cumulative increments.
+The enclosing Monitoring window is deliberately wider than generation; do not rate-interpolate it into an exact
+per-run counter. A missing baseline, no final sample, unexplained reset, undrained backlog or competing traffic makes
+an exact loss claim inconclusive. The summary never substitutes zero for missing boundaries.
 
-If `${CORE_ID}` is empty, fall back to `resource.labels.instance_id` from the test window only, or `labels."compute.googleapis.com/resource_name"="core"` plus time bounds (may include other races if names were reused in retention).
+Accepted lines count acknowledgements, including replayed writes. They are not unique stored points. Core restart
+may replay unsettled messages, and abrupt termination may lose the previous process's unreported increments.
+Counter epochs let the harness recover observed post-restart increments but cannot reconstruct those missing values.
+Use persisted rows/Parquet reconciliation to prove loss or duplication through restart faults.
 
-**Format** (timestamp + message):
+`INFLUX_COUNT=1 load-test/run-scenario.sh ...` opts into per-table DB queries. This is disabled by default because
+large count queries previously exhausted the Core VM. Queries run sequentially; never replace them with a giant
+UNION. Generation windows include a one-second reading-time pad for the configured 500 ms producer batch window.
+Overlapping runs, changed batch windows and equal sensor/time/tag keys can invalidate a simple count comparison.
+Influx deduplicates identical keys, so count mismatches need analysis rather than an automatic data-loss conclusion.
 
-```bash
---format='table(timestamp.date("%Y-%m-%dT%H:%M:%E*S%:z"),jsonPayload.MESSAGE)'
-```
+## Diagnostic logs
 
-If `MESSAGE` is empty, pipe JSON and `jq -r '[.timestamp, (.jsonPayload.MESSAGE // .textPayload)] | @tsv'`.
+`artifacts/logs/` contains Core/Kafka journal messages from Cloud Logging, structured Telemetry JSON, offset-lag
+warnings and Core warnings/errors. Logs explain retries, DLQ messages, restarts and exports; they are not the source
+for throughput or latency summaries. A `Pipeline report:` line may still appear at publication time, but old
+per-point fields are gone and the harness does not parse those lines.
 
-### (a) Pipeline report lines
-
-Emitted every `offset_lag_log_interval_s` after lag logging ([`message_sink.rs`](../core/src/messaging/message_sink.rs), [`component-core.md#pipeline-report`](../docs/component-core.md#pipeline-report)).
-
-```bash
-gcloud logging read \
-'resource.type="gce_instance"
- resource.labels.project_id="chronoracer"
- resource.labels.instance_id="'"${CORE_ID}"'"
- jsonPayload._SYSTEMD_UNIT="chronoracer-core.service"
- jsonPayload.MESSAGE=~"Pipeline report:"
- timestamp>="<START>" AND timestamp<="<END>"' \
-  --project=chronoracer --limit=10000 --order=asc \
-  --format='table(timestamp.date("%Y-%m-%dT%H:%M:%E*S%:z"),jsonPayload.MESSAGE)'
-```
-
-Local parse helper: [`parse_pipeline_report.py`](./parse_pipeline_report.py).
-
-### (b) Per-partition lag + stuck partitions
-
-- **INFO** `Unsettled offsets (pN: pending=… position=…, …)` — consumer name `sensor_data` in structured field `consumer` (may appear before `MESSAGE` in JSON).
-- **WARN** `Commit position has not advanced since the last report` — stalled partitions (`offset_ledger.rs`).
-
-```bash
-gcloud logging read \
-'resource.type="gce_instance"
- resource.labels.project_id="chronoracer"
- resource.labels.instance_id="'"${CORE_ID}"'"
- jsonPayload._SYSTEMD_UNIT="chronoracer-core.service"
- (jsonPayload.MESSAGE=~"Unsettled offsets" OR jsonPayload.MESSAGE=~"Commit position has not advanced")
- timestamp>="<START>" AND timestamp<="<END>"' \
-  --project=chronoracer --limit=10000 --order=asc \
-  --format='table(timestamp.date("%Y-%m-%dT%H:%M:%E*S%:z"),jsonPayload.MESSAGE)'
-```
-
-### (c) Core errors and warnings
-
-```bash
-gcloud logging read \
-'resource.type="gce_instance"
- resource.labels.project_id="chronoracer"
- resource.labels.instance_id="'"${CORE_ID}"'"
- jsonPayload._SYSTEMD_UNIT="chronoracer-core.service"
- severity>=WARNING
- timestamp>="<START>" AND timestamp<="<END>"' \
-  --project=chronoracer --limit=10000 --order=asc \
-  --format='table(timestamp.date("%Y-%m-%dT%H:%M:%E*S%:z"),severity,jsonPayload.MESSAGE)'
-```
-
-Include **ERROR** ingest/DLQ/Kafka lines at INFO if needed: add `OR jsonPayload.MESSAGE=~"Kafka error"` / DLQ patterns below.
-
-### (d) InfluxDB logs (`influxdb3.service`)
-
-Not in Cloud Logging (Ops Agent excludes `influxdb3.service`). Use the journal commands in [Journal fallback (Core VM)](#journal-fallback-core-vm) below.
-
-### (e) DLQ handler aggregated lines (10 s window)
-
-Messages ([`dlq_handler.rs`](../core/src/messaging/dlq_handler.rs)):
-
-- `Redirected messages to DLQ`
-- `Failed to write to DLQ (first failure of the window logged above)`
-- `DLQ queue full: discarded invalid messages without a DLQ record`
-
-```bash
-gcloud logging read \
-'resource.type="gce_instance"
- resource.labels.project_id="chronoracer"
- resource.labels.instance_id="'"${CORE_ID}"'"
- jsonPayload._SYSTEMD_UNIT="chronoracer-core.service"
- (jsonPayload.MESSAGE=~"Redirected messages to DLQ"
-  OR jsonPayload.MESSAGE=~"Failed to write to DLQ"
-  OR jsonPayload.MESSAGE=~"DLQ queue full")
- timestamp>="<START>" AND timestamp<="<END>"' \
-  --project=chronoracer --limit=10000 --order=asc \
-  --format='table(timestamp.date("%Y-%m-%dT%H:%M:%E*S%:z"),jsonPayload.MESSAGE)'
-```
-
-### Journal fallback (Core VM)
-
-Units: [`chronoracer-core.service`](../core/startup/chronoracer-core.service), [`influxdb3.service`](../core/startup/influxdb3.service). Kafka: [`kafka.service`](../kafka/startup/kafka.service).
-
-```bash
-gcloud compute ssh core --project=chronoracer --zone=europe-west1-b --tunnel-through-iap -- \
-  sudo journalctl -u chronoracer-core --since '<START>' --until '<END>' --no-pager -o short-iso
-
-gcloud compute ssh core --project=chronoracer --zone=europe-west1-b --tunnel-through-iap -- \
-  sudo journalctl -u influxdb3 --since '<START>' --until '<END>' --no-pager -o short-iso
-```
-
-`journalctl` accepts systemd time specs; for strict RFC3339 use quoted ISO strings as above.
-
----
-
-## 3. Metrics
-
-Ops Agent on Core/Kafka: **host** metrics only (60 s interval); process scraper excluded ([`ops-agent.yaml`](../core/startup/ops-agent.yaml)). Dashboard uses Compute CPU + Agent memory/disk/network ([`race-fleet.json`](../dashboard/dashboard_files/v2/race-fleet.json)).
-
-| Area | Metric type | Notes |
-|------|-------------|--------|
-| Core CPU | `compute.googleapis.com/instance/cpu/utilization` | Native Compute; filter `instance_id` for race |
-| Core memory | `agent.googleapis.com/memory/percent_used` | `metric.label.state="used"` for panels |
-| Kafka CPU / memory / disk / net | same families + `agent.googleapis.com/disk/percent_used`, `agent.googleapis.com/interface/traffic` | |
-| Influx writes | `custom.googleapis.com/chronoracer/influx_write_lines`, `influx_write_bytes`, `influx_write_requests` | Cumulative on `gce_instance`; `outcome` label on requests |
-| Telemetry | `run.googleapis.com/container/instance_count`, `request_count`, `request_latencies` | Service name `telemetry` ([`names.json`](../infra/contract/names.json)) |
-
-Core publishes write counters every **60 s** while running ([`component-core.md`](../docs/component-core.md#cloud-monitoring-write-counters)) — coarser than 10 s pipeline reports.
-
-### Script export
-
-```bash
-pip install google-cloud-monitoring
-python3 load-test/collect_metrics.py \
-  --race-id <RACE_ID> \
-  --start '<START>' \
-  --end '<END>' \
-  --output-dir load-test/metrics-out
-```
-
-Writes one CSV per metric family under `--output-dir` plus `meta.json` with resolved `instance_id`s.
-
-### Persisted point count (loss check) {#persisted-point-count-loss-check}
-
-**Primary:** compare generator totals with Core `WriteMetricSnapshot` / accepted write-line counters in `core.log` and
-pipeline `written_lines_s` (no upward `unconsumed` trend). **Secondary:** [`influx_count.sh`](influx_count.sh) piped
-over IAP SSH for the run window (`run-metadata.json` start/end, pad ±1 s). It runs **one `count(*)` per sensor table**
-(safe on large DBs). A single UNION across all tables can hang the Core VM at ~100M+ points.
+Core and Kafka Ops Agent log routing is owned by their startup configurations. Influx journal logs are not shipped;
+for a fault/export window use the Core VM journal directly:
 
 ```bash
 gcloud compute ssh core --project=chronoracer --zone=europe-west1-b --tunnel-through-iap \
-  --command "sudo bash -s -- <START> <END>" < load-test/influx_count.sh \
-  > load-test/runs/<ID>/artifacts/influx-count.csv
+  --command "sudo journalctl -u influxdb3 --since '<START>' --until '<END>' --no-pager -o short-iso"
 ```
 
-### Metrics Explorer (MQL examples)
+Inspect `core-warn-error.log` for publisher errors even when write counters exist. Export verification uses a journal
+cursor captured immediately before SHUTDOWN, avoiding matches from earlier runs.
 
-Core CPU (replace instance id):
+## Provider references
 
-```text
-fetch gce_instance
-| metric 'compute.googleapis.com/instance/cpu/utilization'
-| filter (resource.instance_id == '<CORE_NUMERIC_INSTANCE_ID>')
-| group_by 1m, [value_utilization_mean: mean(value.utilization)]
-```
-
-Influx accepted lines **rate** (cumulative counter):
-
-```text
-fetch gce_instance
-| metric 'custom.googleapis.com/chronoracer/influx_write_lines'
-| filter (resource.instance_id == '<CORE_NUMERIC_INSTANCE_ID>')
-| align rate(1m)
-| every 1m
-```
-
-Telemetry request rate:
-
-```text
-fetch cloud_run_revision
-| metric 'run.googleapis.com/request_count'
-| filter (resource.service_name == 'telemetry')
-| align rate(1m)
-| every 1m
-```
-
-### `gcloud monitoring` (alpha)
-
-If installed:
-
-```bash
-gcloud monitoring time-series list \
-  --project=chronoracer \
-  --filter='metric.type="compute.googleapis.com/instance/cpu/utilization" AND resource.labels.instance_id="<CORE_ID>"' \
-  --start-time='<START>' --end-time='<END>'
-```
-
-Prefer `collect_metrics.py` for bulk CSV; alpha CLI output is awkward for many series.
-
----
-
-## 4. Kafka VM checks
-
-**Broker:** KRaft single node, `/opt/kafka`, systemd [`kafka.service`](../kafka/startup/kafka.service). **Listeners:** PRIVATE `0.0.0.0:9092` (plaintext), PUBLIC `9094` (SASL_SSL). **No JMX** in repo startup/properties — broker health via logs, consumer groups, and host metrics only.
-
-**Bootstrap on VM (private listener):** `127.0.0.1:9092` ([`create-topics.sh`](../kafka/startup/create-topics.sh)).
-
-**Core consumer group** ([`component-kafka.md`](../docs/component-kafka.md#consumer-groups)): prefix `kafka.group_id` default `chrono-core` → data group **`chrono-core-data`**, control **`chrono-core-control`**.
-
-**Topic `data`:** name from `platform.json` → `data`, 4 partitions (Core creates at runtime).
-
-SSH via IAP (no public IP on Core; Kafka has ephemeral public IP but IAP is consistent):
-
-```bash
-gcloud compute ssh kafka --project=chronoracer --zone=europe-west1-b --tunnel-through-iap
-```
-
-On the Kafka VM:
-
-```bash
-# Consumer group lag (Core data path)
-/opt/kafka/bin/kafka-consumer-groups.sh \
-  --bootstrap-server 127.0.0.1:9092 \
-  --describe --group chrono-core-data
-
-# Topic layout
-/opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server 127.0.0.1:9092 \
-  --describe --topic data
-
-# Host snapshot
-top -b -n 1 | head -20
-vmstat 1 5
-```
-
-Optional **public** SSH (only if IAP blocked): use Kafka's ephemeral IP from `gcloud compute instances describe kafka --format='get(networkInterfaces[0].accessConfigs[0].natIP)'` with the same `kafka` user/OS login.
-
----
-
-## 5. Gaps and doc notes
-
-| Gap | Detail |
-|-----|--------|
-| Pipeline vs metrics cadence | Pipeline report every **10 s**; Cloud Monitoring write counters every **60 s** — use logs for sub-minute Influx diagnosis. |
-| Memory metric source | Dashboard mixes **Compute CPU** with **Ops Agent** memory; Agent must be running (`google-cloud-ops-agent`). |
-| No Kafka JMX | No broker JVM metrics in Monitoring; use consumer-group lag + VM CPU/disk/net. |
-| VM name reuse | Logging/Monitoring must filter **`instance_id`** or **`labels.race-id`**, not hostname alone. |
-| Ops Agent log fields | Rely on `jsonPayload.MESSAGE`; structured tracing fields may also appear as separate JSON keys. |
-| `unsettled` quiet periods | `No unsettled offsets` is **DEBUG** — usually absent in Cloud Logging. |
-
-**Discrepancies spotted:** [`core/startup/README.md`](../core/startup/README.md) references `enable-ops-agent.sh` under `/chronoracer` (image copy of packer script) — behavior matches packer source. [`component-core.md`](../docs/component-core.md) says platform sets topic names only; partition counts remain from defaults/operator (not platform) — consistent with `render-config.sh`. Relay docs require `race.initial_driver_id` injection on start; manual GCS upload must set it explicitly (this overlay).
+The collector follows Google's [timeSeries.list API](https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list):
+no aggregation returns raw samples, and returned points must be sorted chronologically before differencing.
+[Metric latency](https://cloud.google.com/monitoring/api/v3/latency-n-retention) distinguishes custom metric visibility
+from native service lag; consult the [Compute metrics](https://cloud.google.com/monitoring/api/metrics_gcp_c) and
+[Cloud Run metrics](https://cloud.google.com/monitoring/api/metrics_gcp_p_z) for sampling/visibility details.

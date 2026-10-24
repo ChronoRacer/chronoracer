@@ -1,0 +1,3 @@
+-r ../curls/load_test/requirements.txt
+google-cloud-monitoring
+grpcio

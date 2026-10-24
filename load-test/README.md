@@ -1,56 +1,50 @@
 # Race-stack load test harness
 
-[IMPORTANT!] Current load testing harness relies on Core metrics that are no longer logged. Add back again for testing purposes (if Cloud Monitoring not enough).
+This directory owns load-test orchestration and evidence collection for Kafka, Core/InfluxDB and Telemetry.
+The Kafka producer is in [`curls/load_test/`](../curls/load_test/README.md).
 
-End-to-end load testing for the race stack (Kafka VM, Core + InfluxDB VM, Telemetry Cloud Run). The Kafka producer lives in [`curls/load_test/`](../curls/load_test/); this directory owns orchestration, Core operator overlays, artifact collection, and analysis helpers.
+Use one operator overlay, [`load-testing-core-config.yaml`](load-testing-core-config.yaml), for the entire campaign.
+Run **100K, 150K, 200K, 250K points/s**, then fault injection at a demonstrated sustainable rate, then race-end export.
+Procedure and pass criteria belong to the [runbook](runbook.md). Metric interpretation and collection belong to
+[observability](observability.md). Infrastructure commands belong to [infra-readiness](infra-readiness.md).
 
-## Prerequisites
+From the repository root:
 
-- `gcloud` with IAP SSH to race VMs (`core`, `kafka`), Terraform, and a laptop clock synced via NTP (`timedatectl`).
-- Python venv (example): `/tmp/lt-venv` with  
-  `pip install -r curls/load_test/requirements.txt google-cloud-monitoring grpcio`
-- `export RACE_ID=<id>` (1–12 chars `[a-z0-9_-]`) and `OKTA_CLIENT_SECRET` (see [`curls/load_test/README.md`](../curls/load_test/README.md)).
+```bash
+python3 -m venv /tmp/lt-venv
+/tmp/lt-venv/bin/pip install -r load-test/requirements.txt
+gcloud auth application-default login
+export PYTHON=/tmp/lt-venv/bin/python
+export RACE_ID=<race-id>
+export OKTA_CLIENT_SECRET="$(gcloud secrets versions access latest --secret=chronoracer-okta-oauth --project=chronoracer)"
+```
 
-## Quick start
+Complete the runbook readiness checks before `load-test/run-scenario.sh L100 100000 600 4`.
+Scripts use `PROJECT=chronoracer`, `REGION=europe-west1`, `ZONE=europe-west1-b` and `TELEMETRY_SERVICE=telemetry` by default.
+An alternate environment also needs matching generator broker/OAuth settings via `GENERATOR_CONFIG`.
 
-1. Upload Core overlay — [runbook §1](runbook.md#1-ready-check-laptop).
-2. Targeted apply — [infra-readiness.md](infra-readiness.md#targeted-apply--destroy-no-analysis-vm).
-3. Run a scenario — e.g. `load-test/run-scenario.sh S0 1000 120 1` (needs `RACE_ID`, secret).
-4. Teardown — same doc, targeted destroy.
-
-Procedure, scenarios, and pass criteria: [runbook.md](runbook.md). Log filters and metrics: [observability.md](observability.md). Apply/destroy and GCP checklist: [infra-readiness.md](infra-readiness.md).
-
-## Files
-
-| File | Owns |
+| File | Responsibility |
 | --- | --- |
-| [README.md](README.md) | This entry point |
-| [runbook.md](runbook.md) | Scenarios, ready checks, pass criteria, teardown |
-| [infra-readiness.md](infra-readiness.md) | Terraform targeted apply/destroy, manual controller steps |
-| [observability.md](observability.md) | Log filters, metrics export, loss-check guidance |
-| [watch_probe.md](watch_probe.md) | IAP SSH forward + Core `Watch` probe |
-| [core-config.yaml](core-config.yaml) | Baseline operator overlay (10 s reports, initial driver) |
-| [core-config-throughput.yaml](core-config-throughput.yaml) | Persistence tuned for S3+ throughput |
-| [core-config-phase2.yaml](core-config-phase2.yaml) | Optional phase-2 tuning overlay |
-| [generator-config.json](generator-config.json) | Laptop generator: public Kafka, OAuth, channels |
-| [run-generators.sh](run-generators.sh) | Parallel `load_test.py` instances → `runs/<id>/` |
-| [run-scenario.sh](run-scenario.sh) | Generators, lag wait, collect, Influx count, steady summary |
-| [collect-artifacts.sh](collect-artifacts.sh) | Cloud Logging + Monitoring → run `artifacts/` |
-| [collect_metrics.py](collect_metrics.py) | Monitoring API CSV export (used by collect-artifacts) |
-| [parse_pipeline_report.py](parse_pipeline_report.py) | Pipeline report log → CSV |
-| [summarize_generators.py](summarize_generators.py) | Generator logs → CSV |
-| [steady_summary.py](steady_summary.py) | Steady-window JSON summary |
-| [influx_count.sh](influx_count.sh) | Per-table Influx counts on Core VM (secondary loss check) |
-| [fault-inject.sh](fault-inject.sh) | S5 fault timing (`stop` vs `freeze` InfluxDB) |
-| [bench_generator.py](bench_generator.py) | Local encode throughput (no Kafka) |
-| [watch_probe.py](watch_probe.py) | Slow `Watch` subscriber for S4 |
-| [gen/](gen/) | Generated gRPC stubs for `watch_probe.py` |
-| `runs/` | Per-run output (gitignored) |
+| `run-generators.sh` | Parallel generators, exact requested rate split, metadata and delivery summary |
+| `run-scenario.sh` | One load run, optional fault, delayed collection and Monitoring summary |
+| `fault-inject.sh` | Separate DB freeze, DB stop and Core restart experiments |
+| `collect-artifacts.sh` | Monitoring series, diagnostic logs and generator evidence |
+| `collect_metrics.py` | Raw CSV with resource/metric labels, counter epochs and complete distributions |
+| `steady_summary.py` | Monitoring rates, lag, merged latency histogram and coverage |
+| `summarize_generators.py` | Local producer reports and final delivery totals |
+| `export_flow.py` | Explicit SHUTDOWN, export wait, GCS inventory and publish evidence |
+| `influx_count.sh` | Optional per-table unique stored-row count; expensive at high volumes |
+| `bench_generator.py` | Local encoding benchmark; does not establish end-to-end generator capacity |
+| [watch_probe.md](watch_probe.md) | Direct Core subscriber setup and isolation check |
+| `runs/` | Gitignored evidence; use a new run ID for every experiment |
 
-## Caveats (from production runs)
+Legacy phase overlays and pipeline-log parsers have been removed. [Previous results](../docs/load-test-results.md)
+are historical evidence, not instructions or current metric availability.
 
-- **VM NTP:** Core/Kafka use `systemd-timesyncd` with a 17–34 min poll by default. For latency tests, install a test-only drop-in on both VMs: `/etc/systemd/timesyncd.conf.d/99-loadtest.conf` with `NTP=metadata.google.internal`, `PollIntervalMinSec=16`, `PollIntervalMaxSec=32`, then `systemctl restart systemd-timesyncd`. `run-scenario.sh` records offsets in `runs/<id>/clock.txt`.
-- **Generator logs:** stdout is block-buffered; `[Report]` lines often appear only after the process exits.
-- **Influx WAL:** `--wal-flush-interval` via `/chronoracer/influxdb3.env` is wiped on VM reboot by `start-influx.sh`.
-- **Influx restart:** Stopping or resetting InfluxDB makes Core crash-loop until InfluxDB is healthy again.
-- **S5 faults:** `fault-inject.sh stop` stops InfluxDB and Core (`Requires=influxdb3`); use `freeze` to stall the DB without stopping Core.
+Offline verification (no cloud operations):
+
+```bash
+/tmp/lt-venv/bin/python -m unittest discover -s load-test -p 'test_*.py'
+bash -n load-test/run-scenario.sh
+shellcheck -x load-test/*.sh  # optional local lint tool
+```

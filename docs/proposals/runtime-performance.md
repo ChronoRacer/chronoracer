@@ -23,7 +23,8 @@ The changes below buy latency, Kafka headroom, and above all a bounded failure m
 | 6 | Decouple Core from the InfluxDB unit | Core VM setup + Core code | no Core outage on InfluxDB stop/restart [S5, L50 setup] | Medium |
 | 7 | Tight time sync on both VMs | Images | Core clock offset +19.9 ms -> <0.2 ms; latency metrics trustworthy [S3a vs S4] | Medium |
 
-Items 2-3 together are the tested `core-config-phase2.yaml` overlay of the [load-test harness](../../load-test/).
+Items 2-3 together were the historical phase-2 overlay documented in the [test results](../load-test-results.md#setup).
+The current harness uses the single baseline in its [runbook](../../load-test/runbook.md).
 
 ## 1. Control consumer long-poll
 
