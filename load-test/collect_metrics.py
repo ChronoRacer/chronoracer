@@ -60,7 +60,7 @@ def fetch(client, project, metric_type, resource_type, labels, start, end):
                 # Keep bucket boundaries/counts and moments; count+mean alone loses p99.
                 value = json.dumps(MessageToDict(value, preserving_proto_field_name=True), sort_keys=True)
             rows.append([
-                point.interval.start_time.isoformat() if point.interval.start_time else "",
+                point.interval.start_time.isoformat() if point.interval._pb.HasField("start_time") else "",
                 point.interval.end_time.isoformat(), metric_type,
                 MetricDescriptor.MetricKind.Name(series.metric_kind),
                 MetricDescriptor.ValueType.Name(series.value_type), series.resource.type,

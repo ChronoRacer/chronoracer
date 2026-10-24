@@ -38,18 +38,18 @@ Verify:
 
 Run sequentially, inspecting each summary before increasing the rate:
 
-| ID | Points/s | Duration | Initial generator processes |
-| --- | ---: | ---: | ---: |
-| L100 | 100,000 | 600 s | 4 |
-| L150 | 150,000 | 600 s | 4 |
-| L200 | 200,000 | 600 s | 4 |
-| L250 | 250,000 | 600 s | 4 |
+| ID   | Points/s | Duration | Initial generator processes |
+|------|---------:|---------:|----------------------------:|
+| L100 |  100,000 |    600 s |                           4 |
+| L200 |  200,000 |    600 s |                           4 |
+| L250 |  250,000 |    600 s |                           4 |
+| L350 |  350,000 |    600 s |                           5 |
 
 ```bash
 load-test/run-scenario.sh L100 100000 600 4
-load-test/run-scenario.sh L150 150000 600 4
 load-test/run-scenario.sh L200 200000 600 4
 load-test/run-scenario.sh L250 250000 600 4
+load-test/run-scenario.sh L350 350000 600 5
 ```
 
 Each command waits for a padded drain window and metric visibility, collects evidence and writes
@@ -82,9 +82,9 @@ After the throughput steps, select the highest rate that met the criteria. Examp
 substitute the demonstrated rate. Each experiment is separate, at the **same baseline configuration**:
 
 ```bash
-load-test/run-scenario.sh F-freeze 200000 600 4 freeze
-load-test/run-scenario.sh F-stop 200000 600 4 stop
-load-test/run-scenario.sh F-restart 200000 600 4 restart
+load-test/run-scenario.sh F-freeze 200000 300 4 freeze
+load-test/run-scenario.sh F-stop 200000 300 4 stop
+load-test/run-scenario.sh F-restart 200000 300 4 restart
 ```
 
 Faults occur approximately 120 s after launching the workflow: freeze/stop Influx for 30 s, or restart Core once.
@@ -109,7 +109,7 @@ Use a unique race ID so earlier export objects cannot mask failure. Keep the man
 has been collected; Relay/controller lifecycle testing is separate from this direct Core export test.
 
 ```bash
-/tmp/lt-venv/bin/python load-test/export_flow.py load-test/runs/F-restart
+/tmp/lt-venv/bin/python load-test/export_flow.py load-test/runs/F-freeze
 ```
 
 The script reads deployed export paths/topics, confirms SHUTDOWN delivery, waits for completion, and saves journal,

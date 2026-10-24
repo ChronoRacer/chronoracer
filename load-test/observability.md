@@ -50,6 +50,10 @@ Lag is a gauge: first/last/max describe sampled backlog, not a count of lost poi
 Post-run values help check drain; inspect the full raw series when a fault creates a short spike between samples.
 Persistence latency distributions are merged by bucket counts, with count-weighted means. Percentiles are bucket
 bounds, including an explicit overflow indication; they are not exact percentiles or averages of per-window p99s.
+Gauge distributions carry only an end timestamp. The summary uses the co-published consumed-message counter's
+previous sample (or process epoch start) as a conservative window start; without those boundaries, it excludes the
+histogram. Counter rates spanning missing publications include idle time in that gap and cannot establish steady
+throughput for a shorter run.
 Samples represent batches, not every individual point. Missing distribution windows cannot be recovered from counters.
 
 Current metrics do not provide decoded-point throughput, preview latency or write-RPC latency. Those historical

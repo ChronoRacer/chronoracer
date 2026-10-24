@@ -1,5 +1,2 @@
-kafka:
-  sensor_data_consumer:
-    offset_lag_log_interval_s: 10
 race:
   initial_driver_id: loadtest

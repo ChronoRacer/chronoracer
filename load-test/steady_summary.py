@@ -61,12 +61,27 @@ def stats(values):
             "max": max(values)} if values else None
 
 
-def distribution_summary(rows, start, end):
+def distribution_summary(rows, start, end, publication_rows=()):
+    # Gauge histograms have only an end timestamp. The co-published cumulative
+    # counter supplies conservative window boundaries, including restart epochs.
+    publication_windows = {(identity(r), r["end_time"]): r for r in publication_rows}
+    boundaries = {}
+    groups = defaultdict(list)
+    for r in publication_windows.values():
+        groups[identity(r)].append(r)
+    for group in groups.values():
+        previous = None
+        for r in sorted(group, key=lambda r: r["end_time"]):
+            begin = previous["end_time"] if previous and previous["start_time"] == r["start_time"] else r["start_time"]
+            boundaries[(r["resource_type"], r["resource_labels"], r["end_time"])] = begin
+            previous = r
     count, weighted_sum = 0, 0.0
     buckets, bounds = None, None
     windows = 0
     for row in rows:
-        if not start <= parse_rfc3339(row["start_time"]) < parse_rfc3339(row["end_time"]) <= end:
+        begin = (boundaries.get((row["resource_type"], row["resource_labels"], row["end_time"]))
+                 if row.get("metric_kind") == "GAUGE" else row["start_time"])
+        if not begin or not start <= parse_rfc3339(begin) < parse_rfc3339(row["end_time"]) <= end:
             continue
         dist = json.loads(row["value"])
         n = int(dist.get("count", 0))
@@ -117,7 +132,8 @@ def summarize(run, warmup):
     for name in CORE_METRICS:
         rows = read_metric(metrics, name)
         if name == "pipeline_persist_latency_ms":
-            out["metrics"][name] = distribution_summary(rows, steady_start, end)
+            out["metrics"][name] = distribution_summary(
+                rows, steady_start, end, read_metric(metrics, "pipeline_consumed_messages"))
         elif name == "pipeline_unconsumed_messages":
             selected = sorted((r for r in rows if steady_start <= parse_rfc3339(r["end_time"]) <= end),
                               key=lambda r: r["end_time"])

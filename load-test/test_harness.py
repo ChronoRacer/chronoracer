@@ -53,6 +53,21 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(result['p99'], {'lower_bound_ms': 100, 'overflow': True})
         self.assertIsNone(distribution_summary([], parse_rfc3339(timestamp(0)), parse_rfc3339(timestamp(180))))
 
+    def test_gauge_histogram_uses_copublished_counter_window(self):
+        value = json.dumps({'count': '2', 'mean': 50,
+            'bucket_options': {'explicit_buckets': {'bounds': [10, 100]}},
+            'bucket_counts': ['0', '2', '0']})
+        gauges = [dict(row(0, t, value), start_time='', metric_kind='GAUGE') for t in (60, 120, 180)]
+        publications = [row(0, t, t) for t in (60, 120, 180)]
+        begin, end = parse_rfc3339(timestamp(60)), parse_rfc3339(timestamp(180))
+        result = distribution_summary(gauges, begin, end, publications)
+        self.assertEqual(result['windows'], 2)
+        self.assertEqual(result['batch_samples'], 4)
+        self.assertIsNone(distribution_summary(gauges, begin, end))
+        # A missing publication cannot turn a warmup-spanning window into steady data.
+        result = distribution_summary(gauges, begin, end, [publications[0], publications[2]])
+        self.assertEqual(result['windows'], 1)
+
     def test_generator_final_totals_not_double_counted(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'gen-0.log'
@@ -77,15 +92,16 @@ class HarnessTests(unittest.TestCase):
         series = monitoring_v3.TimeSeries({
             'metric': {'type': 'custom.googleapis.com/chronoracer/pipeline_persist_latency_ms'},
             'resource': {'type': 'gce_instance', 'labels': {'instance_id': '123', 'zone': 'europe-west1-b'}},
-            'metric_kind': 'DELTA', 'value_type': 'DISTRIBUTION',
-            'points': [{'interval': {'start_time': parse_rfc3339(timestamp(60)), 'end_time': parse_rfc3339(timestamp(120))},
+            'metric_kind': 'GAUGE', 'value_type': 'DISTRIBUTION',
+            'points': [{'interval': {'end_time': parse_rfc3339(timestamp(120))},
                         'value': {'distribution_value': {'count': 2, 'mean': 50,
                             'bucket_options': {'explicit_buckets': {'bounds': [10, 100]}}, 'bucket_counts': [0, 2, 0]}}}]})
         client.list_time_series.return_value = [series]
         result = fetch(client, 'project', series.metric.type, 'gce_instance', {'instance_id': '123'},
                        parse_rfc3339(timestamp(0)), parse_rfc3339(timestamp(180)))
         parsed = dict(zip(HEADERS, result[0]))
-        self.assertEqual(parsed['metric_kind'], 'DELTA')
+        self.assertEqual(parsed['metric_kind'], 'GAUGE')
+        self.assertEqual(parsed['start_time'], '')
         self.assertEqual(json.loads(parsed['resource_labels'])['instance_id'], '123')
         self.assertEqual(json.loads(parsed['value'])['bucket_counts'], ['0', '2', '0'])
         self.assertIn('resource.labels.instance_id="123"', client.list_time_series.call_args.kwargs['request']['filter'])

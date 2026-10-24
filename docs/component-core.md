@@ -253,7 +253,7 @@ Core publishes custom metrics for [Dashboard](component-dashboard.md) ingest pan
 | `custom.googleapis.com/chronoracer/pipeline_consumed_messages`   | cumulative         | Data messages the sink took from Kafka                                        |
 | `custom.googleapis.com/chronoracer/pipeline_sink_blocked_ms`     | cumulative         | Time the sink waited for a free collector slot (backpressure from downstream) |
 | `custom.googleapis.com/chronoracer/pipeline_unconsumed_messages` | gauge              | Data messages on the broker not yet delivered to Core, summed over partitions |
-| `custom.googleapis.com/chronoracer/pipeline_persist_latency_ms`  | delta distribution | Per point batch: oldest record timestamp in the batch to its settlement       |
+| `custom.googleapis.com/chronoracer/pipeline_persist_latency_ms`  | gauge distribution | Per point batch: oldest record timestamp in the batch to its settlement       |
 
 Counters increment once per write attempt, off the per-point path. Each attempt is counted under one outcome: `ok`
 (accepted, including after retries), `partial`, `error` (non-retryable, batch dropped), or `retry` (transient failure,
@@ -275,8 +275,9 @@ atomic add per message or batch; the latency costs one histogram record per batc
 `sink_blocked_pct`, `unconsumed` (`unknown` until the first statistics arrive), and
 `persist_ms=p50<=bound,p99<=bound,max,mean,n` (`n=0` for an empty window).
 
-`persist_latency_ms` uses the Kafka record timestamp, which the producer sets when it creates the record, so it includes
-the producer's own queueing but not the reading `delta` window, and it assumes the producer and Core clocks are
+`persist_latency_ms` is a gauge distribution sampled once per reporting window. It uses the Kafka record timestamp,
+which the producer sets when it creates the record, so it includes the producer's own queueing but not time spent
+waiting for the next reporting sample. It assumes the producer and Core clocks are
 NTP-synced (a negative age counts as 0). Buckets have the bounds 1 ms to 60 s; the log shows the bucket bound holding
 the percentile. A sample whose publish failed loses its latency window.
 
