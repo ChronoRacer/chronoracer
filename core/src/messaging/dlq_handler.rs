@@ -80,6 +80,7 @@ impl InvalidSettler {
     }
 
     #[cfg(test)]
+    #[must_use]
     pub fn detached() -> Self {
         use crate::messaging::offset_ledger::testing::detached_ledger;
         Self::new(detached_ledger(), detached_ledger())
@@ -228,6 +229,7 @@ impl<P: KafkaProducer> DlqPublisher<P> {
         (at, result)
     }
 
+    #[allow(clippy::result_large_err)]
     async fn send_to_dlq(&self, failed_message: PartialMessageWithError) -> OwnedDeliveryResult {
         let error_description = failed_message.error_msg;
         let inner_message = failed_message.message;
@@ -732,6 +734,6 @@ mod tests {
             DlqOffer::Queued
         ));
 
-        assert!(sensor_sink.stored().is_empty());
+        assert_eq!(sensor_sink.stored(), [] as [(i32, i64); 0]);
     }
 }

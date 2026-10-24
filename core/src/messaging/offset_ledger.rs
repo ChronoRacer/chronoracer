@@ -245,6 +245,7 @@ pub mod testing {
         }
     }
 
+    #[must_use]
     pub fn recording_ledger() -> (OffsetLedger, Arc<RecordingSink>) {
         let sink = Arc::new(RecordingSink::default());
         let ledger = OffsetLedger::new(
@@ -256,6 +257,7 @@ pub mod testing {
     }
 
     /// A ledger nobody inspects, for components that only need something to settle into.
+    #[must_use]
     pub fn detached_ledger() -> OffsetLedger {
         recording_ledger().0
     }
@@ -305,7 +307,7 @@ mod tests {
             (1, 1),
             (1, 3),
         ]));
-        assert!(sink.stored().is_empty());
+        assert_eq!(sink.stored(), [] as [(i32, i64); 0]);
 
         ledger.settle(&set(&[
             (0, 0),
@@ -332,7 +334,7 @@ mod tests {
         let current = [lag(0, 9, 10), lag(1, 3, 21), lag(2, 0, 30), lag(3, 1, 0)];
 
         assert_eq!(stalled_partitions(&previous, &current), [0]);
-        assert!(stalled_partitions(&[], &current).is_empty());
+        assert_eq!(stalled_partitions(&[], &current), [] as [i32; 0]);
     }
 
     #[test]
@@ -343,7 +345,7 @@ mod tests {
         }
 
         ledger.settle(&set(&[(0, 1), (0, 2), (0, 3)]));
-        assert!(sink.stored().is_empty());
+        assert_eq!(sink.stored(), [] as [(i32, i64); 0]);
 
         ledger.settle_one(0, 0);
         assert_eq!(sink.stored(), [(0, 4)]);
@@ -358,7 +360,7 @@ mod tests {
         ledger.settle(&set(&[(9, 0)]));
         ledger.settle_one(9, 0);
 
-        assert!(sink.stored().is_empty());
+        assert_eq!(sink.stored(), [] as [(i32, i64); 0]);
         assert_eq!(ledger.lag()[0].pending, 1);
     }
 
@@ -373,7 +375,7 @@ mod tests {
         lock_tracker(&tracker).forget([0]);
         ledger.settle(&set(&[(0, 0), (0, 1), (0, 2)]));
 
-        assert!(sink.stored().is_empty());
+        assert_eq!(sink.stored(), [] as [(i32, i64); 0]);
     }
 
     #[tokio::test]

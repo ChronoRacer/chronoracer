@@ -51,9 +51,9 @@ impl PersistenceLayerEntryPoint {
             persistence_config,
         );
         if splitter.is_some() {
-            info!("Splitter enabled - fast flush sensor path wired")
+            info!("Splitter enabled - fast flush sensor path wired");
         } else {
-            info!("Splitter disabled - fast flush sensor path skipped")
+            info!("Splitter disabled - fast flush sensor path skipped");
         }
 
         let race_id = config.race.race_id.clone();

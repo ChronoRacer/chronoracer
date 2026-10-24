@@ -665,13 +665,13 @@ mod tests {
         let rendered = format!("{:?}", config.persistence);
         assert!(rendered.contains("<redacted>"));
         assert!(!rendered.contains(&config.persistence.db_password));
-        let pretty = format!("{:#?}", config);
+        let pretty = format!("{config:#?}");
         assert!(!pretty.contains(&config.persistence.db_password));
     }
 
     #[test]
     fn deserialize_rejects_zero_runtime_and_channel_values() {
-        let yaml = r#"
+        let yaml = r"
 runtime:
   rayon_threads: 0
   tokio_workers: 2
@@ -683,7 +683,7 @@ runtime:
   offset_final_commit_timeout_s: 15
   notify_shutdown_on_failed_db_export: false
   notify_shutdown_on_failed_kafka_export: true
-"#;
+";
         let result = config::Config::builder()
             .add_source(config::File::from_str(yaml, config::FileFormat::Yaml))
             .build()
@@ -697,13 +697,13 @@ runtime:
 
     #[test]
     fn deserialize_rejects_zero_processing_buffers() {
-        let yaml = r#"
+        let yaml = r"
 message_channel_buffer_size: 0
 message_batch_size: 1000
 message_batch_flush_interval_ms: 15
 dlq_channel_buffer_size: 10
 dlq_sample_every: 1
-"#;
+";
         assert!(
             config::Config::builder()
                 .add_source(config::File::from_str(yaml, config::FileFormat::Yaml))

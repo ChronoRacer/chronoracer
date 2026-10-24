@@ -225,6 +225,7 @@ mod tests {
             .expect("Failed to serialize to raw datum")
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn put_long(out: &mut Vec<u8>, value: i64) {
         #[allow(clippy::cast_sign_loss)]
         let mut zigzag = ((value << 1) ^ (value >> 63)) as u64;
@@ -302,6 +303,7 @@ mod tests {
             }
         }
 
+        #[allow(clippy::cast_precision_loss)]
         fn reading(&mut self) -> (i32, f64) {
             let delta = match self.below(4) {
                 0 => self.pick(&[0, 1, 63, 64, 8191, 8192, i32::MAX]),
@@ -436,6 +438,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn rejects_malformed_payloads() {
         let schema = sensor_data_schema();
         let valid = apache_avro_encode(&schema, "s", 10, &[(1, 1.0)]);

@@ -69,14 +69,13 @@ fn wait_for_topics(
             let visible = admin_client
                 .inner()
                 .fetch_metadata(Some(name), Duration::from_secs(5))
-                .map(|metadata| {
+                .is_ok_and(|metadata| {
                     metadata.topics().iter().any(|topic| {
                         topic.name() == name
                             && topic.error().is_none()
                             && topic.partitions().len() >= *min_partitions
                     })
-                })
-                .unwrap_or(false);
+                });
             if visible {
                 info!("Topic '{name}' is visible to clients.");
                 break;
