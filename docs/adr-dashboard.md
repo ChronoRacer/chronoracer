@@ -18,7 +18,8 @@ Current component shapes: [Dashboard](component-dashboard.md) and [Telemetry](co
 
 1. Keep **Dashboard** as always-on Grafana OSS for race-fleet health only.
 2. Dashboard reads only Google Cloud Monitoring. It has no Influx token, no database route, and no race-sensor panels.
-3. Install Ops Agent on both race VMs. Both collect whole-VM host metrics only (CPU, memory, disk, network).
+3. Install Ops Agent on all race VM. Each collects whole-VM host metrics only (CPU,
+   memory, disk, network).
 4. Add **Telemetry** as a race-scoped Cloud Run service for accepted sensor values.
 5. Telemetry pulls a versioned Protobuf stream from Core. The protocol is
    [gRPC server streaming](adr-telemetry-stream.md). It does not consume Kafka and does not query InfluxDB.
@@ -75,9 +76,8 @@ complicates binding one service to changing race identity and state.
 
 ## Why Cloud Monitoring for Dashboard
 
-Core writes cumulative ingest counters to Cloud Monitoring from data it already has at flush time. Grafana's Google
-Cloud Monitoring datasource queries those custom metrics, Ops Agent host metrics, and native Compute Engine/Cloud Run
-metrics.
+Core writes custom metrics to GCM. Ops Agent host metrics, and native Compute Engine/Cloud Run
+are also available there.
 
 This removes:
 
@@ -85,14 +85,6 @@ This removes:
 - Influx's VPC listener and Dashboard firewall rule
 - Dashboard query load from the Core VM
 - duplicate ownership of race-value presentation
-
-Grafana's datasource labels its attached-identity mode as “GCE Default Service Account.” Its implementation resolves
-Google Application Default Credentials, and Cloud Run supplies ADC from the attached service account through the
-metadata server. Official Grafana documentation names Compute Engine, not Cloud Run, so a deployment proof is required
-before implementation is accepted: provision the datasource without a JSON key, query native Cloud Monitoring, one Ops
-Agent host metric, and one Core custom metric, and verify cold-start behavior. Long-lived service-account JSON keys are
-not an accepted
-fallback; failure of the proof requires a new runtime/authentication decision.
 
 ## Security and failure boundaries
 
