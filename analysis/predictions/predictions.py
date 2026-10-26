@@ -217,9 +217,9 @@ class PredictionsEngine:
                                 instruction = None
                                 if laps_left is not None and burn_per_lap is not None:
                                     instruction = (
-                                        f"**{float(laps_left):.1f}** laps until the tank is empty, "
-                                        f"**{float(burn_per_lap):.3f}** L/lap, "
-                                        f"**{float(predicted_fuel):.2f}** L predicted fuel for the next lap"
+                                        f"{float(laps_left):.1f} laps until the tank is empty, "
+                                        f"{float(burn_per_lap):.3f} L/lap, "
+                                        f"{float(predicted_fuel):.2f} L predicted fuel for the next lap"
                                     )
                                 logger.info("Fuel prediction result: {} on next lap {}", result, lap_detector.curr_lap_num)
                                 self.send_prediction(pred, value=float(predicted_fuel), instruction=instruction)
