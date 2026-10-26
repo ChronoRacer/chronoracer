@@ -2,7 +2,7 @@
 
 Use [`load-testing-core-config.yaml`](load-testing-core-config.yaml) throughout. Tune if necessary.
 Configuration semantics: [Core startup](../core/startup/README.md). Evidence interpretation:
-[observability](observability.md). Historical measurements: [previous results](../docs/load-test-results.md).
+[observability](observability.md).
 
 When testing, ALWAYS keep track of the progress in a separate PROGRESS.md file in the current workspace. Update it,
 alongside with measurements from each stage before you start the next one.
@@ -132,7 +132,6 @@ Core sample and export host load; run the summary again (its steady ingest inter
 
 Keep metadata, generator logs/final summaries, clocks, `fault.log`, `collect.log`, `artifacts/metrics/meta.json`, raw CSVs,
 diagnostic logs, `steady-summary.json`, and export evidence. Record unavailable metrics as unavailable, never zero.
-Summarize the new campaign separately from the [historical results](../docs/load-test-results.md).
 
 Follow [targeted destroy](infra-readiness.md#targeted-apply--destroy-no-analysis-vm) after collecting evidence.
 Confirm the race VMs, Telemetry service, public ingest firewall and DNS record are gone. Retain GCS export objects.

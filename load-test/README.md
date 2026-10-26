@@ -38,9 +38,6 @@ An alternate environment also needs matching generator broker/OAuth settings via
 | [watch_probe.md](watch_probe.md) | Direct Core subscriber setup and isolation check |
 | `runs/` | Gitignored evidence; use a new run ID for every experiment |
 
-Legacy phase overlays and pipeline-log parsers have been removed. [Previous results](../docs/load-test-results.md)
-are historical evidence, not instructions or current metric availability.
-
 Offline verification (no cloud operations):
 
 ```bash

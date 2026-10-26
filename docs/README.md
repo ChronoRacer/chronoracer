@@ -1,4 +1,4 @@
-# Chronoracer documentation
+    # Chronoracer documentation
 
 Each concept has one owner. Other docs link it. Do not copy or rephrase the same fact, instead point to the source.
 
@@ -145,9 +145,9 @@ See graph above for connections.
 
 ## Evidence
 
-| Topic     | Document                                  |
-|-----------|-------------------------------------------|
-| Load test | [Load test results](load-test-results.md) |
+| Topic      | Directory                                        |
+|------------|--------------------------------------------------|
+| Load tests | [Load test results](load-test-results/README.md) |
 
 ## Operator runbooks
 
