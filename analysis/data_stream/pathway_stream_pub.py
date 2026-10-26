@@ -1,3 +1,4 @@
+import numpy as np
 import orjson
 from typing import Any
 from enum import Enum, StrEnum
@@ -30,8 +31,10 @@ class GRPCSchema(pw.Schema):
 
 
 class BatchedSensorObserver(pw.io.python.ConnectorObserver):
-    def __init__(self):
+    def __init__(self,socket,topic):
         super().__init__()
+        self.socket = socket
+        self.topic = topic
         self.buffer : list[dict] = []
     def on_change(self, key: Pointer, row: dict[str, Any], time: int, is_addition: bool) -> None:
         if not is_addition:
@@ -46,7 +49,7 @@ class BatchedSensorObserver(pw.io.python.ConnectorObserver):
         batch_to_send = self.buffer.copy()
         self.buffer.clear()
         payload = orjson.dumps(batch_to_send)
-        pub_socket.send_multipart([TOPIC_SENSOR_AGG,payload])
+        self.socket.send_multipart([self.topic,payload])
 
 
 
@@ -59,23 +62,19 @@ logger.info("ZMQ PUB bound on tcp://127.0.0.1:6767")
 
 # MOVE IT TO CONSTANTS
 TOPIC_SENSOR_AGG = b"sensor_agg"
+TOPIC_SENSOR_PRED = b"sensor_pred"
 
-
-def publish_sensor_agg(key,row,time,is_addition):
-    if is_addition:
-        payload = orjson.dumps(row)
-        pub_socket.send_multipart([TOPIC_SENSOR_AGG,payload])
 
 
 FAST_CELL_NS =500_000_001
 SLOW_CELL_NS =1_000_000_001
-def get_sensor_batch(table,slow:bool):
-    duration = SLOW_CELL_NS if slow else FAST_CELL_NS
+TOLERANCE_NS = 250_000_001
+def get_sensor_batch(table, duration: int):
     return (
         table.windowby(
             pw.this.timestamp_nano,
             window=pw.temporal.tumbling(duration=duration),
-            behavior=pw.temporal.exactly_once_behavior(),
+            behavior=pw.temporal.exactly_once_behavior(shift=TOLERANCE_NS),
             instance=pw.this.sensor_id
         ).reduce(
             sensor_id=pw.this._pw_instance,
@@ -100,6 +99,28 @@ def get_sensor_batch(table,slow:bool):
         )
     )
 
+
+def _median(vals: tuple[float, ...]) -> float:
+    return np.median(vals)
+def get_stream_batched_pred(table,duration : int):
+    return (
+        table.windowby(
+            pw.this.timestamp_nano,
+            window=pw.temporal.tumbling(duration=duration),
+            behavior=pw.temporal.exactly_once_behavior(shift=TOLERANCE_NS),
+            instance=pw.this.sensor_id
+        ).reduce(
+            sensor_id=pw.this._pw_instance,
+            ts=pw.this._pw_window_end,
+            vals = pw.reducers.sorted_tuple(pw.this.value),
+            sample_count=pw.reducers.count()
+        ).select(
+            pw.this.sensor_id,
+            pw.this.ts,
+            median=pw.apply(_median,pw.this.vals)
+        )
+    )
+
 def main():
     logger.info("Data stream starting")
     config = load_config()
@@ -121,8 +142,12 @@ def main():
 
 
 
-    slow_sensor = get_sensor_batch(table,slow=True)
-    pw.io.python.write(slow_sensor,BatchedSensorObserver())
+    slow_sensor = get_sensor_batch(table,SLOW_CELL_NS)
+    pred_sensor = get_stream_batched_pred(table,FAST_CELL_NS)
+
+    pw.io.python.write(slow_sensor,BatchedSensorObserver(pub_socket,TOPIC_SENSOR_AGG))
+    pw.io.python.write(pred_sensor,BatchedSensorObserver(pub_socket,TOPIC_SENSOR_PRED))
+
     logger.info("Data stream running")
     pw.run()
 
@@ -131,75 +156,4 @@ if __name__ == '__main__':
 
 #GRPC ---> PATHWAY ZBIERA ODSZUMIONY SYGNAŁ W PACZKI PO X NS ----> PACZKA IDZIE DO GORULES ---> WYKRYWANIE UTRZYAMNIA WARTOSC DLA PROGU PRZEZ DT
 # napewno też min samples w oknie
-"""
-import threading
-import time
-import zmq
-
-
-def heartbeat_worker(ctx, stop_event):
-    # Socket jest tworzony i używany wyłącznie w tym wątku.
-    sock = ctx.socket(zmq.PUSH)
-    sock.connect("inproc://heartbeat")
-
-    start = time.monotonic()
-
-    try:
-        while not stop_event.is_set():
-            elapsed = time.monotonic() - start
-            msg = f"heartbeat: uptime={elapsed:.1f}s"
-
-            sock.send_string(msg)
-            print(f"Sent: {msg}")
-
-            # Można przerwać oczekiwanie natychmiast po stop_event.set()
-            stop_event.wait(1.0)
-    finally:
-        sock.close(linger=0)
-        print("Heartbeat worker stopped")
-
-
-def main():
-    ctx = zmq.Context()
-    stop_event = threading.Event()
-
-    # PULL musi być zbindowany przed uruchomieniem producenta.
-    receiver = ctx.socket(zmq.PULL)
-    receiver.bind("inproc://heartbeat")
-
-    worker = threading.Thread(
-        target=heartbeat_worker,
-        args=(ctx, stop_event),
-        daemon=False,
-    )
-    worker.start()
-
-    try:
-        # Odbieranie heartbeat przez 5 sekund.
-        deadline = time.monotonic() + 5
-
-        while time.monotonic() < deadline:
-            if receiver.poll(timeout=200):
-                print("Received:", receiver.recv_string())
-
-    except KeyboardInterrupt:
-        print("Shutdown requested")
-
-    finally:
-        # Graceful shutdown
-        stop_event.set()
-        worker.join(timeout=3)
-
-        if worker.is_alive():
-            print("WARNING: worker did not stop in time")
-
-        receiver.close(linger=0)
-        ctx.term()
-
-
-if __name__ == "__main__":
-    main()
-
-"""
-
 
