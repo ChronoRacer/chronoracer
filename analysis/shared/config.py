@@ -30,8 +30,12 @@ def load_config() -> Config | None:
 
     logger.info("Analysis config loaded")
 
+    telemetry_url = os.environ["TELEMETRY_URL"]
+    if "://" not in telemetry_url:
+        telemetry_url = "http://" + telemetry_url
+
     return Config(
         CORE_TELEMETRY_URL=os.environ["CORE_TELEMETRY_URL"],
         CLIENT_ID="analysis_",
-        TELEMETRY_URL=os.environ["TELEMETRY_URL"]
+        TELEMETRY_URL=telemetry_url
     )
