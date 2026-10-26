@@ -1,5 +1,6 @@
 import math
-
+import numpy as np
+from sklearn.linear_model import HuberRegressor
 from pydantic import BaseModel
 
 
@@ -100,3 +101,65 @@ class LapDetector:
             self.curr_lap_num += 1
             return test_point
         return None
+
+
+
+class LackOfFuelPred:
+    def __init__(self, initial_laps: int = 2):
+        self.laps_arr: np.ndarray = np.array([])
+        self.fuels_arr: np.ndarray = np.array([])
+        self.initial_laps: int = initial_laps
+        self.initial_laps_const = initial_laps
+        self.start_point: MPoint | None = None  # Point(Lat,Lon) on the track
+        self.huber_reg = HuberRegressor(max_iter=100)
+
+    def set_start_point(self, point: MPoint):
+        self.start_point = point
+
+    def _laps_to_empty(self, curr_lap : int):
+        if not hasattr(self.huber_reg, "coef_"):
+            return None,None
+
+        a = self.huber_reg.coef_[0] # negative slope
+        b = self.huber_reg.intercept_
+
+        if a >= 0:
+            return None,None
+        target_lap = -b/a
+
+        return max(0,target_lap - curr_lap), abs(a)
+
+    def fill(self, is_finish_line_crossed: bool, curr_lap : int, fuel: float):
+        if self.start_point is None:
+            return
+
+        if not is_finish_line_crossed:
+            return
+
+        if len(self.fuels_arr) > 0 and fuel > self.fuels_arr[-1]:
+            self.laps_arr = np.array([])
+            self.fuels_arr = np.array([])
+            self.initial_laps = self.initial_laps_const
+
+        self.laps_arr = np.append(self.laps_arr, [curr_lap])
+        self.fuels_arr = np.append(self.fuels_arr, [fuel])
+
+
+    def process_data(self, is_finish_line_crossed: bool, curr_lap : int):
+        if self.start_point is None:
+            return None
+
+        if not is_finish_line_crossed:
+            return None
+
+        self.initial_laps -= 1
+        if self.initial_laps  > 0:
+            return None
+        X_train = self.laps_arr.reshape(-1, 1)
+        y_train = self.fuels_arr
+
+        self.huber_reg.fit(X_train, y_train)
+        next_lap_X = np.array([[curr_lap + 1]])
+        predicted_fuel = self.huber_reg.predict(next_lap_X)[0]
+        laps_to_empty,avg_fuel_consumption_per_lap = self._laps_to_empty(curr_lap)
+        return laps_to_empty,avg_fuel_consumption_per_lap,predicted_fuel
