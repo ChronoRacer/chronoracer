@@ -45,6 +45,15 @@ Run sequentially, inspecting each summary before increasing the rate:
 | L250 |  250,000 |    600 s |                           4 |
 | L350 |  350,000 |    600 s |                           5 |
 
+If passes:
+
+| ID   | Points/s | Duration | Initial generator processes |
+|------|---------:|:---------|----------------------------:|
+| L500 |  500,000 | 600 s    |                           8 |
+| L650 |  650,000 | 600 s    |                          11 |
+| L800 |  800,000 | 600 s    |                          14 |
+| L900 |  900,000 | 600 s    |                          16 |
+
 ```bash
 load-test/run-scenario.sh L100 100000 600 4
 load-test/run-scenario.sh L200 200000 600 4

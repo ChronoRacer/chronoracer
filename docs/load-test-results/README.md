@@ -6,4 +6,5 @@ lastest one for measurements.
 | Campaign                                    | Latest |
 |---------------------------------------------|--------|
 | [0.1.4](./core-0.1.4/core-0.1.4-results.md) | No     |
-| [0.3.1](./core-0.3.1/core-0.3.1-results.md) | Yes    |
+| [0.3.1](./core-0.3.1/core-0.3.1-results.md) | No     |
+| [0.3.2](./core-0.3.2/core-0.3.2-results.md) | Yes    |

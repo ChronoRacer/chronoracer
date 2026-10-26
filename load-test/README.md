@@ -4,8 +4,7 @@ This directory owns load-test orchestration and evidence collection for Kafka, C
 The Kafka producer is in [`curls/load_test/`](../curls/load_test/README.md).
 
 Use one operator overlay, [`load-testing-core-config.yaml`](load-testing-core-config.yaml), for the entire campaign.
-Run **100K, 150K, 200K, 250K points/s**, then fault injection at a demonstrated sustainable rate, then race-end export.
-Procedure and pass criteria belong to the [runbook](runbook.md). Metric interpretation and collection belong to
+Flow in [runbook](runbook.md). Metric interpretation and collection belong to
 [observability](observability.md). Infrastructure commands belong to [infra-readiness](infra-readiness.md).
 
 From the repository root:
