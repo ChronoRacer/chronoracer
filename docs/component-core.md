@@ -251,7 +251,7 @@ Core publishes custom metrics for [Dashboard](component-dashboard.md) ingest pan
 | `custom.googleapis.com/chronoracer/influx_write_bytes`           | cumulative         | Bytes in fully successful writes                                              |
 | `custom.googleapis.com/chronoracer/influx_write_requests`        | cumulative         | Write attempts, label `outcome` = `ok`, `partial`, `error`, or `retry`        |
 | `custom.googleapis.com/chronoracer/pipeline_consumed_messages`   | cumulative         | Data messages the sink took from Kafka                                        |
-| `custom.googleapis.com/chronoracer/pipeline_sink_blocked_ms`     | cumulative         | Time the sink waited for a free collector slot (backpressure from downstream) |
+| `custom.googleapis.com/chronoracer/pipeline_sink_blocked_ms`     | cumulative         | Time the sink waited on a full collector channel (downstream backpressure)    |
 | `custom.googleapis.com/chronoracer/pipeline_unconsumed_messages` | gauge              | Data messages on the broker not yet delivered to Core, summed over partitions |
 | `custom.googleapis.com/chronoracer/pipeline_persist_latency_ms`  | gauge distribution | Per point batch: oldest record timestamp in the batch to its settlement       |
 
@@ -285,6 +285,9 @@ the percentile. A sample whose publish failed loses its latency window.
 included), from librdkafka statistics on the data consumer (`statistics.interval.ms` is the 60 s sample interval). A
 growing `unconsumed` with `sink_blocked_pct` near 100 means decode or persistence is the limit (`persist_latency_ms`
 and `influx_write_*` tell which); with `sink_blocked_pct` near 0 it means Kafka fetch is.
+
+`sink_blocked_ms` counts only flushes that found the channel full, so it is 0 without backpressure. It is published in
+whole milliseconds, and a wait counts toward the sample in which it ends, so one long stall lands in a single sample.
 
 ## Startup
 

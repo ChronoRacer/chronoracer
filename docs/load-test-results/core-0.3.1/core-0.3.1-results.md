@@ -35,12 +35,18 @@ Steady values are medians/means in the steady window. Latency percentiles are hi
 
 | Run  | Target pts/s | Procs | Points generated | Producer steady | Accepted lines (median) | Lag max / post-run | Persist mean / p99 bound | Sink blocked | Core CPU mean / max | Kafka CPU mean / max | Verdict |
 |------|-------------:|------:|-----------------:|----------------:|------------------------:|-------------------:|-------------------------:|-------------:|--------------------:|---------------------:|---------|
-| L200 |      200,000 |     4 |      120,000,034 |         200,000 |                 200,026 |              0 / 0 |             407 ms / 1 s |  max 0.0017% |       16.5% / 18.8% |        28.6% / 29.3% | pass    |
-| L250 |      250,000 |     4 |      150,000,032 |         250,000 |                 250,031 |             20 / 0 |             361 ms / 1 s |  max 0.0017% |       19.9% / 21.9% |        28.7% / 29.5% | pass    |
-| L350 |      350,000 |     5 |      210,000,011 |         350,000 |                 350,044 |             43 / 0 |             317 ms / 1 s |      0.0017% |       26.5% / 29.4% |        32.8% / 33.8% | pass    |
+| L200 |      200,000 |     4 |      120,000,034 |         200,000 |                 200,026 |              0 / 0 |             407 ms / 1 s |    ≤1 ms/min |       16.5% / 18.8% |        28.6% / 29.3% | pass    |
+| L250 |      250,000 |     4 |      150,000,032 |         250,000 |                 250,031 |             20 / 0 |             361 ms / 1 s |    ≤1 ms/min |       19.9% / 21.9% |        28.7% / 29.5% | pass    |
+| L350 |      350,000 |     5 |      210,000,011 |         350,000 |                 350,044 |             43 / 0 |             317 ms / 1 s |    ≤1 ms/min |       26.5% / 29.4% |        32.8% / 33.8% | pass    |
 
 Common: 0 failed deliveries, drained queues, pacing lateness ≤0.04 s, delivery p99 ≤100 ms (brief spikes after driver
 change), 0 partial/error/retry Influx writes, loss check pass. Core CPU ~7.5% per 100k pts/s over 200k–350k.
+
+**Sink blocked is measurement overhead in these runs, not backpressure.** v0.3.1 also timed flushes that found room
+(~200/s, set by the 5 ms flush interval), and the metric is published in whole milliseconds, so each 60 s interval
+reads 0 or 1 ms (0.0017%). Raw counter over each run: L200 +4 ms, L250 +4 ms, L350 +9 ms (~75 ns per flush). The
+1000-message batch size is not reached at these rates (~167 messages per 5 ms at L350). Later Core counts only
+waits on a full channel ([metric](../../component-core.md#cloud-monitoring-write-counters)).
 
 ### 100k step
 
@@ -55,7 +61,7 @@ see [campaign timeline](runs/campaign.md#timeline-utc).
 | Producer                          | 200,000 pts/s, 0 failures, 60,000,032 points | same                                                                |
 | Loss check                        | pass, 60,000,032                             | pass, 60,000,032                                                    |
 | Core liveness                     | alive, 3 write retries                       | alive, 7 flusher retries, 1 pipeline-full pause                     |
-| Sink blocked, worst 60 s          | 50.7%                                        | 67.5%                                                               |
+| Sink blocked, worst 60 s          | 50.7% (30.4 s of the 32 s freeze)            | 67.5% (40.5 s, one wait from stop to write recovery)                |
 | Persist latency in fault interval | mean 3.7 s, p99 bound 30 s                   | mean 12.8 s, log max 44.9 s                                         |
 | Lag gauge                         | 0 throughout                                 | 0 throughout                                                        |
 | Recovery                          | automatic after freeze                       | writes OK from ~18:48:30Z                                           |

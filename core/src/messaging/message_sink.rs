@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc::Permit;
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -437,13 +438,11 @@ impl BatchMessageSink {
         if buffer.is_empty() {
             return !self.flush_tx.is_closed();
         }
-        let waiting_since = Instant::now();
-        let permit = match tokio::time::timeout(self.pause_after, self.flush_tx.reserve()).await {
-            Ok(permit) => permit.ok(),
-            Err(_) if cancel.is_cancelled() => self.flush_tx.reserve().await.ok(),
-            Err(_) => self.reserve_while_paused(stream, buffer, cancel).await,
+        let permit = match self.flush_tx.try_reserve() {
+            Ok(permit) => Some(permit),
+            Err(TrySendError::Closed(())) => None,
+            Err(TrySendError::Full(())) => self.wait_for_room(stream, buffer, cancel).await,
         };
-        self.stats.add_sink_blocked(waiting_since.elapsed());
         let Some(permit) = permit else {
             return false;
         };
@@ -452,6 +451,23 @@ impl BatchMessageSink {
             Vec::with_capacity(self.batch_size),
         ));
         true
+    }
+
+    /// The channel is full: the wait is backpressure and is reported as sink-blocked time.
+    async fn wait_for_room(
+        &self,
+        stream: &mut MessageStream<'_, OffsetContext>,
+        buffer: &mut MessageBatch,
+        cancel: &CancellationToken,
+    ) -> Option<Permit<'_, MessageBatch>> {
+        let waiting_since = Instant::now();
+        let permit = match tokio::time::timeout(self.pause_after, self.flush_tx.reserve()).await {
+            Ok(permit) => permit.ok(),
+            Err(_) if cancel.is_cancelled() => self.flush_tx.reserve().await.ok(),
+            Err(_) => self.reserve_while_paused(stream, buffer, cancel).await,
+        };
+        self.stats.add_sink_blocked(waiting_since.elapsed());
+        permit
     }
 
     async fn reserve_while_paused(
@@ -635,6 +651,11 @@ mod tests {
 
         assert_eq!(offsets(&rx.try_recv().unwrap()), [1, 2]);
         assert!(buffer.is_empty());
+        assert_eq!(
+            sink.stats.snapshot().sink_blocked,
+            Duration::ZERO,
+            "a flush that finds room is not blocked"
+        );
     }
 
     #[tokio::test]
