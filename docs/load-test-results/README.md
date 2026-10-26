@@ -1,7 +1,7 @@
 # Load test results
 
 One load-testing campaign per directory. Load-testing harness might change with each campaign - always look at the
-lastest one for measurements.
+latest one for measurements.
 
 | Campaign                                    | Latest |
 |---------------------------------------------|--------|

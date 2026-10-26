@@ -4,8 +4,8 @@ Use [`load-testing-core-config.yaml`](load-testing-core-config.yaml) throughout.
 Configuration semantics: [Core startup](../core/startup/README.md). Evidence interpretation:
 [observability](observability.md).
 
-When testing, ALWAYS keep track of the progress in a separate PROGRESS.md file in the current workspace. Update it,
-alongside with measurements from each stage before you start the next one.
+When testing, record progress under `docs/load-test-results/<release>/` (campaign notes plus per-run measurements).
+Update those documents with measurements from each stage before starting the next one.
 
 ## 1. Ready check
 
@@ -83,7 +83,7 @@ If lag is still growing or the VM is under memory/disk pressure, stop increasing
 re-collect with a larger padding window before the next run; do not let an overload contaminate the next baseline.
 At these rates the campaign can accumulate hundreds of millions of points. Avoid routine full DB counts.
 
-Update the statistics in PROGRESS.md after each stage.
+Update the campaign results documents after each stage.
 
 ## 3. Fault injection
 
