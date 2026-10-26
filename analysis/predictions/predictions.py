@@ -11,9 +11,16 @@ from pydantic import BaseModel
 from analysis.shared.config import load_config
 from analysis.predictions.predictions_files import FuelPred, TyreWearPred, LapTimePred
 from analysis.predictions.predictions_files import PredictionClass
-from analysis.ml.models import LapDetector
-from analysis.shared.contract import PredictionRunningJSON, PredictionUnavailableJSON
+from analysis.predictions.prediction_models import LapDetector
+from analysis.shared.contract import (
+    NewPredictionJSON,
+    PredictionRunningJSON,
+    PredictionUnavailableJSON,
+)
 import requests
+
+from analysis.predictions.prediction_models import MPoint
+
 
 class Sensor(BaseModel):
     id: str
@@ -25,11 +32,16 @@ class Value(BaseModel):
     ts_ns : int
     val   : float
 
-class PredObj(BaseModel):
-    pred_id : str
-    is_available : bool
-    pred_class : PredictionClass
-
+class PredObj:
+    def __init__(
+            self,
+            pred_id: str,
+            is_available: bool,
+            pred_class: PredictionClass,
+    ):
+        self.pred_id = pred_id
+        self.is_available = is_available
+        self.pred_class = pred_class
 
 
 TELEMETRY_PREDICTIONS_ENDPOINT = "/predictions"
@@ -98,34 +110,57 @@ class PredictionsEngine:
             )
         return state_json.model_dump(mode="json")
 
+    def _post(self, endpoint: str, payload: dict, what: str) -> None:
+        try:
+            response = requests.post(
+                self.config.TELEMETRY_URL + endpoint,
+                json=payload,
+                headers={"Authorization": "Bearer TOKEN"},
+                timeout=2,
+            )
+            response.raise_for_status()
+        except Exception as ex:
+            logger.warning("Failed to send {}: {}", what, ex)
+
     def send_prediction_state(self, prediction: PredObj, refresh_rate : int | None = None):
-        with requests.Session() as s:
-            s.headers.update({"Authorization": "Bearer TOKEN"})
-            if prediction.is_available:
-                payload = self._prepare_state_json(prediction, refresh_rate)
-                req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RUNNING_PREDICTIONS_ENDPOINT, json=payload, timeout=2)
-                try:
-                    req.raise_for_status()
-                except Exception as ex:
-                    pass  # TODO
-            else:
-                payload = self._prepare_state_json(prediction, refresh_rate)
-                req = s.post(self.config.TELEMETRY_URL + TELEMETRY_UNAVAILABLE_PREDICTIONS_ENDPOINT, json=payload, timeout=2)
-                try:
-                    req.raise_for_status()
-                except Exception as ex:
-                    pass  # TODO
+        endpoint = (
+            TELEMETRY_RUNNING_PREDICTIONS_ENDPOINT
+            if prediction.is_available
+            else TELEMETRY_UNAVAILABLE_PREDICTIONS_ENDPOINT
+        )
+        self._post(endpoint, self._prepare_state_json(prediction, refresh_rate), prediction.pred_id)
+
+    def send_prediction(
+        self,
+        prediction: PredObj,
+        value: float | None,
+        instruction: str | None,
+    ) -> None:
+        payload = NewPredictionJSON(
+            timestamp=time.time_ns() // 1_000,
+            prediction_id=prediction.pred_id,
+            sensors_id=sorted(prediction.pred_class.sensors),
+            instruction=instruction,
+            value=None if value is None else float(value),
+        ).model_dump(mode="json")
+        self._post(TELEMETRY_PREDICTIONS_ENDPOINT, payload, prediction.pred_id)
 
 
     @staticmethod
-    def _get_signals(message_lst,sensors):
+    def _get_signals(message_lst, sensors):
         signals : dict[str,Value] = {}
         for sensor_dct in message_lst:
-            if sensor_dct["sensor_id"] in sensors:
-                signals[sensor_dct["sensor_id"]] = Value(
-                    ts_ns=int(sensor_dct["ts"]),
-                    val=float(sensor_dct["median"])
-                )
+            sensor_id = sensor_dct["sensor_id"]
+            if sensor_id not in sensors:
+                continue
+
+            signal = Value(
+                ts_ns=int(sensor_dct["ts"]),
+                val=float(sensor_dct["median"])
+            )
+            current_signal = signals.get(sensor_id)
+            if current_signal is None or signal.ts_ns > current_signal.ts_ns:
+                signals[sensor_id] = signal
         return signals
 
 
@@ -142,11 +177,55 @@ class PredictionsEngine:
                     self.send_prediction_state(pred, refresh_rate=None)
 
         signals = self._get_signals(message,sensors)
-        #if lap_detector.sensors.issubset(sensors):
-        #    if lap_detector.determine_start_on_track(signals["gps_lat"],signals["gps_lon"],signals["speed"]):
-        #        pass
-        #    else:
-        #        pass
+        gps_lat = signals.get("gps_lat")
+        gps_lon = signals.get("gps_lon")
+        speed   = signals.get("speed")
+        # An empty window, a window without GPS
+        if gps_lat is None or gps_lon is None or speed is None:
+            logger.warning("Empty window, no GPS, or stopped car or there is no speed - skipping lap detection")
+            return
+        if not lap_detector.is_start_set():
+            if lap_detector.sensors.issubset(sensors):
+                lap_detector.determine_start_on_track(
+                    gps_lat.val,
+                    gps_lon.val,
+                    gps_lat.ts_ns,
+                )
+        else:
+            test_point = MPoint(lat=gps_lat.val,lon=gps_lon.val)
+            point = lap_detector.find_next_lap(test_point)
+            if point is not None:
+                logger.info("Lap detected at point: {}", point)
+            for pred in self.predictions:
+                match pred.pred_class:
+                    case FuelPred():
+                        fuel = signals.get("fuel_l")
+                        if pred.is_available and fuel is not None:
+                            if pred.pred_class.need_prepare():
+                                pred.pred_class.prepare({"point": lap_detector.get_start_point()})
+                            pred.pred_class.fill({
+                                "is_finish_line_crossed": point is not None,
+                                "curr_lap": lap_detector.curr_lap_num,
+                                "fuel": fuel.val
+                            })
+                            result = pred.pred_class.process_data({
+                                "is_finish_line_crossed": point is not None,
+                                "curr_lap": lap_detector.curr_lap_num
+                            })
+                            if result is not None:
+                                laps_left, burn_per_lap, predicted_fuel = result
+                                instruction = None
+                                if laps_left is not None and burn_per_lap is not None:
+                                    instruction = (
+                                        f"**{float(laps_left):.1f}** laps until the tank is empty, "
+                                        f"**{float(burn_per_lap):.3f}** L/lap, "
+                                        f"**{float(predicted_fuel):.2f}** L predicted fuel for the next lap"
+                                    )
+                                logger.info("Fuel prediction result: {} on next lap {}", result, lap_detector.curr_lap_num)
+                                self.send_prediction(pred, value=float(predicted_fuel), instruction=instruction)
+
+                    case LapTimePred():
+                        pass
 
 
             # co sie dzieje z modelami keidyc jest przeciety start a kiedy leci nomralne okrazenie
@@ -166,12 +245,12 @@ def main():
     context = zmq.Context()
     sub_socket = context.socket(zmq.SUB)
     sub_socket.setsockopt(zmq.SUBSCRIBE, b"sensor_pred")
-    sub_socket.setsockopt(zmq.RCVTIMEO, 5000)
+    sub_socket.setsockopt(zmq.RCVTIMEO, 60 * 1_000)
     sub_socket.connect("tcp://127.0.0.1:6767")
-    logger.info("Predictions engine subscribed to sensor_agg on tcp://127.0.0.1:6767")
+    logger.info("Predictions engine subscribed to sensor_pred on tcp://127.0.0.1:6767")
     logger.info("Predictions engine running")
 
-    lap_detector = LapDetector(gps_lat="gps_lat",gps_lon="gps_lon",speed="speed")
+    lap_detector = LapDetector(gps_lat="gps_lat", gps_lon="gps_lon")
     while True:
         try:
             start = time.time_ns()
