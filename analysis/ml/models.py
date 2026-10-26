@@ -24,7 +24,7 @@ class LapDetector:
         self.start_collection_ts_ns: int | None = None
         self.previous_point: MPoint | None = None
         self.departed_from_start = False
-        self.lap_counter = 0
+        self.curr_lap_num = 0
 
     def is_start_set(self) -> bool:
         return self.lat_start is not None and self.lon_start is not None
@@ -50,7 +50,7 @@ class LapDetector:
         self.lat_start = gps_lat
         self.lon_start = gps_lon
         self.previous_point = MPoint(lat=gps_lat, lon=gps_lon)
-        self.lap_counter = 1
+        self.curr_lap_num = 1
         return True
 
     @staticmethod
@@ -97,6 +97,6 @@ class LapDetector:
 
         if self._segment_reaches_start(start_point, previous_point, test_point):
             self.departed_from_start = False
-            self.lap_counter += 1
+            self.curr_lap_num += 1
             return test_point
         return None
