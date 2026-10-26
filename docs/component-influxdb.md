@@ -44,11 +44,15 @@ Boot starts InfluxDB 3 Core before the Core process: [Core startup](../core/star
 [`influxdb3.service`](../core/startup/influxdb3.service) runs InfluxDB in its own cgroup: `MemoryHigh=70%`,
 `MemoryMax=80%` of RAM. Under pressure the kernel throttles and then OOM-kills only InfluxDB; `Restart=on-failure`
 restarts it and replays the WAL while Core keeps its batches and Kafka buffers. Core has `OOMScoreAdjust=-900`.
-Inside the limit: write buffer `--force-snapshot-mem-size 30%`, `--exec-mem-pool-size 20%`, `--file-cache-size 10%`
+Inside the limit: write buffer `--force-snapshot-mem-size 15%`, `--exec-mem-pool-size 20%`, `--file-cache-size 10%`
 (Core never queries at runtime), `--force-snapshot-max-age 10m`. `--wal-flush-interval 100ms` shortens write
-acknowledgement. Values are starting points pending the L150 plus full-count-query verification run
-([proposal](proposals/runtime-performance.md)). Export queries run inside the same limits, one bounded time window at
-a time: [InfluxDB export](component-core.md#influxdb-export).
+acknowledgement. `--snapshot-concurrency-limit` is the vCPU count minus one (at least 1), derived at boot by
+[`start-influx.sh`](../core/startup/start-influx.sh): with the default of all vCPUs, every forced snapshot starved Core
+and ingest for ~20 s. The 15% buffer halves the forced-snapshot cycle and the anonymous memory peak, at the cost of
+more overlapping Parquet files, which the export's row budget absorbs. Load-tested at 800K points/s (setting L800d):
+[Core 0.3.2 campaign](load-test-results/core-0.3.2/runs/campaign.md#periodic-spikes-at-800k-influxdb-forced-snapshots).
+Export queries run inside the same limits, one bounded window at a time:
+[InfluxDB export](component-core.md#influxdb-export).
 
 ## Tables
 

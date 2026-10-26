@@ -17,7 +17,7 @@ generation start + 60 s through end; Core metrics at 60 s intervals. Detail:
 - **Fault injection at 800K passed** for InfluxDB freeze, InfluxDB stop and Core restart: no loss, no producer
   errors, automatic recovery, backlogs of 1.4–1.7M messages drained within ~3.5 min.
 - **Race-end export failed** (38/38 tables, two attempts) on InfluxDB query memory, caused by Core's per-table
-  `min(time)/max(time)` query at ~47M rows per table. A Core fix is proposed in [export](runs/export.md).
+  `min(time)/max(time)` query at ~47M rows per table. Fixed in Core 0.3.3: [follow-up](runs/export.md#follow-up-core-033-local-validation-only).
 - InfluxDB forced snapshots explain the periodic CPU/sink spikes seen at 800K.
 
 ## Setup
@@ -100,8 +100,8 @@ The InfluxDB cgroup sits at its 4.74 GiB `MemoryHigh` page-cache ceiling under l
 
 | Item | Note |
 |------|------|
-| Export at high volume | Core time-bounds query exhausts InfluxDB memory; fix proposed, untested ([export](runs/export.md)) |
-| InfluxDB snapshot settings | L800d values tested only as a drop-in; source and [memory budget](../../component-influxdb.md#memory-budget) unchanged |
+| Export at high volume | Fixed in Core 0.3.3, validated locally only; VM re-test pending ([follow-up](runs/export.md#follow-up-core-033-local-validation-only)) |
+| InfluxDB snapshot settings | L800d values adopted in 0.3.3 ([memory budget](../../component-influxdb.md#memory-budget)); VM re-test pending |
 | Ceiling with a faster uplink | 900K limited by generator uplink; Core ceiling between 900K and ~962K |
 | F-restart loss proof | Needs DB/Parquet reconciliation (export failed) |
 | Graceful-restart WARNs | 5 WARN "loop terminated" lines per planned Core stop |

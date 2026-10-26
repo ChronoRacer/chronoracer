@@ -224,15 +224,13 @@ impl ManagedConsumer {
     }
 
     fn pause(&self) {
-        self.paused.store(true, Ordering::Release);
-        match self.consumer.assignment() {
-            Ok(assignment) if assignment.count() > 0 => {
-                if let Err(error) = self.consumer.pause(&assignment) {
-                    warn!(%error, "Failed to pause partitions");
-                }
-            }
-            Ok(_) => {}
-            Err(error) => warn!(%error, "Failed to read the assignment to pause it"),
+        pause_assignment(&self.consumer, &self.paused);
+    }
+
+    fn group_hold(&self) -> GroupHold {
+        GroupHold {
+            consumer: Arc::clone(&self.consumer),
+            paused: Arc::clone(&self.paused),
         }
     }
 
@@ -247,6 +245,37 @@ impl ManagedConsumer {
             Ok(_) => {}
             Err(error) => warn!(%error, "Failed to read the assignment to resume it"),
         }
+    }
+}
+
+fn pause_assignment(consumer: &KafkaConsumer, paused: &AtomicBool) {
+    paused.store(true, Ordering::Release);
+    match consumer.assignment() {
+        Ok(assignment) if assignment.count() > 0 => {
+            if let Err(error) = consumer.pause(&assignment) {
+                warn!(%error, "Failed to pause partitions");
+            }
+        }
+        Ok(_) => {}
+        Err(error) => warn!(%error, "Failed to read the assignment to pause it"),
+    }
+}
+
+/// Keeps a consumer in its group without consuming anything more.
+#[derive(Clone)]
+pub struct GroupHold {
+    consumer: Arc<KafkaConsumer>,
+    paused: Arc<AtomicBool>,
+}
+
+impl GroupHold {
+    /// Pauses the partitions and polls until the task is aborted: rebalances are served and
+    /// `max.poll.interval.ms` cannot expire, so the member stays in the group and can still commit
+    /// after an export that outlasts that interval. Whatever is still delivered is not registered.
+    pub async fn hold(&self) {
+        pause_assignment(&self.consumer, &self.paused);
+        let mut stream = self.consumer.stream();
+        while stream.next().await.is_some() {}
     }
 }
 
@@ -339,6 +368,12 @@ impl BatchMessageSink {
     #[must_use]
     pub fn offsets(&self) -> OffsetLedger {
         self.consumer.ledger.clone()
+    }
+
+    /// Holds the consumer in its group once the sink has stopped, for the race-end export.
+    #[must_use]
+    pub fn group_hold(&self) -> GroupHold {
+        self.consumer.group_hold()
     }
 
     pub async fn ingest_with_cancellation(&self, cancel_token: CancellationToken) {
@@ -573,8 +608,8 @@ impl InstantMessageSink {
             "Instant message sink stopped forwarding for topics: {}",
             self.topics.join(",")
         );
-        self.consumer.pause();
-        while message_stream.next().await.is_some() {}
+        drop(message_stream);
+        self.consumer.group_hold().hold().await;
     }
 }
 

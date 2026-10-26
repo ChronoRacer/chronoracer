@@ -154,6 +154,7 @@ fn run() -> Result<()> {
             storage,
             pubsub,
             messaging_wrapper.sensor_offsets.clone(),
+            messaging_wrapper.sensor_hold.clone(),
             messaging_wrapper.control_offsets.clone(),
         );
 
@@ -557,6 +558,7 @@ async fn handle_outcome(
             let signal_cancel = CancellationToken::new();
             let ignore = tokio::spawn(ignore_signals_until_cancelled(signal_cancel.clone()));
             monitor.drain_data_pipeline().await;
+            let data_hold = monitor.hold_data_consumer();
             await_dlq_drained(&mut control_tasks, monitor.data_pipeline_drain_timeout()).await;
             monitor.commit_offsets().await;
             finalize_write_metrics(
@@ -569,6 +571,7 @@ async fn handle_outcome(
             monitor.execute_exports().await;
             // Whether the exports succeeded or not: a restart must not repeat the race end.
             monitor.commit_shutdown(shutdown_at).await;
+            data_hold.abort();
             signal_cancel.cancel();
             let _ = ignore.await;
             control_tasks.abort_all();

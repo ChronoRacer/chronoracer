@@ -119,7 +119,11 @@ is why ordinary backpressure does not pause. Settled offsets are still committed
 
 **Final commit.** On race-end and on signal shutdown, after the data pipeline and the DLQ have drained, Core
 synchronously commits both consumers (bounded by `runtime.offset_final_commit_timeout_s`; failure is logged and means
-only a replay). The data consumer is not polled after the sink stops. If the drain budget was exhausted twice over
+only a replay). On race-end, once the data pipeline has drained, the data consumer pauses its partitions and keeps
+polling until the `SHUTDOWN` commit, like the [control consumer](#control-consumer-and-shutdown-replay): the export can
+outlast `max.poll.interval.ms`, and an evicted member's closing commit fails with `UnknownMemberId`
+([Core 0.3.2 export](load-test-results/core-0.3.2/runs/export.md#attempt-1-exec-pool-20-default)). On a signal it is
+not polled after the sink stops, because Core exits after the commit. If the drain budget was exhausted twice over
 (pipeline and DLQ each time out), the group may already have dropped the member and this commit fails; the same replay
 rule applies. Unexpected failure exits without a final commit, which is the same as a crash. Periodic lag is logged
 every `kafka.sensor_data_consumer.offset_lag_log_interval_s` as pending offsets per partition, with a warning for a
@@ -518,24 +522,33 @@ exported one at a time:
 
 1. Delete stale `*.parquet.partial` files left by an earlier crash, then list the tables from
    `information_schema.tables` (schema `iox`).
-2. Read the table's `min(time)` and `max(time)`. A table without rows produces no file and still counts as exported.
-3. Query the table in half-open time windows of `persistence.export.query_window_s`
-   (`SELECT * ... WHERE time >= start AND time < end ORDER BY time`) over Arrow Flight. Stream each batch into
-   `{table}.parquet.partial`, using compression `persistence.export.compression_type` (ZSTD only, validated at startup)
-   at `compression_level`. Row groups use the Parquet writer default.
+2. Plan the windows from the table's persisted Parquet files (`system.parquet_files`: time range and row count per
+   file), which reads no rows. A plain `min(time)`/`max(time)` would make InfluxDB deduplicate every row of the table
+   and exhausted its query memory at ~47M rows per table
+   ([Core 0.3.2 export](load-test-results/core-0.3.2/runs/export.md#root-cause)). Windows are half-open, at most
+   `persistence.export.query_window_s` long, and halved down to 1 s while their estimated rows exceed
+   `persistence.export.max_rows_per_window`. The estimate spreads each file's rows evenly over its time range and
+   counts duplicates across overlapping files, so it errs high. One open window before the first file and one after
+   the last read only rows still in the write buffer. A table without persisted files reads its bounds from the write
+   buffer with `min(time)`/`max(time)` and uses plain `query_window_s` windows; one without rows produces no file and
+   still counts as exported.
+3. Query each window (`SELECT * ... WHERE time >= start AND time < end ORDER BY time`) over Arrow Flight. Stream each
+   batch into `{table}.parquet.partial`, using compression `persistence.export.compression_type` (ZSTD only, validated
+   at startup) at `compression_level`. Row groups use the Parquet writer default.
 4. Close the file and rename it to `{table}.parquet`.
 
-Memory stays bounded, so the export does not depend on database size. Core holds one Flight batch plus one row-group
-buffer; InfluxDB sorts and streams one window. The default 600 s window matches InfluxDB's default 10-minute file
-grouping (`gen1-duration`), so each window reads about one persisted Parquet file per table.
+Memory stays bounded by the window budget, not by database size. Core holds one Flight batch plus one row-group
+buffer; InfluxDB deduplicates, sorts and streams one window. Forced snapshots write a new set of overlapping files every
+cycle, so at high ingest rates one 10-minute `gen1-duration` span holds dozens of files per table; the row budget, not
+the window length, keeps those windows small.
 
 Each table attempt is bounded by `persistence.export.attempt_timeout_s`. A failed or timed-out attempt deletes its
 partial file and retries only that table, up to `persistence.export.max_retries` times, with a doubling backoff from
 1 s. Any table that still fails, or `tables_exported < tables_found`, is an export failure, and nothing is uploaded.
 
-Limit: the bounds query for a single table reads every persisted file of that table. A table spanning more than
-`--query-file-limit` × `gen1-duration` (432 × 10 min = 72 h with InfluxDB defaults) needs that limit raised in
-[`influxdb3.service`](../core/startup/influxdb3.service).
+Limit: one window query may read at most `--query-file-limit` (InfluxDB default 432) Parquet files. The row budget
+splits dense spans by rows, not by file count, so a span with more overlapping files than that needs the limit raised
+in [`influxdb3.service`](../core/startup/influxdb3.service).
 
 After exporting, each file is uploaded as `{raceId}/{persistence.export.nested_path_in_bucket}/{file name}` (layout:
 [GCS](component-gcs_buckets.md)). Each upload is bounded by `gcp.upload_timeout_s`; export-done Pub/Sub by

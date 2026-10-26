@@ -78,6 +78,29 @@ overlapping file count. 0.3.1 exported 38/38 at lower volume; `throttle` hit the
 
 Volume context: ~54M points/hour total at 15K pts/s race rate; whether normal races hit this limit is untested.
 
+## Follow-up: Core 0.3.3 (local validation only)
+
+Implemented: windows planned from `system.parquet_files` with a row budget, and the data consumer is held in its group
+through the export ([InfluxDB export](../../../component-core.md#influxdb-export),
+[final commit](../../../component-core.md#kafka-delivery)). The service now ships `--snapshot-concurrency-limit`
+(vCPUs − 1) and `--force-snapshot-mem-size 15%` ([memory budget](../../../component-influxdb.md#memory-budget)).
+
+Local check, 2026-10-27: Docker `influxdb:3.12.1-core`, 6 GB container, `--exec-mem-pool-size 192MB`,
+`--force-snapshot-mem-size 32MB` (denser overlap than 15% on the VM), concurrency 3. Six tables with one series
+each over 50 min: five with 6M rows (12–17 files), `accel_lat` with 48M rows written (66 overlapping files,
+47,999,875 unique).
+
+| Query / export | Result |
+|----------------|--------|
+| `min(time)/max(time)` on `accel_lat` (0.3.2 bounds query) | `Resources exhausted` (`deduplicate batches`, `ExternalSorterMerge`) |
+| `system.parquet_files` (`min_time`/`max_time` Int64, `row_count` UInt64) | sums match persisted rows; ~0.2 s |
+| Export, `max_rows_per_window` 1,000,000 | pass, 41 s; every table matches its unique row count |
+| Export, 2,000,000 | pass, 38 s; InfluxDB container peak 1.67 GiB |
+| Export, 8,000,000 | fail on `accel_lat`, `Resources exhausted` |
+
+The largest `ORDER BY time` window that passed at 192 MB held ~2.4M rows. The 1M default leaves a wide margin at the
+VM's ~1.4 GB pool. Not yet re-run on the VM at load-test volume.
+
 ## Consequences
 
 - Race data not exported; `notify_shutdown_on_failed_db_export: false` → no export-done Pub/Sub.
