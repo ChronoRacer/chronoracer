@@ -13,6 +13,7 @@ import json
 import math
 import os
 import random
+import ssl
 import threading
 import time
 from collections import deque
@@ -298,6 +299,11 @@ def build_producer_config(config):
             "sasl.oauthbearer.token.endpoint.url": oauth["token_endpoint_url"],
             "sasl.oauthbearer.extensions": f"audience={oauth['extension_audience']}",
         })
+        # The wheel's OIDC client defaults to its build host's CA path (absent on Debian/Ubuntu)
+        # and ignores `probe`; use this host's OpenSSL bundle when one exists.
+        ca_file = ssl.get_default_verify_paths().cafile
+        if ca_file:
+            producer_config["https.ca.location"] = ca_file
 
     return producer_config
 

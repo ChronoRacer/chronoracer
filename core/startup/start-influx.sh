@@ -42,8 +42,14 @@ PORT="$(jq -er '.influx_http_port' "${PLATFORM_JSON}")" || {
 }
 HOST="http://127.0.0.1:${PORT}"
 
+CPUS="$(nproc)"
+SNAPSHOT_CONCURRENCY=$((CPUS > 1 ? CPUS - 1 : 1))
+
 # Localhost only
-printf 'INFLUX_HTTP_BIND=127.0.0.1:%s\n' "${PORT}" >"${INFLUX_ENV}"
+{
+  printf 'INFLUX_HTTP_BIND=127.0.0.1:%s\n' "${PORT}"
+  printf 'INFLUX_SNAPSHOT_CONCURRENCY_LIMIT=%s\n' "${SNAPSHOT_CONCURRENCY}"
+} >"${INFLUX_ENV}"
 chmod 644 "${INFLUX_ENV}"
 
 install -d -m 700 "${DATA_DIR}"

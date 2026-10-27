@@ -16,23 +16,23 @@ gcloud compute ssh core --project=chronoracer --zone=europe-west1-b --tunnel-thr
 
 Alternatively run the probe **on the Core VM** (`127.0.0.1:9470`) after copying the script and using `/tmp/lt-venv`.
 
-Regenerate Python stubs (optional):
+Regenerate Python stubs from the repository root when the protocol changes:
 
 ```bash
 python3 -m venv /tmp/lt-venv
 /tmp/lt-venv/bin/pip install grpcio grpcio-tools
 /tmp/lt-venv/bin/python -m grpc_tools.protoc \
-  -I../core/proto \
-  --python_out=gen --grpc_python_out=gen \
-  ../core/proto/telemetry_v1.proto
+  -Icore/proto \
+  --python_out=load-test/gen --grpc_python_out=load-test/gen \
+  core/proto/telemetry_v1.proto
 ```
 
 ## Python probe
 
 ```bash
-/tmp/lt-venv/bin/python watch_probe.py --help
-/tmp/lt-venv/bin/python watch_probe.py --target localhost:9470 --client-id loadprobe
-/tmp/lt-venv/bin/python watch_probe.py --target localhost:9470 --client-id loadprobe --slow 2
+/tmp/lt-venv/bin/python load-test/watch_probe.py --help
+/tmp/lt-venv/bin/python load-test/watch_probe.py --target localhost:9470 --client-id loadprobe
+/tmp/lt-venv/bin/python load-test/watch_probe.py --target localhost:9470 --client-id loadprobe --slow 2
 ```
 
 Uses `client_id` **`loadprobe`**, **all sensors** (`AllSensors`). Every 10 s prints points/s, cumulative `dropped_point_count` from Core `gap` events, and end-to-end lag `now - timestamp_nanos` (p50/p99/max). Lag includes producer batching (timestamps are reading times).
@@ -45,7 +45,7 @@ With port forward active and [grpcurl](https://github.com/fullstorydev/grpcurl) 
 
 ```bash
 grpcurl -plaintext -d '{"client_id":"loadprobe","all":{}}' \
-  -import-path ../core/proto -proto telemetry_v1.proto \
+  -import-path core/proto -proto telemetry_v1.proto \
   localhost:9470 chronoracer.telemetry.v1.TelemetryService/Watch
 ```
 
@@ -53,4 +53,4 @@ Streaming output is raw JSON per message; use the Python probe for periodic aggr
 
 ## Correlating with Core
 
-Compare probe lag with Core `Pipeline report` **`preview_ms`** (record timestamp → telemetry handoff). A slow `--slow` probe should increase probe gaps/lag without raising Core persistence/preview metrics for other subscribers.
+Compare probe gaps/lag with the Monitoring persistence, backpressure and backlog series described in [observability](observability.md). Core no longer publishes `preview_ms`. A slow probe should gap independently while persistence continues and a healthy subscriber remains responsive.

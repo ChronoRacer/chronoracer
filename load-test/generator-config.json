@@ -13,10 +13,10 @@
   "car_name": "Toyota Corolla 2.0 Hybrid 2023",
   "channels_file": "../analysis/corolla_channels-2.json",
   "load": {
-    "points_per_second": 15000,
+    "points_per_second": 100000,
     "min_points_per_message": 1,
     "max_points_per_message": 20,
-    "duration_s": 120.0,
+    "duration_s": 600.0,
     "tick_ms": 20,
     "seed": null
   },

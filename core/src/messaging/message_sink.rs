@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc::Permit;
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -223,15 +224,13 @@ impl ManagedConsumer {
     }
 
     fn pause(&self) {
-        self.paused.store(true, Ordering::Release);
-        match self.consumer.assignment() {
-            Ok(assignment) if assignment.count() > 0 => {
-                if let Err(error) = self.consumer.pause(&assignment) {
-                    warn!(%error, "Failed to pause partitions");
-                }
-            }
-            Ok(_) => {}
-            Err(error) => warn!(%error, "Failed to read the assignment to pause it"),
+        pause_assignment(&self.consumer, &self.paused);
+    }
+
+    fn group_hold(&self) -> GroupHold {
+        GroupHold {
+            consumer: Arc::clone(&self.consumer),
+            paused: Arc::clone(&self.paused),
         }
     }
 
@@ -246,6 +245,37 @@ impl ManagedConsumer {
             Ok(_) => {}
             Err(error) => warn!(%error, "Failed to read the assignment to resume it"),
         }
+    }
+}
+
+fn pause_assignment(consumer: &KafkaConsumer, paused: &AtomicBool) {
+    paused.store(true, Ordering::Release);
+    match consumer.assignment() {
+        Ok(assignment) if assignment.count() > 0 => {
+            if let Err(error) = consumer.pause(&assignment) {
+                warn!(%error, "Failed to pause partitions");
+            }
+        }
+        Ok(_) => {}
+        Err(error) => warn!(%error, "Failed to read the assignment to pause it"),
+    }
+}
+
+/// Keeps a consumer in its group without consuming anything more.
+#[derive(Clone)]
+pub struct GroupHold {
+    consumer: Arc<KafkaConsumer>,
+    paused: Arc<AtomicBool>,
+}
+
+impl GroupHold {
+    /// Pauses the partitions and polls until the task is aborted: rebalances are served and
+    /// `max.poll.interval.ms` cannot expire, so the member stays in the group and can still commit
+    /// after an export that outlasts that interval. Whatever is still delivered is not registered.
+    pub async fn hold(&self) {
+        pause_assignment(&self.consumer, &self.paused);
+        let mut stream = self.consumer.stream();
+        while stream.next().await.is_some() {}
     }
 }
 
@@ -338,6 +368,12 @@ impl BatchMessageSink {
     #[must_use]
     pub fn offsets(&self) -> OffsetLedger {
         self.consumer.ledger.clone()
+    }
+
+    /// Holds the consumer in its group once the sink has stopped, for the race-end export.
+    #[must_use]
+    pub fn group_hold(&self) -> GroupHold {
+        self.consumer.group_hold()
     }
 
     pub async fn ingest_with_cancellation(&self, cancel_token: CancellationToken) {
@@ -437,13 +473,11 @@ impl BatchMessageSink {
         if buffer.is_empty() {
             return !self.flush_tx.is_closed();
         }
-        let waiting_since = Instant::now();
-        let permit = match tokio::time::timeout(self.pause_after, self.flush_tx.reserve()).await {
-            Ok(permit) => permit.ok(),
-            Err(_) if cancel.is_cancelled() => self.flush_tx.reserve().await.ok(),
-            Err(_) => self.reserve_while_paused(stream, buffer, cancel).await,
+        let permit = match self.flush_tx.try_reserve() {
+            Ok(permit) => Some(permit),
+            Err(TrySendError::Closed(())) => None,
+            Err(TrySendError::Full(())) => self.wait_for_room(stream, buffer, cancel).await,
         };
-        self.stats.add_sink_blocked(waiting_since.elapsed());
         let Some(permit) = permit else {
             return false;
         };
@@ -452,6 +486,23 @@ impl BatchMessageSink {
             Vec::with_capacity(self.batch_size),
         ));
         true
+    }
+
+    /// The channel is full: the wait is backpressure and is reported as sink-blocked time.
+    async fn wait_for_room(
+        &self,
+        stream: &mut MessageStream<'_, OffsetContext>,
+        buffer: &mut MessageBatch,
+        cancel: &CancellationToken,
+    ) -> Option<Permit<'_, MessageBatch>> {
+        let waiting_since = Instant::now();
+        let permit = match tokio::time::timeout(self.pause_after, self.flush_tx.reserve()).await {
+            Ok(permit) => permit.ok(),
+            Err(_) if cancel.is_cancelled() => self.flush_tx.reserve().await.ok(),
+            Err(_) => self.reserve_while_paused(stream, buffer, cancel).await,
+        };
+        self.stats.add_sink_blocked(waiting_since.elapsed());
+        permit
     }
 
     async fn reserve_while_paused(
@@ -557,8 +608,8 @@ impl InstantMessageSink {
             "Instant message sink stopped forwarding for topics: {}",
             self.topics.join(",")
         );
-        self.consumer.pause();
-        while message_stream.next().await.is_some() {}
+        drop(message_stream);
+        self.consumer.group_hold().hold().await;
     }
 }
 
@@ -635,6 +686,11 @@ mod tests {
 
         assert_eq!(offsets(&rx.try_recv().unwrap()), [1, 2]);
         assert!(buffer.is_empty());
+        assert_eq!(
+            sink.stats.snapshot().sink_blocked,
+            Duration::ZERO,
+            "a flush that finds room is not blocked"
+        );
     }
 
     #[tokio::test]

@@ -97,8 +97,11 @@ pub struct DatabaseExportConfig {
     pub max_retries: u16,
     /// Per-attempt wall-clock limit for exporting one table.
     pub attempt_timeout_s: NonZeroU16,
-    /// Time span of one export query. Bounds the rows `InfluxDB` sorts and streams per query.
+    /// Longest time span of one export query.
     pub query_window_s: NonZeroU32,
+    /// Rows one export query may cover, estimated from persisted Parquet file metadata. Bounds
+    /// what `InfluxDB` deduplicates and sorts per query.
+    pub max_rows_per_window: NonZeroU32,
 }
 
 impl DatabaseExportConfig {
@@ -399,6 +402,7 @@ mod mock {
                 max_retries: 2,
                 attempt_timeout_s: NonZeroU16::new(600).unwrap(),
                 query_window_s: NonZeroU32::new(600).unwrap(),
+                max_rows_per_window: NonZeroU32::new(1_000_000).unwrap(),
             }
         }
     }
@@ -758,6 +762,7 @@ export:
   max_retries: 3
   attempt_timeout_s: 600
   query_window_s: 600
+  max_rows_per_window: 1000000
 "#;
         assert!(
             config::Config::builder()

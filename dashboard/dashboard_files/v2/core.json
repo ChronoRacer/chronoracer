@@ -734,7 +734,7 @@
         "description": "",
         "id": 6,
         "links": [],
-        "title": "Influx: accepted lines/s",
+        "title": "Influx: points/s",
         "vizConfig": {
           "group": "timeseries",
           "kind": "VizConfig",
@@ -1783,7 +1783,7 @@
                         "name": "11"
                       },
                       "height": 8,
-                      "width": 5,
+                      "width": 12,
                       "x": 0,
                       "y": 0
                     }
@@ -1894,7 +1894,7 @@
         "hide": "hideVariable",
         "name": "project",
         "query": "chronoracer",
-        "skipUrlSync": false
+        "skipUrlSync": true
       }
     }
   ]

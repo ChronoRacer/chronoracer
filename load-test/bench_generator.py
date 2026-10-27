@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Measure local encode + drive-model throughput (no real Kafka)."""
 
+import argparse
 import json
 import os
 import random
@@ -102,7 +103,12 @@ def bench_full_loop(duration_s=8.0, target_rate=10_000_000):
 
 
 def main():
-    measure_s = float(sys.argv[1]) if len(sys.argv) > 1 else 12.0
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("seconds", nargs="?", type=float, default=12.0)
+    args = parser.parse_args()
+    if args.seconds <= 0:
+        parser.error("seconds must be positive")
+    measure_s = args.seconds
     lt.CONFIG_PATH = CONFIG_PATH
     config = json.loads(CONFIG_PATH.read_text())
     load = dict(config["load"])
@@ -128,7 +134,7 @@ def main():
         msgs = stats.total["messages"]
     print(f"\nfull_loop_fake_producer: duration_s={loop_s:.1f} behind_max_s={stats.total['behind_s']:.3f}")
     print(f"  achieved points/s={pts/elapsed:,.0f} messages/s={msgs/elapsed:,.0f}")
-    print(f"  sustainable_15k_with_40pct_headroom_per_instance≈{pts/elapsed/1.4:,.0f} pts/s target")
+    print(f"  encoding_only_with_40pct_headroom_per_instance≈{pts/elapsed/1.4:,.0f} pts/s target")
 
 
 if __name__ == "__main__":

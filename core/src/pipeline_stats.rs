@@ -1,5 +1,5 @@
 //! Pipeline counters published to Cloud Monitoring and logged with each sample, see
-//! `docs/component-core.md#cloud-monitoring-metrics`.
+//! `docs/component-core.md#cloud-monitoring-write-counters`.
 //!
 //! Counters are cumulative; the persist latency histogram is taken (and reset) per sample.
 //! Latency is measured against the Kafka record timestamp (producer `CreateTime`), so it
@@ -174,7 +174,7 @@ impl PipelineStats {
             .fetch_add(messages, Ordering::Relaxed);
     }
 
-    /// Time the sink waited for room in the processing channel.
+    /// Time the sink waited for room in a full processing channel.
     pub fn add_sink_blocked(&self, waited: Duration) {
         let micros = u64::try_from(waited.as_micros()).unwrap_or(u64::MAX);
         self.sink_blocked_us.fetch_add(micros, Ordering::Relaxed);

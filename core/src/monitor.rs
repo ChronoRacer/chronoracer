@@ -2,6 +2,7 @@ use crate::configuration::CoreConfig;
 use crate::gcp;
 use crate::gcp::pubsub::PubSubManager;
 use crate::messaging::kafka_exporter::KafkaExporter;
+use crate::messaging::message_sink::GroupHold;
 use crate::messaging::offset_ledger::OffsetLedger;
 use crate::messaging::partial_message::SourceOffset;
 use crate::persistence::database_exporter::InfluxDbExporter;
@@ -35,6 +36,7 @@ pub struct Monitor {
     gcs_storage_manager: Option<GcsStorageManager>,
     pubsub_manager: Option<PubSubManager>,
     sensor_offsets: OffsetLedger,
+    sensor_hold: GroupHold,
     control_offsets: OffsetLedger,
     data_task_termination_sender: UnboundedSender<()>,
     data_task_termination_receiver: Option<UnboundedReceiver<()>>,
@@ -52,6 +54,7 @@ impl Monitor {
         gcs_storage_manager: Option<GcsStorageManager>,
         pubsub_manager: Option<PubSubManager>,
         sensor_offsets: OffsetLedger,
+        sensor_hold: GroupHold,
         control_offsets: OffsetLedger,
     ) -> Self {
         let (data_task_termination_sender, data_task_termination_receiver) =
@@ -65,6 +68,7 @@ impl Monitor {
             gcs_storage_manager,
             pubsub_manager,
             sensor_offsets,
+            sensor_hold,
             control_offsets,
             data_task_termination_sender,
             data_task_termination_receiver: Some(data_task_termination_receiver),
@@ -117,6 +121,14 @@ impl Monitor {
         ));
         self.sensor_offsets.commit_final(timeout).await;
         self.control_offsets.commit_final(timeout).await;
+    }
+
+    /// Keeps the data consumer in its group until the returned task is aborted. Call after the
+    /// data sink has stopped: the export can outlast `max.poll.interval.ms`.
+    #[must_use]
+    pub fn hold_data_consumer(&self) -> tokio::task::JoinHandle<()> {
+        let hold = self.sensor_hold.clone();
+        tokio::spawn(async move { hold.hold().await })
     }
 
     /// The race-end sequence is over (exports succeeded or not): settles the SHUTDOWN event, which

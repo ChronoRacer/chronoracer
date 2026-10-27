@@ -1,13 +1,11 @@
-# Load test results
+# Load test results for Core 0.1.4
+
+Historical evidence from the 2026-10-22 release. Metric fields, phase overlays, service dependencies and rates below
+describe that test only; current procedure and baseline are owned by the [load-test runbook](../../../load-test/runbook.md).
 
 Test of the race stack on GCP, 2026-10-22, `RACE_ID=lt1021a`, 17:55-21:11Z. The stack was destroyed afterwards.
-Machine types and their rationale: [ADR - VM types](adr-vm-types.md). Harness: [`../load-test/`](../load-test/README.md).
-Field meanings: Core [Pipeline report](component-core.md#pipeline-report), generator
-[Report](../curls/load_test/README.md#report).
-
-Raw evidence (per run `run-metadata.json`, generator logs, `artifacts/steady-summary.json`, `summary.txt`,
-`pipeline-report.csv`, `metrics/*.csv`, `logs/*`; whole-test window in `_full/` with both VM serial consoles and
-`kafka-vm-state.txt`): `scratch/load-test/runs/<ID>/`.
+Machine types and their rationale: [ADR - VM types](../../adr-vm-types.md). Harness: [`../../../load-test`](../../../load-test/README.md).
+The historical Core reports included decoded, preview and write-RPC fields that are no longer published;
 
 ## Setup
 
@@ -40,26 +38,26 @@ Test-only changes, not part of the shipped images:
 
 ## Testing flow
 
-| # | Stage | Note |
-|---|-------|------|
-| 1-2 | Ready check, raise stack | 6 resources; Core idle reports at 10 s, `data` has 4 partitions, Telemetry subscribed |
-| S0 | Smoke 1k | Auth, path, reports, artifact collection |
-| S1a-d | Ramp 2.5k / 5k / 10k / 15k, 300 s, 4 instances | Where any metric bends |
-| S2 | Soak 15k, 1200 s | Target |
-| - | Config change 19:09Z | Throughput overlay uploaded, Core VM reset |
-| S3a-b | 20k / 25k, 300 s | Headroom |
-| - | Clock fix 19:31Z | timesyncd drop-in, see below |
-| S4 | Isolation, 15k, 300 s | Slow `Watch` subscriber (`--slow 0.2`) plus Telemetry UI open |
-| S5 | Reliability, 15k, 300 s | `systemctl stop influxdb3` did not test a DB stall, see [S5](#s5-and-s5b-database-stall-and-core-restart) |
-| S5b | Reliability re-run | `SIGSTOP` on `influxdb3` for 30 s, then Core restart |
-| S2-p2 | Phase 2, 15k, 600 s | Phase-2 overlay, Core VM reset |
-| - | Setup for live ramp | WAL flush 100 ms, `influxdb3` restart |
-| L50-L200 | Live ramp 50k / 75k / 100k / 150k / 200k, 180 s | 8 / 12 / 16 / 20 / 24 instances |
-| - | Stopped | Core VM hung after L200, see [L200 end](#l200-end-count-query-hung-the-core-vm) |
-| 8b | Backlog drain | Skipped: live ingest throughput already sufficient |
-| 9 | Export flow (`SHUTDOWN`) | Skipped, see [L200 end](#l200-end-count-query-hung-the-core-vm) |
-| 10 | Metric collection | `_full/`: logs, 13 metric CSVs, serial consoles, Kafka state |
-| 11 | Teardown 21:20Z | Targeted destroy of the 6 resources (Core VM destroyed while hung); the overlay and local `runs/` were kept |
+| #        | Stage                                           | Note                                                                                                        |
+|----------|-------------------------------------------------|-------------------------------------------------------------------------------------------------------------|
+| 1-2      | Ready check, raise stack                        | 6 resources; Core idle reports at 10 s, `data` has 4 partitions, Telemetry subscribed                       |
+| S0       | Smoke 1k                                        | Auth, path, reports, artifact collection                                                                    |
+| S1a-d    | Ramp 2.5k / 5k / 10k / 15k, 300 s, 4 instances  | Where any metric bends                                                                                      |
+| S2       | Soak 15k, 1200 s                                | Target                                                                                                      |
+| -        | Config change 19:09Z                            | Throughput overlay uploaded, Core VM reset                                                                  |
+| S3a-b    | 20k / 25k, 300 s                                | Headroom                                                                                                    |
+| -        | Clock fix 19:31Z                                | timesyncd drop-in, see below                                                                                |
+| S4       | Isolation, 15k, 300 s                           | Slow `Watch` subscriber (`--slow 0.2`) plus Telemetry UI open                                               |
+| S5       | Reliability, 15k, 300 s                         | `systemctl stop influxdb3` did not test a DB stall, see [S5](#s5-and-s5b-database-stall-and-core-restart)   |
+| S5b      | Reliability re-run                              | `SIGSTOP` on `influxdb3` for 30 s, then Core restart                                                        |
+| S2-p2    | Phase 2, 15k, 600 s                             | Phase-2 overlay, Core VM reset                                                                              |
+| -        | Setup for live ramp                             | WAL flush 100 ms, `influxdb3` restart                                                                       |
+| L50-L200 | Live ramp 50k / 75k / 100k / 150k / 200k, 180 s | 8 / 12 / 16 / 20 / 24 instances                                                                             |
+| -        | Stopped                                         | Core VM hung after L200, see [L200 end](#l200-end-count-query-hung-the-core-vm)                             |
+| 8b       | Backlog drain                                   | Skipped: live ingest throughput already sufficient                                                          |
+| 9        | Export flow (`SHUTDOWN`)                        | Skipped, see [L200 end](#l200-end-count-query-hung-the-core-vm)                                             |
+| 10       | Metric collection                               | `_full/`: logs, 13 metric CSVs, serial consoles, Kafka state                                                |
+| 11       | Teardown 21:20Z                                 | Targeted destroy of the 6 resources (Core VM destroyed while hung); the overlay and local `runs/` were kept |
 
 Pause between runs was at least 3 min, so windows are separable. Steady-state values below are the window
 start+60 s..end.
@@ -129,7 +127,7 @@ Conclusions:
 | Partition skew | End offsets of `data`: 5,038,798 / 2,930,793 / 5,873,126 / 2,098,758 (15,941,475 messages), 2.8x between the largest and smallest, from sensor-name keys |
 
 Kafka idles at ~40% CPU with 2.6 MB/s traffic and no load. This is consistent with the control sink's
-`fetch.wait.max.ms=0` busy fetch ([Core](component-core.md), control path; option 3 in
+`fetch.wait.max.ms=0` busy fetch ([Core](../../component-core.md), control path; option 3 in
 [core-latency-options.md](../scratch/core-latency-options.md)); not isolated by an experiment. It leaves less headroom
 for the S2 criterion "CPU below 80%": at 200k Kafka reached ~76% median.
 
@@ -219,4 +217,4 @@ this data volume. `rpk` export was not needed (DLQ empty, exporting the data top
 TODO (record the run): an export attempt on a very large database outside this run crashed the Core VM. Add its run
 ID, data volume and symptoms here. Cause: the export plugin used at the time ran `SELECT *` per table and held each
 whole table in memory inside `influxdb3`. It was replaced by Core's windowed streaming export
-([InfluxDB export](component-core.md#influxdb-export)), which still needs a re-run at L200 size.
+([InfluxDB export](../../component-core.md#influxdb-export)), which still needs a re-run at L200 size.

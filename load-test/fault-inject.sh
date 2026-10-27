@@ -1,44 +1,28 @@
 #!/usr/bin/env bash
-# S5 fault injection while generators run. Logs UTC times of each action to LOG.
-# Usage: fault-inject.sh <stop|freeze> <LOG>
-#   stop   — systemctl stop influxdb3 30s then start (also stops Core: chronoracer-core Requires=influxdb3)
-#   freeze — SIGSTOP/SIGCONT influxdb3 30s (Core keeps running; preferred DB stall test)
-# No -e: a failed SSH step must not skip the later Core restart.
-set -uo pipefail
-
-MODE="${1:?mode: stop or freeze}"
-LOG="${2:?log path required}"
-PROJECT="${PROJECT:-chronoracer}"
-ZONE="${ZONE:-europe-west1-b}"
-
-ssh_core() {
-  gcloud compute ssh core --project="${PROJECT}" --zone="${ZONE}" --tunnel-through-iap --command "$1" 2>&1 \
-    | grep -vE 'NumPy|increase the perf|^$|tcp-forwarding|^WARNING: $'
-}
-
-t0=$(date +%s)
-wait_until() { while (( $(date +%s) - t0 < $1 )); do sleep 0.5; done; }
-
-case "${MODE}" in
-  stop)
-    wait_until 120
-    echo "$(date -u +%FT%T.%3NZ) stop influxdb3" >>"$LOG"
-    ssh_core "sudo systemctl stop influxdb3; date -u +%FT%T.%3NZ; sleep 30; sudo systemctl start influxdb3; date -u +%FT%T.%3NZ; systemctl is-active influxdb3" >>"$LOG"
-    echo "$(date -u +%FT%T.%3NZ) influxdb3 start returned" >>"$LOG"
-    ;;
+# Usage: RACE_ID=<id> fault-inject.sh <freeze|stop|restart> LOG
+# One fault per run: at 120 s, DB stall for 30 s or Core restart.
+set -euo pipefail
+# shellcheck source=load-test/common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+MODE="${1:?mode required}" LOG="${2:?log path required}"
+[[ "$MODE" =~ ^(freeze|stop|restart)$ ]] || { echo 'mode must be freeze, stop or restart' >&2; exit 2; }
+require_race
+mkdir -p "$(dirname "$LOG")"
+exec >>"$LOG" 2>&1
+# Recovery executes on the VM too, so a local interruption does not leave Influx
+# suspended/stopped. A lost SSH connection triggers the remote EXIT/HUP trap.
+case "$MODE" in
   freeze)
-    wait_until 120
-    echo "$(date -u +%FT%T.%3NZ) SIGSTOP influxdb3" >>"$LOG"
-    ssh_core "sudo systemctl kill -s SIGSTOP influxdb3; date -u +%FT%T.%3NZ; sleep 30; sudo systemctl kill -s SIGCONT influxdb3; date -u +%FT%T.%3NZ; systemctl is-active influxdb3 chronoracer-core" >>"$LOG"
-    echo "$(date -u +%FT%T.%3NZ) influxdb3 SIGCONT returned" >>"$LOG"
+    COMMAND='set -e; trap "systemctl kill -s SIGCONT influxdb3" EXIT HUP INT TERM; systemctl kill -s SIGSTOP influxdb3; date -u +%FT%TZ; sleep 30; systemctl kill -s SIGCONT influxdb3; trap - EXIT HUP INT TERM; systemctl is-active influxdb3 chronoracer-core'
     ;;
-  *)
-    echo "mode must be stop or freeze" >&2
-    exit 2
+  stop)
+    COMMAND='set -e; trap "systemctl start influxdb3" EXIT HUP INT TERM; systemctl stop influxdb3; date -u +%FT%TZ; sleep 30; systemctl start influxdb3; trap - EXIT HUP INT TERM; systemctl is-active influxdb3 chronoracer-core'
+    ;;
+  restart)
+    COMMAND='set -e; systemctl restart chronoracer-core; systemctl is-active chronoracer-core'
     ;;
 esac
-
-wait_until 210
-echo "$(date -u +%FT%T.%3NZ) restart chronoracer-core" >>"$LOG"
-ssh_core "sudo systemctl restart chronoracer-core; date -u +%FT%T.%3NZ; systemctl is-active chronoracer-core" >>"$LOG"
-echo "$(date -u +%FT%T.%3NZ) done" >>"$LOG"
+sleep 120
+echo "$(date -u +%FT%TZ) begin $MODE"
+ssh_core "sudo bash -c '$COMMAND'"
+echo "$(date -u +%FT%TZ) end $MODE"

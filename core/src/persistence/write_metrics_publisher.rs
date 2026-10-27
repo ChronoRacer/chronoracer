@@ -93,7 +93,7 @@ pub async fn publish_write_metrics(
     ticker.tick().await;
 
     let name = format!("projects/{project_id}");
-    let mut pipeline = PipelineSampler::new(stats, started);
+    let mut pipeline = PipelineSampler::new(stats);
     loop {
         tokio::select! {
             biased;
@@ -258,7 +258,6 @@ fn write_time_series(
 struct PipelineSampler {
     stats: Arc<PipelineStats>,
     previous: PipelineSnapshot,
-    previous_end: Timestamp,
     previous_at: Instant,
 }
 
@@ -266,17 +265,15 @@ struct PipelineSample {
     previous: PipelineSnapshot,
     current: PipelineSnapshot,
     persist: HistogramWindow,
-    window_start: Timestamp,
     window_end: Timestamp,
     window: Duration,
 }
 
 impl PipelineSampler {
-    fn new(stats: Arc<PipelineStats>, started: Timestamp) -> Self {
+    fn new(stats: Arc<PipelineStats>) -> Self {
         Self {
             previous: stats.snapshot(),
             stats,
-            previous_end: started,
             previous_at: Instant::now(),
         }
     }
@@ -287,12 +284,10 @@ impl PipelineSampler {
             previous: self.previous,
             current: self.stats.snapshot(),
             persist: self.stats.take_persist(),
-            window_start: self.previous_end,
             window_end: end,
             window: now.duration_since(self.previous_at),
         };
         self.previous = sample.current;
-        self.previous_end = end;
         self.previous_at = now;
         sample
     }
@@ -357,8 +352,8 @@ fn pipeline_time_series(
             PIPELINE_PERSIST_LATENCY_MS,
             "ms",
             &resource,
-            MetricKind::Delta,
-            Some(&sample.window_start),
+            MetricKind::Gauge,
+            None,
             end,
             TypedValue::new().set_distribution_value(latency_distribution(&sample.persist)),
             None,
@@ -555,7 +550,7 @@ mod tests {
     fn pipeline_time_series_covers_counters_gauge_and_latency_distribution() {
         use crate::pipeline_stats::unix_now_ms;
         let stats = Arc::new(PipelineStats::default());
-        let mut sampler = PipelineSampler::new(Arc::clone(&stats), timestamp(1_700_000_000));
+        let mut sampler = PipelineSampler::new(Arc::clone(&stats));
         stats.add_consumed(30);
         stats.add_sink_blocked(Duration::from_millis(1_500));
         stats.set_unconsumed(12);
@@ -590,10 +585,10 @@ mod tests {
         assert_eq!(gauge_interval.start_time, None);
 
         let latency = &series[3];
-        assert_eq!(latency.metric_kind, MetricKind::Delta);
+        assert_eq!(latency.metric_kind, MetricKind::Gauge);
         assert_eq!(latency.value_type, ValueType::Distribution);
         let interval = latency.points[0].interval.as_ref().unwrap();
-        assert_eq!(interval.start_time, Some(timestamp(1_700_000_000)));
+        assert_eq!(interval.start_time, None);
         let distribution = latency.points[0]
             .value
             .as_ref()
@@ -606,20 +601,21 @@ mod tests {
 
         // Next window starts where this one ended; with nothing recorded, no latency series.
         let next = sampler.sample(timestamp(1_700_000_120));
-        assert_eq!(next.window_start, timestamp(1_700_000_060));
+        let next_end = timestamp(1_700_000_120);
         let series = pipeline_time_series(
             "chronoracer",
             &sample_identity(),
             &timestamp(1_700_000_000),
             &next,
         );
+        assert_eq!(next.window_end, next_end);
         assert_eq!(series.len(), 3);
     }
 
     #[test]
     fn unknown_unconsumed_emits_no_gauge() {
         let stats = Arc::new(PipelineStats::default());
-        let mut sampler = PipelineSampler::new(stats, timestamp(1));
+        let mut sampler = PipelineSampler::new(stats);
         let sample = sampler.sample(timestamp(2));
         let series = pipeline_time_series("p", &sample_identity(), &timestamp(1), &sample);
         assert_eq!(series.len(), 2);

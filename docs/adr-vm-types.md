@@ -47,12 +47,9 @@ The only drawback of C4 is that for CPU native Core compilation, a dedicated bui
 
 Technically, from the latest load testing, picking a 2-core variant with slightly more memory would probably be more cost efficient.
 
-[In pricing calculator](https://cloud.google.com/products/calculator?dl=CjhDaVF3WVRSbU9XSTVNeTAyTTJRNUxUUXdOR1F0WWprellpMHdZbUV4TkRRM1kySmlNekFRQVE9PRAIGiRDQUQ5MTA4MC0zOUVDLTQ2NTYtQjg3OC05QTUxQjY0MzA2Rjg&_gl=1*hmvx65*_up*MQ..&gclid=CjwKCAjwqc_UBhBKEiwAWbl25q5jMtOk9eAmBdh9cuBnOYDnJZJLyO9afG3l6jbu6ZQ56lfLfq_q6BoCYFAQAvD_BwE&gclsrc=aw.ds)
-
 ## Kafka VM
 
-Load test evidence ([results](load-test-results.md#resource-usage)) shows Kafka CPU well within two vCPUs, so
-`n4-standard-2` is enough.
+Load test evidence shows Kafka CPU well within two vCPUs, so `n4-standard-2` is enough.
 That would be around `3.30$/30h` with `20GB` balanced hyperdisk boot disk.
 
 If needed, we can go for a highmem variant, which would bump to `4.30$/30h`, so not that much difference. N2 series has
@@ -67,4 +64,4 @@ JVM performance than E2 series and for the predicted instance lifespan, cost dif
 
 ## Evidence from load testing
 
-See [Load test results](load-test-results.md).
+See [Load test results](load-test-results/README.md).
