@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from . import telemetry_v1_pb2 as telemetry__v1__pb2
+from analysis.shared.proto import telemetry_v1_pb2 as analysis_dot_shared_dot_proto_dot_telemetry__v1__pb2
 
 GRPC_GENERATED_VERSION = '1.84.0'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in telemetry_v1_pb2_grpc.py depends on'
+        + ' but the generated code in analysis.shared.proto/telemetry_v1_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -37,8 +37,8 @@ class TelemetryServiceStub:
         """
         self.Watch = channel.unary_stream(
                 '/chronoracer.telemetry.v1.TelemetryService/Watch',
-                request_serializer=telemetry__v1__pb2.WatchRequest.SerializeToString,
-                response_deserializer=telemetry__v1__pb2.WatchResponse.FromString,
+                request_serializer=analysis_dot_shared_dot_proto_dot_telemetry__v1__pb2.WatchRequest.SerializeToString,
+                response_deserializer=analysis_dot_shared_dot_proto_dot_telemetry__v1__pb2.WatchResponse.FromString,
                 _registered_method=True)
 
 
@@ -57,8 +57,8 @@ def add_TelemetryServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Watch': grpc.unary_stream_rpc_method_handler(
                     servicer.Watch,
-                    request_deserializer=telemetry__v1__pb2.WatchRequest.FromString,
-                    response_serializer=telemetry__v1__pb2.WatchResponse.SerializeToString,
+                    request_deserializer=analysis_dot_shared_dot_proto_dot_telemetry__v1__pb2.WatchRequest.FromString,
+                    response_serializer=analysis_dot_shared_dot_proto_dot_telemetry__v1__pb2.WatchResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -87,8 +87,8 @@ class TelemetryService:
             request,
             target,
             '/chronoracer.telemetry.v1.TelemetryService/Watch',
-            telemetry__v1__pb2.WatchRequest.SerializeToString,
-            telemetry__v1__pb2.WatchResponse.FromString,
+            analysis_dot_shared_dot_proto_dot_telemetry__v1__pb2.WatchRequest.SerializeToString,
+            analysis_dot_shared_dot_proto_dot_telemetry__v1__pb2.WatchResponse.FromString,
             options,
             channel_credentials,
             insecure,
