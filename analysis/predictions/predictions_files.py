@@ -1,5 +1,5 @@
 
-from analysis.predictions.prediction_models import LackOfFuelPred
+from analysis.predictions.prediction_models import LackOfFuelPred, LapTimePred
 
 
 class PredictionClass:
@@ -21,7 +21,7 @@ class PredictionClass:
         pass
 
 
-class FuelPred(PredictionClass):
+class FuelPrediction(PredictionClass):
     def __init__(self):
         super().__init__(
             name="Fuel level prediction - for next lap",
@@ -32,7 +32,10 @@ class FuelPred(PredictionClass):
     def prepare(self, context: dict) -> None:
         if self.is_prepared:
             return
-        self.model.set_start_point(context["point"])
+        point = context.get("point")
+        if point is None:
+            return
+        self.model.set_start_point(point)
         if self.model.start_point:
             self.is_prepared = True
 
@@ -49,24 +52,49 @@ class FuelPred(PredictionClass):
         )
 
 
-class LapTimePred(PredictionClass):
+class LapTimePrediction(PredictionClass):
     def __init__(self):
         super().__init__(
             name="Lap time prediction - for next lap",
             sensors={"speed", "hv_soc", "rpm"},
         )
+        self.model = LapTimePred()
 
+    def prepare(self, context: dict) -> None:
+        if self.is_prepared:
+            return
+        p25 = context.get("p25")
+        p50 = context.get("p50")
+        p75 = context.get("p75")
+        track = context.get("track")
+        if p25 is None or p50 is None or p75 is None or track is None:
+            return
+        self.model.set_points(p25, p50, p75)
+        self.model.set_track(track)
+        self.is_prepared = True
 
-class TyreWearPred(PredictionClass):
+    def fill(self, context: dict):
+        self.model.fill(
+            context["lon"],
+            context["lat"],
+            context["lap_time"],
+            context["speed"],
+            context["hv_perc"],
+            context["rpm"],
+        )
+
+    def process_data(self, context: dict):
+        return self.model.process_data(
+            context["is_finish_line_crossed"],
+            context["lap_time"]
+        )
+
+class TyreWearPrediction(PredictionClass):
     def __init__(self):
         super().__init__(
             name="Tyre wear prediction - for next lap",
             sensors={
-                "steer_angle",
-                "speed",
-                "accel_long",
-                "accel_lat",
-                "brake_prs",
-                "throttle",
+                "steer_angle","speed","accel_long",
+                "accel_lat","brake_prs", "throttle",
             },
         )

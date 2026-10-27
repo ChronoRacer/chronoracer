@@ -9,7 +9,7 @@ import shutil
 from loguru import logger
 from pydantic import BaseModel
 from analysis.shared.config import load_config
-from analysis.predictions.predictions_files import FuelPred, TyreWearPred, LapTimePred
+from analysis.predictions.predictions_files import FuelPrediction, TyreWearPrediction, LapTimePrediction
 from analysis.predictions.predictions_files import PredictionClass
 from analysis.predictions.prediction_models import LapDetector
 from analysis.shared.contract import (
@@ -55,9 +55,9 @@ class PredictionsEngine:
         self.local_dir : Path =  Path(tempfile.mkdtemp(prefix="onnx_"))
         self.sensors  : dict[str,Sensor] = self.fetch_sensor()
         self.predictions : list[PredObj] = [
-            PredObj(pred_id="fuel_prediction", is_available=False, pred_class=FuelPred()),
-            PredObj(pred_id="lap_time_prediction", is_available=False, pred_class=LapTimePred()),
-            PredObj(pred_id="tyre_wear_prediction", is_available=False, pred_class=TyreWearPred())
+            PredObj(pred_id="fuel_prediction", is_available=False, pred_class=FuelPrediction()),
+            PredObj(pred_id="lap_time_prediction", is_available=False, pred_class=LapTimePrediction()),
+            PredObj(pred_id="tyre_wear_prediction", is_available=False, pred_class=TyreWearPrediction())
 
         ]
         self.config = config
@@ -184,6 +184,10 @@ class PredictionsEngine:
         if gps_lat is None or gps_lon is None or speed is None:
             logger.warning("Empty window, no GPS, or stopped car or there is no speed - skipping lap detection")
             return
+
+        lap_detector.add_track_point(gps_lon.val,gps_lat.val)
+        track,p25,p50,p75 = lap_detector.find_track_data()
+
         if not lap_detector.is_start_set():
             if lap_detector.sensors.issubset(sensors):
                 lap_detector.determine_start_on_track(
@@ -193,13 +197,17 @@ class PredictionsEngine:
                 )
         else:
             test_point = MPoint(lat=gps_lat.val,lon=gps_lon.val)
-            point = lap_detector.find_next_lap(test_point)
+            point = lap_detector.find_next_lap(test_point, gps_lat.ts_ns)
+            lap_time = lap_detector.lap_time
             if point is not None:
                 logger.info("Lap detected at point: {}", point)
             for pred in self.predictions:
                 match pred.pred_class:
-                    case FuelPred():
+                    case FuelPrediction():
                         fuel = signals.get("fuel_l")
+                        if fuel is None:
+                            logger.warning("Fuel signal is missing, skipping fuel prediction")
+                            continue
                         if pred.is_available and fuel is not None:
                             if pred.pred_class.need_prepare():
                                 pred.pred_class.prepare({"point": lap_detector.get_start_point()})
@@ -214,18 +222,47 @@ class PredictionsEngine:
                             })
                             if result is not None:
                                 laps_left, burn_per_lap, predicted_fuel = result
-                                instruction = None
                                 if laps_left is not None and burn_per_lap is not None:
                                     instruction = (
                                         f"{float(laps_left):.1f} laps until the tank is empty, "
                                         f"{float(burn_per_lap):.3f} L/lap, "
                                         f"{float(predicted_fuel):.2f} L predicted fuel for the next lap"
                                     )
-                                logger.info("Fuel prediction result: {} on next lap {}", result, lap_detector.curr_lap_num)
-                                self.send_prediction(pred, value=float(predicted_fuel), instruction=instruction)
+                                    logger.info("Fuel prediction result: {} on next lap {}", result, lap_detector.curr_lap_num)
+                                    self.send_prediction(pred, value=float(predicted_fuel), instruction=instruction)
 
-                    case LapTimePred():
-                        pass
+                    case LapTimePrediction():
+                        hv_soc = signals.get("hv_soc")
+                        rpm = signals.get("rpm")
+                        if hv_soc is None or rpm is None:
+                            logger.warning("HV SOC or RPM signal is missing, skipping lap time prediction")
+                            continue
+                        if pred.is_available and p25 is not None and p50 is not None and p75 is not None and track is not None and hv_soc is not None and rpm is not None:
+                            if pred.pred_class.need_prepare():
+                                pred.pred_class.prepare({
+                                    "p25": p25,
+                                    "p50": p50,
+                                    "p75": p75,
+                                    "track": track,
+                                })
+                            pred.pred_class.fill({
+                                "lon": gps_lon.val,
+                                "lat": gps_lat.val,
+                                "lap_time": lap_time,
+                                "speed": speed.val,
+                                "hv_perc": hv_soc.val,
+                                "rpm": rpm.val,
+                            })
+                            result = pred.pred_class.process_data({
+                                "is_finish_line_crossed": point is not None,
+                                "lap_time": lap_time,
+                            })
+                            if result is not None:
+                                instruction = (
+                                    f"Predicted lap time for the next lap: {float(result):.3f} seconds"
+                                )
+                                logger.info("Lap time prediction result: {} on next lap {}", result, lap_detector.curr_lap_num)
+                                self.send_prediction(pred, value=float(result), instruction=instruction)
 
 
             # co sie dzieje z modelami keidyc jest przeciety start a kiedy leci nomralne okrazenie
