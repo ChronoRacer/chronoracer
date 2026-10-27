@@ -44,9 +44,9 @@ class PredObj:
         self.pred_class = pred_class
 
 
-TELEMETRY_PREDICTIONS_ENDPOINT = "/predictions"
-TELEMETRY_RUNNING_PREDICTIONS_ENDPOINT = "/predictions/running"
-TELEMETRY_UNAVAILABLE_PREDICTIONS_ENDPOINT = "/predictions/unavailable"
+TELEMETRY_PREDICTIONS_ENDPOINT = "/analysis/v1/predictions"
+TELEMETRY_RUNNING_PREDICTIONS_ENDPOINT = "/analysis/v1/predictions/running"
+TELEMETRY_UNAVAILABLE_PREDICTIONS_ENDPOINT = "/analysis/v1/predictions/unavailable"
 
 class PredictionsEngine:
     def __init__(self,config):
@@ -222,14 +222,25 @@ class PredictionsEngine:
                             })
                             if result is not None:
                                 laps_left, burn_per_lap, predicted_fuel = result
+                                predicted_for_lap = lap_detector.curr_lap_num
+                                logger.info(
+                                    "Fuel: {:.2f} L at end of lap {} | {:.1f} laps to empty | {:.3f} L/lap",
+                                    float(predicted_fuel),
+                                    predicted_for_lap,
+                                    float(laps_left),
+                                    float(burn_per_lap),
+                                )
                                 if laps_left is not None and burn_per_lap is not None:
                                     instruction = (
-                                        f"{float(laps_left):.1f} laps until the tank is empty, "
-                                        f"{float(burn_per_lap):.3f} L/lap, "
-                                        f"{float(predicted_fuel):.2f} L predicted fuel for the next lap"
+                                        f"{float(laps_left):.1f} laps to empty. "
+                                        f"Fuel at end of lap {predicted_for_lap}: {float(predicted_fuel):.2f} L "
+                                        f"({float(burn_per_lap):.3f} L/lap)"
                                     )
-                                    logger.info("Fuel prediction result: {} on next lap {}", result, lap_detector.curr_lap_num)
-                                    self.send_prediction(pred, value=float(predicted_fuel), instruction=instruction)
+                                    self.send_prediction(
+                                        pred,
+                                        value=float(predicted_fuel),
+                                        instruction=instruction,
+                                    )
 
                     case LapTimePrediction():
                         hv_soc = signals.get("hv_soc")
@@ -258,10 +269,18 @@ class PredictionsEngine:
                                 "lap_time": lap_time,
                             })
                             if result is not None:
-                                instruction = (
-                                    f"Predicted lap time for the next lap: {float(result):.3f} seconds"
+                                predicted_for_lap = lap_detector.curr_lap_num
+                                source_lap = predicted_for_lap - 1
+                                logger.info(
+                                    "Lap time: lap {} projected at {:.3f} s (splits from lap {})",
+                                    predicted_for_lap,
+                                    float(result),
+                                    source_lap,
                                 )
-                                logger.info("Lap time prediction result: {} on next lap {}", result, lap_detector.curr_lap_num)
+                                instruction = (
+                                    f"Lap {predicted_for_lap}: {float(result):.3f} s "
+                                    f"(from lap {source_lap} splits)"
+                                )
                                 self.send_prediction(pred, value=float(result), instruction=instruction)
 
 

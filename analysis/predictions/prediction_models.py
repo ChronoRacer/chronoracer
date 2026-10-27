@@ -173,12 +173,17 @@ class LackOfFuelPred:
         if not is_finish_line_crossed:
             return
 
+        # curr_lap is already the lap that just started; X is the finished lap.
+        finished_lap = curr_lap - 1
+        if finished_lap < 1:
+            return
+
         if len(self.fuels_arr) > 0 and fuel > self.fuels_arr[-1]:
             self.laps_arr = np.array([])
             self.fuels_arr = np.array([])
             self.initial_laps = self.initial_laps_const
 
-        self.laps_arr = np.append(self.laps_arr, [curr_lap])
+        self.laps_arr = np.append(self.laps_arr, [finished_lap])
         self.fuels_arr = np.append(self.fuels_arr, [fuel])
 
 
@@ -196,8 +201,9 @@ class LackOfFuelPred:
         y_train = self.fuels_arr
 
         self.huber_reg.fit(X_train, y_train)
-        next_lap_X = np.array([[curr_lap + 1]])
-        predicted_fuel = self.huber_reg.predict(next_lap_X)[0]
+        # curr_lap is the lap in progress; predict fuel at the end of that lap.
+        lap_X = np.array([[curr_lap]])
+        predicted_fuel = self.huber_reg.predict(lap_X)[0]
         laps_to_empty,avg_fuel_consumption_per_lap = self._laps_to_empty(curr_lap)
         return laps_to_empty,avg_fuel_consumption_per_lap,predicted_fuel
 
@@ -255,7 +261,7 @@ class LapTimePred:
             lap_time,speed_kmh,hv_perc,rpm
         ])
 
-    def process_data(self, is_finish_line_crossed: bool, lap_time: int):
+    def process_data(self, is_finish_line_crossed: bool, lap_time: float):
         if not is_finish_line_crossed:
             return None
 

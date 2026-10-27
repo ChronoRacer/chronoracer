@@ -39,3 +39,4 @@ rules/test/files
 /rules/test/rule_testcases.json
 /dev/closed_track.csv
 /dev/closed_track_feed.py
+/dev/test.sh

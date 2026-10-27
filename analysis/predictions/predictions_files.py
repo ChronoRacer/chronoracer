@@ -24,7 +24,7 @@ class PredictionClass:
 class FuelPrediction(PredictionClass):
     def __init__(self):
         super().__init__(
-            name="Fuel level prediction - for next lap",
+            name="Current lap — projected fuel level and laps to empty",
             sensors={"fuel_l"},
         )
         self.model = LackOfFuelPred()
@@ -55,7 +55,7 @@ class FuelPrediction(PredictionClass):
 class LapTimePrediction(PredictionClass):
     def __init__(self):
         super().__init__(
-            name="Lap time prediction - for next lap",
+            name="Current lap — time predicted from previous lap split performance",
             sensors={"speed", "hv_soc", "rpm"},
         )
         self.model = LapTimePred()
