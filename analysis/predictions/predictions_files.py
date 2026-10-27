@@ -25,7 +25,7 @@ class FuelPrediction(PredictionClass):
     def __init__(self):
         super().__init__(
             name="Current lap — projected fuel level and laps to empty",
-            sensors={"fuel_l"},
+            sensors={"fuel_l", "speed"},
         )
         self.model = LackOfFuelPred()
 
@@ -43,7 +43,8 @@ class FuelPrediction(PredictionClass):
         self.model.fill(
             context["is_finish_line_crossed"],
             context["curr_lap"],
-            context["fuel"]
+            context["fuel"],
+            context["speed"],
         )
     def process_data(self, context: dict):
         return self.model.process_data(

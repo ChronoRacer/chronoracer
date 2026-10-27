@@ -205,7 +205,7 @@ class PredictionsEngine:
                 match pred.pred_class:
                     case FuelPrediction():
                         fuel = signals.get("fuel_l")
-                        if fuel is None:
+                        if fuel is None or speed is None:
                             logger.warning("Fuel signal is missing, skipping fuel prediction")
                             continue
                         if pred.is_available and fuel is not None:
@@ -214,7 +214,8 @@ class PredictionsEngine:
                             pred.pred_class.fill({
                                 "is_finish_line_crossed": point is not None,
                                 "curr_lap": lap_detector.curr_lap_num,
-                                "fuel": fuel.val
+                                "fuel": fuel.val,
+                                "speed": speed.val,
                             })
                             result = pred.pred_class.process_data({
                                 "is_finish_line_crossed": point is not None,

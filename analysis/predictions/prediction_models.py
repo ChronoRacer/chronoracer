@@ -144,8 +144,10 @@ class LapDetector:
 
 class LackOfFuelPred:
     def __init__(self, initial_laps: int = 2):
-        self.laps_arr: np.ndarray = np.array([])
+        self.features: np.ndarray = np.empty((0, 2))
         self.fuels_arr: np.ndarray = np.array([])
+        self.speed_samples: np.ndarray = np.array([])
+        self.last_mean_speed: float | None = None
         self.initial_laps: int = initial_laps
         self.initial_laps_const = initial_laps
         self.start_point: MPoint | None = None  # Point(Lat,Lon) on the track
@@ -154,41 +156,46 @@ class LackOfFuelPred:
     def set_start_point(self, point: MPoint):
         self.start_point = point
 
-    def _laps_to_empty(self, curr_lap : int):
+    def _laps_to_empty(self, curr_lap: int, mean_speed: float):
         if not hasattr(self.huber_reg, "coef_"):
-            return None,None
+            return None, None
 
-        a = self.huber_reg.coef_[0] # negative slope
-        b = self.huber_reg.intercept_
+        # fuel ≈ a_lap * lap + a_speed * speed + b
+        a_lap = float(self.huber_reg.coef_[0])
+        a_speed = float(self.huber_reg.coef_[1])
+        b = float(self.huber_reg.intercept_)
 
-        if a >= 0:
-            return None,None
-        target_lap = -b/a
+        if a_lap >= 0:
+            return None, None
+        target_lap = -(b + a_speed * mean_speed) / a_lap
+        return max(0.0, target_lap - curr_lap), abs(a_lap)
 
-        return max(0,target_lap - curr_lap), abs(a)
-
-    def fill(self, is_finish_line_crossed: bool, curr_lap : int, fuel: float):
+    def fill(self, is_finish_line_crossed: bool, curr_lap: int, fuel: float, speed: float):
         if self.start_point is None:
             return
 
+        self.speed_samples = np.append(self.speed_samples, [speed])
         if not is_finish_line_crossed:
             return
 
-        # curr_lap is already the lap that just started; X is the finished lap.
+        # curr_lap is already the lap that just started; X lap index is the finished lap.
         finished_lap = curr_lap - 1
-        if finished_lap < 1:
+        if finished_lap < 1 or len(self.speed_samples) == 0:
             return
 
         if len(self.fuels_arr) > 0 and fuel > self.fuels_arr[-1]:
-            self.laps_arr = np.array([])
+            self.features = np.empty((0, 2))
             self.fuels_arr = np.array([])
+            self.last_mean_speed = None
             self.initial_laps = self.initial_laps_const
 
-        self.laps_arr = np.append(self.laps_arr, [finished_lap])
+        mean_speed = float(np.mean(self.speed_samples))
+        self.last_mean_speed = mean_speed
+        self.features = np.vstack([self.features, [finished_lap, mean_speed]])
         self.fuels_arr = np.append(self.fuels_arr, [fuel])
+        self.speed_samples = np.array([])
 
-
-    def process_data(self, is_finish_line_crossed: bool, curr_lap : int):
+    def process_data(self, is_finish_line_crossed: bool, curr_lap: int):
         if self.start_point is None:
             return None
 
@@ -196,17 +203,24 @@ class LackOfFuelPred:
             return None
 
         self.initial_laps -= 1
-        if self.initial_laps  > 0:
+        if self.initial_laps > 0:
             return None
-        X_train = self.laps_arr.reshape(-1, 1)
+        if len(self.fuels_arr) < 2 or self.last_mean_speed is None:
+            return None
+
+        X_train = self.features
         y_train = self.fuels_arr
+        if X_train.shape[0] != y_train.shape[0]:
+            return None
 
         self.huber_reg.fit(X_train, y_train)
-        # curr_lap is the lap in progress; predict fuel at the end of that lap.
-        lap_X = np.array([[curr_lap]])
+        # Same pace assumption for the lap now in progress.
+        lap_X = np.array([[curr_lap, self.last_mean_speed]])
         predicted_fuel = self.huber_reg.predict(lap_X)[0]
-        laps_to_empty,avg_fuel_consumption_per_lap = self._laps_to_empty(curr_lap)
-        return laps_to_empty,avg_fuel_consumption_per_lap,predicted_fuel
+        laps_to_empty, avg_fuel_consumption_per_lap = self._laps_to_empty(
+            curr_lap, self.last_mean_speed
+        )
+        return laps_to_empty, avg_fuel_consumption_per_lap, predicted_fuel
 
 
 
