@@ -283,6 +283,40 @@ class PredictionsEngine:
                                 )
                                 self.send_prediction(pred, value=float(result), instruction=instruction)
 
+                    case TyreWearPrediction():
+                        steer_angle = signals.get("steer_angle")
+                        accel_long = signals.get("accel_long")
+                        brake_prs = signals.get("brake_prs")
+                        throttle = signals.get("throttle")
+                        accel_lat = signals.get("accel_lat")
+                        if steer_angle is None or accel_long is None or brake_prs is None or throttle is None or accel_lat is None:
+                            logger.warning("One of the required signals for tyre wear prediction is missing, skipping tyre wear prediction")
+                            continue
+                        if pred.is_available:
+                            if pred.pred_class.need_prepare():
+                                pred.pred_class.prepare({})
+                            pred.pred_class.fill({
+                                "steer_angle": steer_angle.val,
+                                "speed": speed.val,
+                                "accel_long": accel_long.val,
+                                "brake_prs": brake_prs.val,
+                                "throttle": throttle.val,
+                                "accel_lat": accel_lat.val,
+                            })
+                            result = pred.pred_class.process_data({
+                                "is_finish_line_crossed": point is not None,
+                            })
+                            if result is not None:
+                                evaluated_lap = lap_detector.curr_lap_num - 1
+                                logger.info(
+                                    "Tyre grip: lap {} retention at {:.1f}% vs baseline",
+                                    evaluated_lap,
+                                    float(result),
+                                )
+                                instruction = (
+                                    f"Lap {evaluated_lap} tyre grip: {float(result):.1f}% of baseline"
+                                )
+                                self.send_prediction(pred, value=float(result), instruction=instruction)
 
             # co sie dzieje z modelami keidyc jest przeciety start a kiedy leci nomralne okrazenie
 

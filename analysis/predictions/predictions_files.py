@@ -1,5 +1,5 @@
 
-from analysis.predictions.prediction_models import LackOfFuelPred, LapTimePred
+from analysis.predictions.prediction_models import LackOfFuelPred, LapTimePred, TyreWearPred
 
 
 class PredictionClass:
@@ -92,9 +92,32 @@ class LapTimePrediction(PredictionClass):
 class TyreWearPrediction(PredictionClass):
     def __init__(self):
         super().__init__(
-            name="Tyre wear prediction - for next lap",
+            name="Current lap - tyre grip retention vs fresh tyre baseline",
             sensors={
-                "steer_angle","speed","accel_long",
-                "accel_lat","brake_prs", "throttle",
+                "steer_angle",
+                "speed",
+                "accel_long",
+                "accel_lat",
+                "brake_prs",
+                "throttle",
             },
         )
+        self.model = TyreWearPred()
+
+    def prepare(self, context: dict) -> None:
+        if self.is_prepared:
+            return
+        self.is_prepared = True
+
+    def fill(self, context: dict):
+        self.model.fill(
+            context["steer_angle"],
+            context["speed"],
+            context["accel_long"],
+            context["brake_prs"],
+            context["throttle"],
+            context["accel_lat"],
+        )
+
+    def process_data(self, context: dict):
+        return self.model.process_data(context["is_finish_line_crossed"])

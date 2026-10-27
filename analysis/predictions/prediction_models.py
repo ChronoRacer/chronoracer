@@ -7,6 +7,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import RidgeCV
 from shapely.geometry import  Point
+import lightgbm as lgb
 
 # GPS aggregation cadence can change, so elapsed time must always come from
 # GPS timestamps instead of an assumed samples-per-second value.
@@ -296,4 +297,75 @@ class LapTimePred:
 
 
 # ALBO ZMIANA ALO NOWE ZE WLASNIE W 50% TORU LICZE TYLKO KIEDY DOJADE DO 100%
+
+
+class TyreWearPred:
+    def __init__(self, good_tyre_laps: int = 3, steer_angle: float = 0.25):
+        self.laps_with_good_tyre = good_tyre_laps
+        self.steer_angle: float = steer_angle
+        self.good_features: np.ndarray = np.empty((0, 5))
+        self.good_results: np.ndarray = np.empty((0,))
+        self.current_lap_features: list[list[float]] = []
+        self.current_lap_actual_grip: list[float] = []
+        self.is_fitted: bool = False
+        self.regressor = lgb.LGBMRegressor(
+            n_estimators=100,
+            learning_rate=0.05,
+            max_depth=5,
+            random_state=44,
+            verbosity=-1,
+        )
+
+    def fill(
+        self,
+        steer_angle: float,
+        speed_kmh: float,
+        accel_long: float,
+        brake_prs: float,
+        throttle: float,
+        accel_lat: float,
+    ):
+        if abs(steer_angle) < self.steer_angle:
+            return
+        feature_row = [abs(steer_angle), speed_kmh, accel_long, brake_prs, throttle]
+        lat_g = abs(accel_lat)
+        if self.laps_with_good_tyre > 0:
+            self.good_features = np.vstack([self.good_features, feature_row])
+            self.good_results = np.append(self.good_results, lat_g)
+        else:
+            self.current_lap_features.append(feature_row)
+            self.current_lap_actual_grip.append(lat_g)
+
+    def process_data(self, is_start_crossed: bool):
+        if not is_start_crossed:
+            return None
+
+        if self.laps_with_good_tyre > 0:
+            self.laps_with_good_tyre -= 1
+            if self.laps_with_good_tyre == 0 and len(self.good_features) >= 2:
+                self.regressor.fit(self.good_features, self.good_results)
+                self.is_fitted = True
+            return None
+
+        if not self.is_fitted or len(self.current_lap_features) == 0:
+            self.current_lap_features.clear()
+            self.current_lap_actual_grip.clear()
+            return None
+
+        expected_grip = self.regressor.predict(np.array(self.current_lap_features))
+        mean_expected = float(np.mean(expected_grip))
+        mean_actual = float(np.mean(self.current_lap_actual_grip))
+
+        self.current_lap_features.clear()
+        self.current_lap_actual_grip.clear()
+
+        if mean_expected <= 0:
+            return None
+
+        # Grip retention: actual lateral grip compared to baseline fresh tyre grip (in %)
+        retention_pct = max(0.0, min(100.0, (mean_actual / mean_expected) * 100.0))
+        return retention_pct
+
+
+
 # TODO COS Z PREDYKCJA FANCY STALOSCI KIEROWCY czy np nie wymienic bo coraz gorzej jediz ewolniej itd
