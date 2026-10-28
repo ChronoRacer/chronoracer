@@ -1,5 +1,6 @@
 import math
 import numpy as np
+from jinja2.lexer import integer_re
 from shapely.geometry.linestring import LineString
 from sklearn.linear_model import HuberRegressor
 from pydantic import BaseModel
@@ -314,29 +315,32 @@ class LapTimePred:
 
 
 class TyreWearPred:
-    def __init__(self, good_tyre_laps: int = 3, steer_angle: float = 0.25):
+    def __init__(self, good_tyre_laps: int = 3, steer_angle: float = 0.25, min_fit_sample : int = 25,trend_window : int = 3):
         self.laps_with_good_tyre = good_tyre_laps
         self.steer_angle: float = steer_angle
-        self.good_features: np.ndarray = np.empty((0, 5))
-        self.good_results: np.ndarray = np.empty((0,))
-        self.current_lap_features: list[list[float]] = []
-        self.current_lap_actual_grip: list[float] = []
-        # Lap-level shift: features of lap i → retention of lap i+1 (like lap time).
-        self.pending_features: np.ndarray | None = None
-        self.retention_features: np.ndarray = np.empty((0, 5))
-        self.retention_targets: np.ndarray = np.array([])
-        self.is_fitted: bool = False
+        self.min_fit_sample : int = min_fit_sample
+        self.trend_window : int = trend_window
+        # MEASURES ON FIRST X LAPS WHEN TYRES ARE IN THE BEST CONDITION
+        self.good_features : list[list[float]] = []
+        self.good_results : list[float] =  []
+
+
+        # CURRENT LAP MEASURES
+        self.current_lap_features : list[list[float]] = []
+        self.current_lap_actual_grip : list[float] = []
+
+        self.lap_num = 0
+        self.retention_history : list[tuple[int,float]] = []
+        self.last_retention : float | None =  None
+
+        self.is_fitted = False
         self.regressor = lgb.LGBMRegressor(
-            n_estimators=100,
-            learning_rate=0.05,
-            max_depth=5,
-            random_state=44,
-            verbosity=-1,
+            n_estimators=100, learning_rate=0.05,max_depth=5,
+            random_state=44, verbosity=-1
         )
-        self.retention_pipeline = make_pipeline(
-            StandardScaler(),
-            RidgeCV(alphas=np.logspace(-2, 3, 20), cv=None),
-        )
+    def _clear_current_lap(self):
+        self.current_lap_features.clear()
+        self.current_lap_actual_grip.clear()
 
     def fill(
         self,
@@ -352,8 +356,8 @@ class TyreWearPred:
         feature_row = [abs(steer_angle), speed_kmh, accel_long, brake_prs, throttle]
         lat_g = abs(accel_lat)
         if self.laps_with_good_tyre > 0:
-            self.good_features = np.vstack([self.good_features, feature_row])
-            self.good_results = np.append(self.good_results, lat_g)
+            self.good_features.append(feature_row)
+            self.good_results.append(lat_g)
         else:
             self.current_lap_features.append(feature_row)
             self.current_lap_actual_grip.append(lat_g)
@@ -371,42 +375,34 @@ class TyreWearPred:
     def process_data(self, is_finish_line_crossed: bool):
         if not is_finish_line_crossed:
             return None
-
+        self.lap_num += 1
         if self.laps_with_good_tyre > 0:
             self.laps_with_good_tyre -= 1
-            if self.laps_with_good_tyre == 0 and len(self.good_features) >= 2:
-                self.regressor.fit(self.good_features, self.good_results)
-                self.is_fitted = True
-            return None
+            if self.laps_with_good_tyre == 0:
+                if len(self.good_features) >= self.min_fit_sample:
+                    self.regressor.fit(
+                        np.array(self.good_features),
+                        np.array(self.good_results)
+                    )
+                    self.is_fitted = True
+                else:
+                    self.laps_with_good_tyre = 1
 
         retention_finished = self._retention_for_finished_lap()
+        self._clear_current_lap()
+        self.last_retention = retention_finished
         if retention_finished is None:
-            self.current_lap_features.clear()
-            self.current_lap_actual_grip.clear()
             return None
 
-        curr = np.mean(np.array(self.current_lap_features), axis=0).reshape(1, -1)
-        self.current_lap_features.clear()
-        self.current_lap_actual_grip.clear()
+        self.retention_history.append((self.lap_num,retention_finished))
+        window = self.retention_history[-self.trend_window:]
+        if len(window) < 3:
+            return float(np.clip(retention_finished,0.0,100.0))
 
-        predicted_retention = None
-        if self.pending_features is not None:
-            self.retention_features = np.vstack([
-                self.retention_features,
-                self.pending_features,
-            ])
-            self.retention_targets = np.append(self.retention_targets, retention_finished)
-            if len(self.retention_targets) >= 2:
-                self.retention_pipeline.fit(self.retention_features, self.retention_targets)
-                predicted_retention = float(
-                    np.clip(self.retention_pipeline.predict(curr)[0], 0.0, 100.0)
-                )
-            else:
-                # First labelled pair: use the just-measured retention as a guess for the next lap.
-                predicted_retention = retention_finished
-
-        self.pending_features = curr
-        return predicted_retention
+        x,y = zip(*window)
+        slope, intercept = np.polyfit(x,y,1)
+        predicted = slope * (self.lap_num + 1) * intercept
+        return float(np.clip(predicted,0.0,100.0))
 
 
 
