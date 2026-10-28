@@ -93,7 +93,7 @@ class LapTimePrediction(PredictionClass):
 class TyreWearPrediction(PredictionClass):
     def __init__(self):
         super().__init__(
-            name="Current lap - tyre grip retention vs fresh tyre baseline",
+            name="Current lap — projected tyre grip retention vs fresh baseline",
             sensors={
                 "steer_angle",
                 "speed",

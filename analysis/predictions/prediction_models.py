@@ -321,6 +321,10 @@ class TyreWearPred:
         self.good_results: np.ndarray = np.empty((0,))
         self.current_lap_features: list[list[float]] = []
         self.current_lap_actual_grip: list[float] = []
+        # Lap-level shift: features of lap i → retention of lap i+1 (like lap time).
+        self.pending_features: np.ndarray | None = None
+        self.retention_features: np.ndarray = np.empty((0, 5))
+        self.retention_targets: np.ndarray = np.array([])
         self.is_fitted: bool = False
         self.regressor = lgb.LGBMRegressor(
             n_estimators=100,
@@ -328,6 +332,10 @@ class TyreWearPred:
             max_depth=5,
             random_state=44,
             verbosity=-1,
+        )
+        self.retention_pipeline = make_pipeline(
+            StandardScaler(),
+            RidgeCV(alphas=np.logspace(-2, 3, 20), cv=None),
         )
 
     def fill(
@@ -350,8 +358,18 @@ class TyreWearPred:
             self.current_lap_features.append(feature_row)
             self.current_lap_actual_grip.append(lat_g)
 
-    def process_data(self, is_start_crossed: bool):
-        if not is_start_crossed:
+    def _retention_for_finished_lap(self) -> float | None:
+        if not self.is_fitted or len(self.current_lap_features) == 0:
+            return None
+        expected_grip = self.regressor.predict(np.array(self.current_lap_features))
+        mean_expected = float(np.mean(expected_grip))
+        mean_actual = float(np.mean(self.current_lap_actual_grip))
+        if mean_expected <= 0:
+            return None
+        return max(0.0, min(100.0, (mean_actual / mean_expected) * 100.0))
+
+    def process_data(self, is_finish_line_crossed: bool):
+        if not is_finish_line_crossed:
             return None
 
         if self.laps_with_good_tyre > 0:
@@ -361,24 +379,34 @@ class TyreWearPred:
                 self.is_fitted = True
             return None
 
-        if not self.is_fitted or len(self.current_lap_features) == 0:
+        retention_finished = self._retention_for_finished_lap()
+        if retention_finished is None:
             self.current_lap_features.clear()
             self.current_lap_actual_grip.clear()
             return None
 
-        expected_grip = self.regressor.predict(np.array(self.current_lap_features))
-        mean_expected = float(np.mean(expected_grip))
-        mean_actual = float(np.mean(self.current_lap_actual_grip))
-
+        curr = np.mean(np.array(self.current_lap_features), axis=0).reshape(1, -1)
         self.current_lap_features.clear()
         self.current_lap_actual_grip.clear()
 
-        if mean_expected <= 0:
-            return None
+        predicted_retention = None
+        if self.pending_features is not None:
+            self.retention_features = np.vstack([
+                self.retention_features,
+                self.pending_features,
+            ])
+            self.retention_targets = np.append(self.retention_targets, retention_finished)
+            if len(self.retention_targets) >= 2:
+                self.retention_pipeline.fit(self.retention_features, self.retention_targets)
+                predicted_retention = float(
+                    np.clip(self.retention_pipeline.predict(curr)[0], 0.0, 100.0)
+                )
+            else:
+                # First labelled pair: use the just-measured retention as a guess for the next lap.
+                predicted_retention = retention_finished
 
-        # Grip retention: actual lateral grip compared to baseline fresh tyre grip (in %)
-        retention_pct = max(0.0, min(100.0, (mean_actual / mean_expected) * 100.0))
-        return retention_pct
+        self.pending_features = curr
+        return predicted_retention
 
 
 

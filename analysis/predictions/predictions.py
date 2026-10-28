@@ -308,14 +308,16 @@ class PredictionsEngine:
                                 "is_finish_line_crossed": point is not None,
                             })
                             if result is not None:
-                                evaluated_lap = lap_detector.curr_lap_num - 1
+                                # After a finish crossing curr_lap_num is the lap in progress.
+                                predicted_for_lap = lap_detector.curr_lap_num
                                 logger.info(
-                                    "Tyre grip: lap {} retention at {:.1f}% vs baseline",
-                                    evaluated_lap,
+                                    "Tyre grip: {:.1f}% retention projected at end of lap {}",
                                     float(result),
+                                    predicted_for_lap,
                                 )
                                 instruction = (
-                                    f"Lap {evaluated_lap} tyre grip: {float(result):.1f}% of baseline"
+                                    f"Projected tyre grip at end of lap {predicted_for_lap}: "
+                                    f"{float(result):.1f}% of baseline"
                                 )
                                 self.send_prediction(pred, value=float(result), instruction=instruction)
 
