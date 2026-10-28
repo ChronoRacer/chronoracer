@@ -1,5 +1,5 @@
 
-from analysis.predictions.prediction_models import LackOfFuelPred, LapTimePred, TyreWearPred
+from analysis.predictions.prediction_models import LackOfFuelPred, LapTimePred, TyreWearPred, BrakeFadePred
 
 
 class PredictionClass:
@@ -118,6 +118,40 @@ class TyreWearPrediction(PredictionClass):
             context["brake_prs"],
             context["throttle"],
             context["accel_lat"],
+        )
+
+    def process_data(self, context: dict):
+        return self.model.process_data(context["is_finish_line_crossed"])
+
+
+class BrakeFadePrediction(PredictionClass):
+    def __init__(self):
+        super().__init__(
+            name="Current lap — projected brake performance vs fresh baseline",
+            sensors={
+                "steer_angle",
+                "speed",
+                "accel_long",
+                "brake_prs",
+                "hv_soc",
+                "ambient_temp",
+            },
+        )
+        self.model = BrakeFadePred()
+
+    def prepare(self, context: dict) -> None:
+        if self.is_prepared:
+            return
+        self.is_prepared = True
+
+    def fill(self, context: dict):
+        self.model.fill(
+            context["steer_angle"],
+            context["speed"],
+            context["accel_long"],
+            context["brake_prs"],
+            context["hv_soc"],
+            context["ambient_temp"],
         )
 
     def process_data(self, context: dict):

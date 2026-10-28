@@ -9,17 +9,20 @@ import shutil
 from loguru import logger
 from pydantic import BaseModel
 from analysis.shared.config import load_config
-from analysis.predictions.predictions_files import FuelPrediction, TyreWearPrediction, LapTimePrediction
-from analysis.predictions.predictions_files import PredictionClass
-from analysis.predictions.prediction_models import LapDetector
+from analysis.predictions.predictions_files import (
+    BrakeFadePrediction,
+    FuelPrediction,
+    LapTimePrediction,
+    PredictionClass,
+    TyreWearPrediction,
+)
+from analysis.predictions.prediction_models import LapDetector, MPoint
 from analysis.shared.contract import (
     NewPredictionJSON,
     PredictionRunningJSON,
     PredictionUnavailableJSON,
 )
 import requests
-
-from analysis.predictions.prediction_models import MPoint
 
 
 class Sensor(BaseModel):
@@ -57,8 +60,8 @@ class PredictionsEngine:
         self.predictions : list[PredObj] = [
             PredObj(pred_id="fuel_prediction", is_available=False, pred_class=FuelPrediction()),
             PredObj(pred_id="lap_time_prediction", is_available=False, pred_class=LapTimePrediction()),
-            PredObj(pred_id="tyre_wear_prediction", is_available=False, pred_class=TyreWearPrediction())
-
+            PredObj(pred_id="tyre_wear_prediction", is_available=False, pred_class=TyreWearPrediction()),
+            PredObj(pred_id="brake_fade_prediction", is_available=False, pred_class=BrakeFadePrediction()),
         ]
         self.config = config
 
@@ -321,6 +324,50 @@ class PredictionsEngine:
                                 )
                                 instruction = (
                                     f"Projected tyre grip at end of lap {predicted_for_lap}: "
+                                    f"{float(result):.1f}% of baseline"
+                                )
+                                self.send_prediction(pred, value=float(result), instruction=instruction)
+
+                    case BrakeFadePrediction():
+                        steer_angle = signals.get("steer_angle")
+                        accel_long = signals.get("accel_long")
+                        brake_prs = signals.get("brake_prs")
+                        hv_soc = signals.get("hv_soc")
+                        ambient_temp = signals.get("ambient_temp")
+                        if (
+                            steer_angle is None
+                            or accel_long is None
+                            or brake_prs is None
+                            or hv_soc is None
+                            or ambient_temp is None
+                        ):
+                            logger.warning(
+                                "Brake fade sensors missing, skipping brake fade prediction"
+                            )
+                            continue
+                        if pred.is_available:
+                            if pred.pred_class.need_prepare():
+                                pred.pred_class.prepare({})
+                            pred.pred_class.fill({
+                                "steer_angle": steer_angle.val,
+                                "speed": speed.val,
+                                "accel_long": accel_long.val,
+                                "brake_prs": brake_prs.val,
+                                "hv_soc": hv_soc.val,
+                                "ambient_temp": ambient_temp.val,
+                            })
+                            result = pred.pred_class.process_data({
+                                "is_finish_line_crossed": point is not None,
+                            })
+                            if result is not None:
+                                predicted_for_lap = lap_detector.curr_lap_num
+                                logger.info(
+                                    "Brake fade: {:.1f}% performance projected at end of lap {}",
+                                    float(result),
+                                    predicted_for_lap,
+                                )
+                                instruction = (
+                                    f"Projected brake performance at end of lap {predicted_for_lap}: "
                                     f"{float(result):.1f}% of baseline"
                                 )
                                 self.send_prediction(pred, value=float(result), instruction=instruction)

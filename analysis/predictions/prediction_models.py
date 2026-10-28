@@ -1,13 +1,13 @@
 import math
 import numpy as np
-from jinja2.lexer import integer_re
 from shapely.geometry.linestring import LineString
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import HuberRegressor
 from pydantic import BaseModel
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import RidgeCV
-from shapely.geometry import  Point
+from shapely.geometry import Point
 import lightgbm as lgb
 
 # GPS aggregation cadence can change, so elapsed time must always come from
@@ -411,11 +411,118 @@ class TyreWearPred:
         if len(window) < 3:
             return float(np.clip(retention_finished,0.0,100.0))
 
-        x,y = zip(*window)
-        slope, intercept = np.polyfit(x,y,1)
-        predicted = slope * (self.lap_num + 1) * intercept
-        return float(np.clip(predicted,0.0,100.0))
+        x, y = zip(*window)
+        slope, intercept = np.polyfit(x, y, 1)
+        predicted = slope * (self.lap_num + 1) + intercept
+        return float(np.clip(predicted, 0.0, 100.0))
 
 
+class BrakeFadePred:
+    def __init__(
+        self,
+        good_brakes_laps: int = 3,
+        steer_angle: float = 0.25,
+        speed: float = 50.0,
+        brake_prs: float = 20.0,
+        min_fit_sample: int = 25,
+        trend_window: int = 3,
+    ):
+        self.laps_with_good_brakes = good_brakes_laps
+        self.steer_angle = steer_angle
+        self.speed = speed
+        self.brake_prs = brake_prs
+        self.min_fit_sample = min_fit_sample
+        self.trend_window = trend_window
+
+        # First X laps: baseline while brakes are still fresh.
+        self.good_features: list[list[float]] = []
+        self.good_results: list[float] = []
+
+        self.current_lap_features: list[list[float]] = []
+        self.current_lap_actual_brake: list[float] = []
+
+        self.lap_num = 0
+        self.brake_fade_history: list[tuple[int, float]] = []
+        self.last_brake_fade: float | None = None
+
+        self.is_fitted = False
+        self.regressor = RandomForestRegressor(
+            n_estimators=100,
+            random_state=44,
+            verbose=0,
+            max_depth=5,
+        )
+
+    def _clear_current_lap(self):
+        self.current_lap_features.clear()
+        self.current_lap_actual_brake.clear()
+
+    def fill(
+        self,
+        steer_angle: float,
+        speed_kmh: float,
+        accel_long: float,
+        brake_prs: float,
+        hv_soc: float,
+        ambient_temp: float,
+    ):
+        # Straight-line braking samples only (low steer, enough speed and pressure).
+        if abs(steer_angle) > self.steer_angle or speed_kmh < self.speed or brake_prs < self.brake_prs:
+            return
+
+        feature_row = [brake_prs, speed_kmh, hv_soc, ambient_temp]
+        long_g = abs(accel_long)
+        if self.laps_with_good_brakes > 0:
+            self.good_features.append(feature_row)
+            self.good_results.append(long_g)
+        else:
+            self.current_lap_features.append(feature_row)
+            self.current_lap_actual_brake.append(long_g)
+
+    def _brake_fade_for_finished_lap(self) -> float | None:
+        if not self.is_fitted or len(self.current_lap_features) == 0:
+            return None
+        expected_brake = self.regressor.predict(np.array(self.current_lap_features))
+        mean_expected = float(np.mean(expected_brake))
+        mean_actual = float(np.mean(self.current_lap_actual_brake))
+        if mean_expected <= 0:
+            return None
+        return max(0.0, min(100.0, (mean_actual / mean_expected) * 100.0))
+
+    def process_data(self, is_finish_line_crossed: bool):
+        if not is_finish_line_crossed:
+            return None
+
+        self.lap_num += 1
+
+        if self.laps_with_good_brakes > 0:
+            self.laps_with_good_brakes -= 1
+            if self.laps_with_good_brakes == 0:
+                if len(self.good_features) >= self.min_fit_sample:
+                    self.regressor.fit(
+                        np.array(self.good_features),
+                        np.array(self.good_results),
+                    )
+                    self.is_fitted = True
+                else:
+                    self.laps_with_good_brakes = 1
+            self._clear_current_lap()
+            return None
+
+        brake_fade_finished = self._brake_fade_for_finished_lap()
+        self._clear_current_lap()
+        self.last_brake_fade = brake_fade_finished
+        if brake_fade_finished is None:
+            return None
+
+        self.brake_fade_history.append((self.lap_num, brake_fade_finished))
+        window = self.brake_fade_history[-self.trend_window:]
+        if len(window) < self.trend_window:
+            # Not enough trend yet: report the just-finished lap as a guess for the next.
+            return float(np.clip(brake_fade_finished, 0.0, 100.0))
+        x, y = zip(*window)
+        slope, intercept = np.polyfit(x, y, 1)
+        predicted = slope * (self.lap_num + 1) + intercept
+        return float(np.clip(predicted, 0.0, 100.0))
 
 # TODO COS Z PREDYKCJA FANCY STALOSCI KIEROWCY czy np nie wymienic bo coraz gorzej jediz ewolniej itd
