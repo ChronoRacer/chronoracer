@@ -56,7 +56,7 @@ class FuelPrediction(PredictionClass):
 class LapTimePrediction(PredictionClass):
     def __init__(self):
         super().__init__(
-            name="Current lap — time predicted from previous lap split performance",
+            name="Current lap — full lap time projected at 25/50/75% distance",
             sensors={"speed", "hv_soc", "rpm"},
         )
         self.model = LapTimePred()
@@ -87,7 +87,7 @@ class LapTimePrediction(PredictionClass):
     def process_data(self, context: dict):
         return self.model.process_data(
             context["is_finish_line_crossed"],
-            context["lap_time"]
+            context["lap_time"],
         )
 
 class TyreWearPrediction(PredictionClass):

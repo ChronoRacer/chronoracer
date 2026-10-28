@@ -228,24 +228,39 @@ class LackOfFuelPred:
 
 
 class LapTimePred:
+    """Full lap-time forecasts for the lap in progress, emitted at 25 / 50 / 75 %.
+
+    At each split, features are elapsed time + speed/hv/rpm. On the finish the
+    same-lap features are labelled with the measured lap time and the per-split
+    Ridge models are refit. Next time the car hits that % , they predict the
+    full time of the lap being driven.
+    """
+
+    SPLITS = (25, 50, 75)
+
     def __init__(self):
-        self.track : LineString | None =  None
-        self.point25 : MPoint | None   = None # lon lat
-        self.point50 : MPoint | None   = None # lon lat
-        self.point75 : MPoint | None   = None # lon lat
-        self.lap_times_s : np.ndarray = np.array([])
-        self.features_25_50_75_temp: dict[int,np.ndarray] = {}
-        self.features_25_50_75 = np.empty((0, 12))
-        self.pending_features: np.ndarray | None = None
-        self.taken_this_lap: set[int] = set()
+        self.track: LineString | None = None
+        self.point25: MPoint | None = None
+        self.point50: MPoint | None = None
+        self.point75: MPoint | None = None
         self.split_window = 3
+        self.features_this_lap: dict[int, np.ndarray] = {}
+        self.taken_this_lap: set[int] = set()
+        self.pending_split: int | None = None
+        self.X: dict[int, np.ndarray] = {s: np.empty((0, 4)) for s in self.SPLITS}
+        self.y: dict[int, np.ndarray] = {s: np.array([]) for s in self.SPLITS}
+        self.pipelines = {
+            s: make_pipeline(
+                StandardScaler(),
+                RidgeCV(alphas=np.logspace(-2, 3, 20), cv=None),
+            )
+            for s in self.SPLITS
+        }
 
-        self.pipeline = make_pipeline(StandardScaler(), RidgeCV(alphas=np.logspace(-2, 3, 20), cv=None))
-
-    def set_track(self,track):
+    def set_track(self, track):
         self.track = track
 
-    def set_points(self,p25,p50,p75):
+    def set_points(self, p25, p50, p75):
         self.point25 = p25
         self.point50 = p50
         self.point75 = p75
@@ -260,12 +275,12 @@ class LapTimePred:
         return max(0, min(perc, 100))
 
     def _split_at(self, raw: int) -> int | None:
-        for target in (25, 50, 75):
+        for target in self.SPLITS:
             if abs(raw - target) <= self.split_window:
                 return target
         return None
 
-    def fill(self,lon : float, lat : float, lap_time:int, speed_kmh:float, hv_perc:float, rpm:int):
+    def fill(self, lon: float, lat: float, lap_time: float, speed_kmh: float, hv_perc: float, rpm: float):
         raw = self._raw_perc(lon, lat)
         if raw is None:
             return
@@ -273,45 +288,42 @@ class LapTimePred:
         if split is None or split in self.taken_this_lap:
             return
         self.taken_this_lap.add(split)
-        self.features_25_50_75_temp[split] = np.array([
-            lap_time,speed_kmh,hv_perc,rpm
-        ])
+        self.features_this_lap[split] = np.array(
+            [lap_time, speed_kmh, hv_perc, rpm], dtype=float
+        )
+        self.pending_split = split
+
+    def _predict_at_split(self, split: int) -> float | None:
+        feat = self.features_this_lap.get(split)
+        if feat is None:
+            return None
+        n = len(self.y[split])
+        if n >= 2:
+            return float(self.pipelines[split].predict(feat.reshape(1, -1))[0])
+        if n == 1:
+            return float(self.y[split][-1])
+        return None
 
     def process_data(self, is_finish_line_crossed: bool, lap_time: float):
-        if not is_finish_line_crossed:
+        if is_finish_line_crossed:
+            for split, feat in self.features_this_lap.items():
+                self.X[split] = np.vstack([self.X[split], feat.reshape(1, -1)])
+                self.y[split] = np.append(self.y[split], lap_time)
+                if len(self.y[split]) >= 2:
+                    self.pipelines[split].fit(self.X[split], self.y[split])
+            self.features_this_lap.clear()
+            self.taken_this_lap.clear()
+            self.pending_split = None
             return None
 
-        have_splits = (
-            25 in self.features_25_50_75_temp
-            and 50 in self.features_25_50_75_temp
-            and 75 in self.features_25_50_75_temp
-        )
-        lap_time_pred = None
-        if have_splits:
-            curr = np.concatenate([
-                self.features_25_50_75_temp[25],
-                self.features_25_50_75_temp[50],
-                self.features_25_50_75_temp[75]
-            ]).reshape(1,-1)
-            if self.pending_features is not None:
-                self.features_25_50_75 = np.vstack([
-                    self.features_25_50_75,
-                    self.pending_features,
-                ])
-                self.lap_times_s = np.append(self.lap_times_s, lap_time)
-                if len(self.lap_times_s) >= 2:
-                    self.pipeline.fit(self.features_25_50_75, self.lap_times_s)
-                    lap_time_pred = float(self.pipeline.predict(curr)[0])
-                else:
-                    lap_time_pred = float(self.lap_times_s[-1])
-            self.pending_features = curr
-
-        self.features_25_50_75_temp.clear()
-        self.taken_this_lap.clear()
-        return lap_time_pred
-
-
-# ALBO ZMIANA ALO NOWE ZE WLASNIE W 50% TORU LICZE TYLKO KIEDY DOJADE DO 100%
+        if self.pending_split is None:
+            return None
+        split = self.pending_split
+        self.pending_split = None
+        predicted = self._predict_at_split(split)
+        if predicted is None:
+            return None
+        return float(predicted), split
 
 
 class TyreWearPred:

@@ -270,19 +270,23 @@ class PredictionsEngine:
                                 "lap_time": lap_time,
                             })
                             if result is not None:
+                                predicted_time, split_pct = result
                                 predicted_for_lap = lap_detector.curr_lap_num
-                                source_lap = predicted_for_lap - 1
                                 logger.info(
-                                    "Lap time: lap {} projected at {:.3f} s (splits from lap {})",
+                                    "Lap time: {:.3f} s projected for lap {} at {}% distance",
+                                    float(predicted_time),
                                     predicted_for_lap,
-                                    float(result),
-                                    source_lap,
+                                    split_pct,
                                 )
                                 instruction = (
-                                    f"Lap {predicted_for_lap}: {float(result):.3f} s "
-                                    f"(from lap {source_lap} splits)"
+                                    f"At {split_pct}% of lap {predicted_for_lap}: "
+                                    f"projected full lap {float(predicted_time):.3f} s"
                                 )
-                                self.send_prediction(pred, value=float(result), instruction=instruction)
+                                self.send_prediction(
+                                    pred,
+                                    value=float(predicted_time),
+                                    instruction=instruction,
+                                )
 
                     case TyreWearPrediction():
                         steer_angle = signals.get("steer_angle")
