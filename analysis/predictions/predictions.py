@@ -227,24 +227,34 @@ class PredictionsEngine:
                             if result is not None:
                                 laps_left, burn_per_lap, predicted_fuel = result
                                 predicted_for_lap = lap_detector.curr_lap_num
-                                logger.info(
-                                    "Fuel: {:.2f} L at end of lap {} | {:.1f} laps to empty | {:.3f} L/lap",
-                                    float(predicted_fuel),
-                                    predicted_for_lap,
-                                    float(laps_left),
-                                    float(burn_per_lap),
-                                )
                                 if laps_left is not None and burn_per_lap is not None:
+                                    logger.info(
+                                        "Fuel: {:.2f} L at end of lap {} | {:.1f} laps to empty | {:.3f} L/lap",
+                                        float(predicted_fuel),
+                                        predicted_for_lap,
+                                        float(laps_left),
+                                        float(burn_per_lap),
+                                    )
                                     instruction = (
                                         f"{float(laps_left):.1f} laps to empty. "
                                         f"Fuel at end of lap {predicted_for_lap}: {float(predicted_fuel):.2f} L "
                                         f"({float(burn_per_lap):.3f} L/lap)"
                                     )
-                                    self.send_prediction(
-                                        pred,
-                                        value=float(predicted_fuel),
-                                        instruction=instruction,
+                                else:
+                                    logger.info(
+                                        "Fuel: {:.2f} L at end of lap {} | laps-to-empty unavailable",
+                                        float(predicted_fuel),
+                                        predicted_for_lap,
                                     )
+                                    instruction = (
+                                        f"Fuel at end of lap {predicted_for_lap}: "
+                                        f"{float(predicted_fuel):.2f} L"
+                                    )
+                                self.send_prediction(
+                                    pred,
+                                    value=float(predicted_fuel),
+                                    instruction=instruction,
+                                )
 
                     case LapTimePrediction():
                         hv_soc = signals.get("hv_soc")
