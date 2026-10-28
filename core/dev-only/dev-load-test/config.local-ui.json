@@ -1,0 +1,61 @@
+{
+  "broker": "localhost:9092",
+  "oauth": {
+    "enabled": false
+  },
+  "sensor_topics": [
+    "data"
+  ],
+  "sensor_ids": [
+    "steer_angle",
+    "brake_prs",
+    "brake_prs_b",
+    "wheel_fr",
+    "wheel_fl",
+    "wheel_rr",
+    "wheel_rl",
+    "accel_long",
+    "accel_lat",
+    "accel_pedal",
+    "speed",
+    "rpm",
+    "steer_torque",
+    "hv_soc",
+    "coolant_temp",
+    "oil_temp",
+    "intake_temp",
+    "throttle",
+    "engine_load",
+    "maf",
+    "ign_timing",
+    "stft",
+    "ltft",
+    "lambda_cmd",
+    "lambda",
+    "o2_current",
+    "baro",
+    "batt_volt",
+    "ambient_temp",
+    "fuel_l",
+    "gps_lat",
+    "gps_lon",
+    "gps_speed",
+    "gps_heading",
+    "gps_alt",
+    "gps_sats",
+    "gps_pdop",
+    "gps_fix"
+  ],
+  "testing_time": 600.0,
+  "batch_count": 30000,
+  "change_driver": {
+    "enabled": false,
+    "count": 0,
+    "initial_delay": 40.0,
+    "topic": "control"
+  },
+  "shutdown": {
+    "enabled": false,
+    "topic": "control"
+  }
+}

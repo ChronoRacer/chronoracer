@@ -16,8 +16,8 @@ export class SeriesStore {
   #series = new Map<string, SensorSeries>();
   #versions = new Map<string, number>();
   #listeners = new Map<string, Set<Listener>>();
-  #frameListeners = new Set<Listener>();
   #latest = 0;
+  #latestAtMs = 0;
 
   get latest(): number {
     return this.#latest;
@@ -31,6 +31,15 @@ export class SeriesStore {
     return this.#versions.get(id) ?? 0;
   }
 
+  /**
+   * Right edge of the chart window at `nowMs` (`performance.now()`): the newest timestamp played back at wall-clock
+   * speed, `delayMs` behind its arrival. With `delayMs` one fanout tick, the edge reaches the newest point as the
+   * next push lands, so charts scroll continuously instead of jumping once per push.
+   */
+  viewEnd(nowMs: number, delayMs: number): number {
+    return Math.min(this.#latest, this.#latest + (nowMs - this.#latestAtMs - delayMs) / 1000);
+  }
+
   replace(pointsBySensor: Record<string, SnapshotPoint[]>): void {
     const touched = new Set([...this.#series.keys(), ...Object.keys(pointsBySensor)]);
     this.#series.clear();
@@ -40,12 +49,17 @@ export class SeriesStore {
         this.#add(id, point);
       }
     }
+    this.#latestAtMs = performance.now();
     this.#publish(touched);
   }
 
   append(points: Point[]): void {
+    const latest = this.#latest;
     for (const point of points) {
       this.#add(point.sensorId, point);
+    }
+    if (this.#latest > latest) {
+      this.#latestAtMs = performance.now();
     }
     this.#publish(new Set(points.map((p) => p.sensorId)));
   }
@@ -54,11 +68,6 @@ export class SeriesStore {
     const listeners = this.#listeners.get(id) ?? new Set();
     this.#listeners.set(id, listeners.add(listener));
     return () => listeners.delete(listener);
-  }
-
-  onFrame(listener: Listener): () => void {
-    this.#frameListeners.add(listener);
-    return () => this.#frameListeners.delete(listener);
   }
 
   #add(id: string, point: SnapshotPoint): void {
@@ -94,7 +103,6 @@ export class SeriesStore {
       this.#versions.set(id, this.version(id) + 1);
       this.#listeners.get(id)?.forEach((listener) => listener());
     }
-    this.#frameListeners.forEach((listener) => listener());
   }
 }
 

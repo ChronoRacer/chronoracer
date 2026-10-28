@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Alert, Gap, Hello, Point, Prediction, ServerMessage } from '../../shared/protocol';
+import { DEFAULT_TICK_MS } from '../lib/fanout-tick';
 import { SeriesStore } from '../lib/series-store';
 import { wsUrl } from '../lib/ws-client';
 
@@ -13,6 +14,7 @@ export type TelemetryState = {
   gaps: Gap[];
   predictions: Prediction[];
   alerts: Alert[];
+  tickMs: number;
   store: SeriesStore;
 };
 
@@ -27,6 +29,7 @@ export function useTelemetrySocket(): TelemetryState {
   const [gaps, setGaps] = useState<Gap[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [tickMs, setTickMs] = useState(DEFAULT_TICK_MS);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +77,7 @@ export function useTelemetrySocket(): TelemetryState {
           setGaps(msg.gaps);
           setPredictions(msg.predictions);
           setAlerts(msg.alerts);
+          setTickMs(msg.tickMs);
           store.replace(msg.pointsBySensor);
           return;
         }
@@ -116,7 +120,7 @@ export function useTelemetrySocket(): TelemetryState {
     };
   }, [store]);
 
-  return { connection, coreConnected, hello, sensorIds, gaps, predictions, alerts, store };
+  return { connection, coreConnected, hello, sensorIds, gaps, predictions, alerts, tickMs, store };
 }
 
 function mergePredictions(known: Prediction[], changed: Prediction[]): Prediction[] {

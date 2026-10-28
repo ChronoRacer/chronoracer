@@ -81,7 +81,8 @@ export type AnalysisSnapshot = {
 };
 
 export type ServerMessage<U64 = string> =
-  | ({ type: 'snapshot' } & Snapshot<U64> & AnalysisSnapshot)
+  /** `tickMs`: interval between pushes; the browser animates each update over one tick. */
+  | ({ type: 'snapshot'; tickMs: number } & Snapshot<U64> & AnalysisSnapshot)
   | ({ type: 'status' } & CoreStatus<U64>)
   | { type: 'points'; points: Point<U64>[] }
   | { type: 'gap'; gaps: Gap<U64>[] }

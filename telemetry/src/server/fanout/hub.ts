@@ -57,8 +57,14 @@ export class FanoutHub {
       if (message === undefined) {
         return;
       }
-      client.sensors = 'sensors' in message ? new Set(message.sensors) : undefined;
-      client.key = client.sensors ? [...client.sensors].sort().join(',') : '*';
+      const sensors = 'sensors' in message ? new Set(message.sensors) : undefined;
+      const key = sensors ? [...sensors].sort().join(',') : '*';
+      // The same selection is already covered by the snapshot sent or queued for it.
+      if (key === client.key) {
+        return;
+      }
+      client.sensors = sensors;
+      client.key = key;
       client.needsSnapshot = true;
     });
   }
@@ -110,7 +116,12 @@ export class FanoutHub {
         client.needsSnapshot = false;
         send(
           frame(`snapshot:${key}`, () =>
-            encode({ type: 'snapshot', ...this.store.snapshot(sensors), ...this.analysis.snapshot() }),
+            encode({
+              type: 'snapshot',
+              tickMs: this.config.tickMs,
+              ...this.store.snapshot(sensors),
+              ...this.analysis.snapshot(),
+            }),
           ),
         );
         continue;

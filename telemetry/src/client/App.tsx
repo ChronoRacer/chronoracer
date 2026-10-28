@@ -8,6 +8,7 @@ import { PredictionsPanel } from './components/PredictionsPanel';
 import { ServiceZone } from './components/ServiceZone';
 import { StatusBar } from './components/StatusBar';
 import { useTelemetrySocket } from './hooks/useTelemetrySocket';
+import { FanoutTick } from './lib/fanout-tick';
 import { unknownSensors } from './sensors/layout';
 
 type DrawerKind = 'analysis' | 'service' | null;
@@ -31,46 +32,48 @@ export function App() {
   }, [drawer]);
 
   return (
-    <div className="dash">
-      <StatusBar state={state} />
-      <div className="dash-chrome">
-        <GapMarkers gaps={state.gaps} />
-        <PredictionsPanel
-          predictions={state.predictions}
-          variant="strip"
-          onExpand={() => setDrawer('analysis')}
-        />
-        <AlertsPanel alerts={state.alerts} variant="strip" onExpand={() => setDrawer('analysis')} />
-      </div>
-
-      <div className="dash-stage">
-        <div className="zones-main">
-          <DrivingZone store={state.store} />
-          <PowertrainZone store={state.store} />
+    <FanoutTick value={state.tickMs}>
+      <div className="dash">
+        <StatusBar state={state} />
+        <div className="dash-chrome">
+          <GapMarkers gaps={state.gaps} />
+          <PredictionsPanel
+            predictions={state.predictions}
+            variant="strip"
+            onExpand={() => setDrawer('analysis')}
+          />
+          <AlertsPanel alerts={state.alerts} variant="strip" onExpand={() => setDrawer('analysis')} />
         </div>
 
-        <Drawer open={drawer === 'analysis'} title="Predykcje i alerty" onClose={() => setDrawer(null)}>
-          <div className="drawer-split">
-            <PredictionsPanel predictions={state.predictions} />
-            <AlertsPanel alerts={state.alerts} />
+        <div className="dash-stage">
+          <div className="zones-main">
+            <DrivingZone store={state.store} />
+            <PowertrainZone store={state.store} />
           </div>
-        </Drawer>
 
-        <Drawer
-          open={drawer === 'service'}
-          title={other.length > 0 ? 'Serwis, wykresy i pozostałe sensory' : 'Serwis i wykresy'}
-          onClose={() => setDrawer(null)}
-        >
-          <ServiceZone store={state.store} extraIds={other} />
-        </Drawer>
+          <Drawer open={drawer === 'analysis'} title="Predykcje i alerty" onClose={() => setDrawer(null)}>
+            <div className="drawer-split">
+              <PredictionsPanel predictions={state.predictions} />
+              <AlertsPanel alerts={state.alerts} />
+            </div>
+          </Drawer>
+
+          <Drawer
+            open={drawer === 'service'}
+            title={other.length > 0 ? 'Serwis, wykresy i pozostałe sensory' : 'Serwis i wykresy'}
+            onClose={() => setDrawer(null)}
+          >
+            <ServiceZone store={state.store} extraIds={other} />
+          </Drawer>
+        </div>
+
+        <ServiceZone
+          store={state.store}
+          variant="strip"
+          onExpand={() => setDrawer('service')}
+          extraIds={other}
+        />
       </div>
-
-      <ServiceZone
-        store={state.store}
-        variant="strip"
-        onExpand={() => setDrawer('service')}
-        extraIds={other}
-      />
-    </div>
+    </FanoutTick>
   );
 }

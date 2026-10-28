@@ -33,7 +33,7 @@ export const serverEnvShape = {
   TELEMETRY_MAX_POINTS_PER_SENSOR: positiveInt(1000),
   TELEMETRY_RETENTION_MS: positiveInt(5 * 60_000),
   TELEMETRY_MAX_POINTS: positiveInt(50_000),
-  TELEMETRY_FANOUT_TICK_MS: positiveInt(200),
+  TELEMETRY_FANOUT_TICK_MS: positiveInt(100),
   TELEMETRY_WS_MAX_BUFFERED_BYTES: positiveInt(1_048_576),
   TELEMETRY_CLIENT_DIR: optionalString,
   TELEMETRY_AUTH_DISABLED: z.stringbool().default(false),
