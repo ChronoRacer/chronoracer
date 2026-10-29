@@ -158,10 +158,7 @@ def main():
 
     context = zmq.Context()
     sub_socket = context.socket(zmq.SUB)
-    sub_socket.setsockopt(zmq.RCVTIMEO, 60 * 1_000)
-
     sub_socket.setsockopt(zmq.SUBSCRIBE, b"sensor_agg")
-
     sub_socket.connect("tcp://127.0.0.1:6767")
     logger.info("Rules engine subscribed to sensor_agg on tcp://127.0.0.1:6767")
     logger.info("Rules engine running")
@@ -173,9 +170,8 @@ def main():
             if topic == b"sensor_agg":
                 available_sensors = set([msg["sensor_id"] for msg in data])
                 rules_engine.handle_message(message=data,sensors=available_sensors)
-        except zmq.Again:
-            logger.warning("DISCONNECT - NO MESSAGES FOR DELTA TIME")
-            break
+        except Exception:
+            logger.warning("Rules engine timeout waiting for messages, retrying...")
 if __name__ == "__main__":
     main()
 

@@ -441,7 +441,6 @@ def main():
     context = zmq.Context()
     sub_socket = context.socket(zmq.SUB)
     sub_socket.setsockopt(zmq.SUBSCRIBE, b"sensor_pred")
-    sub_socket.setsockopt(zmq.RCVTIMEO, 60 * 1_000)
     sub_socket.connect("tcp://127.0.0.1:6767")
     logger.info("Predictions engine subscribed to sensor_pred on tcp://127.0.0.1:6767")
     logger.info("Predictions engine running")
@@ -458,14 +457,11 @@ def main():
                 # prepare dct sensor->value for windowto pass it to predictions??
                 #print((time.time_ns() - start)/1000000000)
 
-        except zmq.Again:
-            logger.warning("DISCONNECT - NO MESSAGES FOR DELTA TIME")
-            break
+        except Exception:
+            logger.warning("Predictions engine timeout waiting for messages, retrying...")
 
-            # w jednym oknie moze byc np po dwa jakies wskazania z tego samego sensora??? - pewnie tu tez ostatni przeslny sygnal po ts sort
     pred_engine.on_stop()
     logger.info("Predictions engine stopped")
-    # TODO HERE ALSO TIMEOUT FOR SOCKET sub_socket.setsockopt(zmq.RCVTIMEO, 5000)  # 5 sekund
-# TODO ASK CURSOR IF MY TABLES IN PATHWAY ARE CORRECT FOR MY  RULES AND PREDICTIONS PROBLEM
+
 if __name__ == "__main__":
     main()
