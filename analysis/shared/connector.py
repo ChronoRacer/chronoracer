@@ -10,17 +10,19 @@ from analysis.shared.proto import  telemetry_v1_pb2
 
 
 class GRPCSensorStream(pw.io.python.ConnectorSubject):
-    def __init__(self,config: Config) -> None:
+    def __init__(self, config: Config) -> None:
         super().__init__()
         self.config = config
-        self.max_retries  =  5
         self.retry_delay_seconds = 1
+        self.max_retry_delay_seconds = 5
+
     def run(self):
-        while self.max_retries >= 0:
-            address_without_prefix = self.config.CORE_TELEMETRY_URL.removeprefix("http://")
+        address_without_prefix = self.config.CORE_TELEMETRY_URL.removeprefix("http://")
+
+        while True:
             channel = grpc.insecure_channel(address_without_prefix)
-            stub = telemetry_v1_pb2_grpc.TelemetryServiceStub(channel)
             try:
+                stub = telemetry_v1_pb2_grpc.TelemetryServiceStub(channel)
                 req = telemetry_v1_pb2.WatchRequest(
                     client_id=self.config.CLIENT_ID,
                     all=telemetry_v1_pb2.AllSensors()
@@ -28,7 +30,8 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
                 call = stub.Watch(req)
                 for event in call:
                     if event.HasField("hello"):
-                        logger.info("Connected {}",event.hello.stream_id)
+                        logger.info("Connected to Core: stream_id={}", event.hello.stream_id)
+                        self.retry_delay_seconds = 1
                     elif event.HasField("point_batch"):
                         for point in event.point_batch.points:
                             self.next(
@@ -39,17 +42,25 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
                             )
                     elif event.HasField("gap"):
                         pass
-                logger.info("GRPC CORE HAS ENDED STREAMING DATA")
-                break
+                logger.warning("gRPC stream from Core finished. Reconnecting...")
             except grpc.RpcError as ex:
-                logger.error("Error with GRPC connection to Core {}. Try to reconnect - left {} tries",ex,self.max_retries)
-                self.max_retries -= 1
-                self.retry_delay_seconds *= 2
-                time.sleep(self.retry_delay_seconds)
+                logger.warning(
+                    "Cannot connect to Core ({}) - retrying in {}s...",
+                    ex.code() if hasattr(ex, "code") else ex,
+                    self.retry_delay_seconds,
+                )
+            except Exception as ex:
+                logger.error(
+                    "Unexpected error in gRPC stream: {} - retrying in {}s...",
+                    ex,
+                    self.retry_delay_seconds,
+                )
+            finally:
+                channel.close()
 
-        logger.info("CLOSING PATHWAY CONNECTOR")
+            time.sleep(self.retry_delay_seconds)
+            self.retry_delay_seconds = min(self.retry_delay_seconds * 2, self.max_retry_delay_seconds)
+
     def on_stop(self):
-        # WHEN I USE TEMP FILES I CAN DELETE IT HERE BECAUSE
-        # ON STOP SIGNALS WHEN PATHWAY HAS ENDED JOB SO WE DONT NEED TO KEEP THESE VALUES ANYMORE
         pass
 
