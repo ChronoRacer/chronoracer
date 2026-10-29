@@ -15,7 +15,7 @@ from analysis.predictions.predictions_files import (
     LapTimePrediction,
     PredictionClass,
     TyreWearPrediction,
-    CarFluidsPrediction
+    CarFluidsPrediction,
 )
 from analysis.predictions.prediction_models import LapDetector, MPoint
 from analysis.shared.contract import (
@@ -25,15 +25,18 @@ from analysis.shared.contract import (
 )
 import requests
 
+
 class Sensor(BaseModel):
     id: str
-    min:float | None
-    max:float | None
-    desc : str
+    min: float | None
+    max: float | None
+    desc: str
+
 
 class Value(BaseModel):
-    ts_ns : int
-    val   : float
+    ts_ns: int
+    val: float
+
 
 class PredObj:
     def __init__(
@@ -51,21 +54,21 @@ TELEMETRY_PREDICTIONS_ENDPOINT = "/analysis/v1/predictions"
 TELEMETRY_RUNNING_PREDICTIONS_ENDPOINT = "/analysis/v1/predictions/running"
 TELEMETRY_UNAVAILABLE_PREDICTIONS_ENDPOINT = "/analysis/v1/predictions/unavailable"
 
+
 class PredictionsEngine:
-    def __init__(self,config):
+    def __init__(self, config):
         self.client = storage.Client("chronoracer")
         self.bucket = self.client.bucket("chronoracer-artifacts")
-        self.local_dir : Path =  Path(tempfile.mkdtemp(prefix="onnx_"))
-        self.sensors  : dict[str,Sensor] = self.fetch_sensor()
-        self.predictions : list[PredObj] = [
+        self.local_dir: Path = Path(tempfile.mkdtemp(prefix="onnx_"))
+        self.sensors: dict[str, Sensor] = self.fetch_sensor()
+        self.predictions: list[PredObj] = [
             PredObj(pred_id="fuel_prediction", is_available=False, pred_class=FuelPrediction()),
             PredObj(pred_id="lap_time_prediction", is_available=False, pred_class=LapTimePrediction()),
             PredObj(pred_id="tyre_wear_prediction", is_available=False, pred_class=TyreWearPrediction()),
             PredObj(pred_id="brake_fade_prediction", is_available=False, pred_class=BrakeFadePrediction()),
-            PredObj(pred_id="car_fluids_prediction", is_available=False, pred_class=CarFluidsPrediction())
+            PredObj(pred_id="car_fluids_prediction", is_available=False, pred_class=CarFluidsPrediction()),
         ]
         self.config = config
-
 
     def fetch_sensor(self):
         sensors = {}
@@ -77,19 +80,20 @@ class PredictionsEngine:
                 id=obj["name"],
                 min=obj["min"],
                 max=obj["max"],
-                desc=obj["description"]
+                desc=obj["description"],
             )
         return sensors
-    def import_model(self,model_file:str,prefix : str = "analysis/predictions/models/v1/"):
-        for blob in self.client.list_blobs(self.bucket,prefix=prefix):
+
+    def import_model(self, model_file: str, prefix: str = "analysis/predictions/models/v1/"):
+        for blob in self.client.list_blobs(self.bucket, prefix=prefix):
             if blob.name.endswith(".onnx"):
                 blob.download_to_filename(str(self.local_dir / Path(blob.name).name))
                 logger.info("Downloaded model {}", blob.name)
                 return ort.InferenceSession(
-                    str(self.local_dir / model_file ),
-                    providers=["CPUExecutionProvider"]
+                    str(self.local_dir / model_file),
+                    providers=["CPUExecutionProvider"],
                 )
-        logger.info("There is no model with name {}",model_file)
+        logger.info("There is no model with name {}", model_file)
         return None
 
     def on_stop(self):
@@ -97,7 +101,7 @@ class PredictionsEngine:
             shutil.rmtree(self.local_dir)
 
     @staticmethod
-    def _prepare_state_json(prediction: PredObj, refresh_rate : int | None = None):
+    def _prepare_state_json(prediction: PredObj, refresh_rate: int | None = None):
         timestamp = time.time_ns() // 1_000
         if prediction.is_available:
             state_json = PredictionRunningJSON(
@@ -126,7 +130,7 @@ class PredictionsEngine:
         except Exception as ex:
             logger.warning("Failed to send {}: {}", what, ex)
 
-    def send_prediction_state(self, prediction: PredObj, refresh_rate : int | None = None):
+    def send_prediction_state(self, prediction: PredObj, refresh_rate: int | None = None):
         endpoint = (
             TELEMETRY_RUNNING_PREDICTIONS_ENDPOINT
             if prediction.is_available
@@ -149,10 +153,9 @@ class PredictionsEngine:
         ).model_dump(mode="json")
         self._post(TELEMETRY_PREDICTIONS_ENDPOINT, payload, prediction.pred_id)
 
-
     @staticmethod
     def _get_signals(message_lst, sensors):
-        signals : dict[str,Value] = {}
+        signals: dict[str, Value] = {}
         for sensor_dct in message_lst:
             sensor_id = sensor_dct["sensor_id"]
             if sensor_id not in sensors:
@@ -160,16 +163,14 @@ class PredictionsEngine:
 
             signal = Value(
                 ts_ns=int(sensor_dct["ts"]),
-                val=float(sensor_dct["median"])
+                val=float(sensor_dct["median"]),
             )
             current_signal = signals.get(sensor_id)
             if current_signal is None or signal.ts_ns > current_signal.ts_ns:
                 signals[sensor_id] = signal
         return signals
 
-
-    def handle_message(self,message, sensors : set[str],lap_detector: LapDetector):
-        # somehow check if we can use prediction - do we have enough sensors
+    def handle_message(self, message, sensors: set[str], lap_detector: LapDetector):
         for pred in self.predictions:
             if pred.pred_class.sensors.issubset(sensors):
                 if not pred.is_available:
@@ -180,17 +181,17 @@ class PredictionsEngine:
                     pred.is_available = False
                     self.send_prediction_state(pred, refresh_rate=None)
 
-        signals = self._get_signals(message,sensors)
+        signals = self._get_signals(message, sensors)
         gps_lat = signals.get("gps_lat")
         gps_lon = signals.get("gps_lon")
-        speed   = signals.get("speed")
+        speed = signals.get("speed")
         # An empty window, a window without GPS
         if gps_lat is None or gps_lon is None or speed is None:
             logger.warning("Empty window, no GPS, or stopped car or there is no speed - skipping lap detection")
             return
 
-        lap_detector.add_track_point(gps_lon.val,gps_lat.val)
-        track,p25,p50,p75 = lap_detector.find_track_data()
+        lap_detector.add_track_point(gps_lon.val, gps_lat.val)
+        track, p25, p50, p75 = lap_detector.find_track_data()
 
         if not lap_detector.is_start_set():
             if lap_detector.sensors.issubset(sensors):
@@ -200,234 +201,28 @@ class PredictionsEngine:
                     gps_lat.ts_ns,
                 )
         else:
-            test_point = MPoint(lat=gps_lat.val,lon=gps_lon.val)
+            test_point = MPoint(lat=gps_lat.val, lon=gps_lon.val)
             point = lap_detector.find_next_lap(test_point, gps_lat.ts_ns)
-            lap_time = lap_detector.lap_time
             if point is not None:
                 logger.info("Lap detected at point: {}", point)
+
+            lap_ctx = {
+                "is_finish_line_crossed": point is not None,
+                "curr_lap": lap_detector.curr_lap_num,
+                "lap_time": lap_detector.lap_time,
+                "start_point": lap_detector.get_start_point(),
+                "track": track,
+                "p25": p25,
+                "p50": p50,
+                "p75": p75,
+            }
+
             for pred in self.predictions:
-                match pred.pred_class:
-                    case FuelPrediction():
-                        fuel = signals.get("fuel_l")
-                        if fuel is None or speed is None:
-                            logger.warning("Fuel signal is missing, skipping fuel prediction")
-                            continue
-                        if pred.is_available and fuel is not None:
-                            if pred.pred_class.need_prepare():
-                                pred.pred_class.prepare({"point": lap_detector.get_start_point()})
-                            pred.pred_class.fill({
-                                "is_finish_line_crossed": point is not None,
-                                "curr_lap": lap_detector.curr_lap_num,
-                                "fuel": fuel.val,
-                                "speed": speed.val,
-                            })
-                            result = pred.pred_class.process_data({
-                                "is_finish_line_crossed": point is not None,
-                                "curr_lap": lap_detector.curr_lap_num
-                            })
-                            if result is not None:
-                                laps_left, burn_per_lap, predicted_fuel = result
-                                predicted_for_lap = lap_detector.curr_lap_num
-                                if laps_left is not None and burn_per_lap is not None:
-                                    logger.info(
-                                        "Fuel: {:.2f} L at end of lap {} | {:.1f} laps to empty | {:.3f} L/lap",
-                                        float(predicted_fuel),
-                                        predicted_for_lap,
-                                        float(laps_left),
-                                        float(burn_per_lap),
-                                    )
-                                    instruction = (
-                                        f"{float(laps_left):.1f} laps to empty. "
-                                        f"Fuel at end of lap {predicted_for_lap}: {float(predicted_fuel):.2f} L "
-                                        f"({float(burn_per_lap):.3f} L/lap)"
-                                    )
-                                else:
-                                    logger.info(
-                                        "Fuel: {:.2f} L at end of lap {} | laps-to-empty unavailable",
-                                        float(predicted_fuel),
-                                        predicted_for_lap,
-                                    )
-                                    instruction = (
-                                        f"Fuel at end of lap {predicted_for_lap}: "
-                                        f"{float(predicted_fuel):.2f} L"
-                                    )
-                                self.send_prediction(
-                                    pred,
-                                    value=float(predicted_fuel),
-                                    instruction=instruction,
-                                )
-
-                    case LapTimePrediction():
-                        hv_soc = signals.get("hv_soc")
-                        rpm = signals.get("rpm")
-                        if hv_soc is None or rpm is None:
-                            logger.warning("HV SOC or RPM signal is missing, skipping lap time prediction")
-                            continue
-                        if pred.is_available and p25 is not None and p50 is not None and p75 is not None and track is not None and hv_soc is not None and rpm is not None:
-                            if pred.pred_class.need_prepare():
-                                pred.pred_class.prepare({
-                                    "p25": p25,
-                                    "p50": p50,
-                                    "p75": p75,
-                                    "track": track,
-                                })
-                            pred.pred_class.fill({
-                                "lon": gps_lon.val,
-                                "lat": gps_lat.val,
-                                "lap_time": lap_time,
-                                "speed": speed.val,
-                                "hv_perc": hv_soc.val,
-                                "rpm": rpm.val,
-                            })
-                            result = pred.pred_class.process_data({
-                                "is_finish_line_crossed": point is not None,
-                                "lap_time": lap_time,
-                            })
-                            if result is not None:
-                                predicted_time, split_pct = result
-                                predicted_for_lap = lap_detector.curr_lap_num
-                                logger.info(
-                                    "Lap time: {:.3f} s projected for lap {} at {}% distance",
-                                    float(predicted_time),
-                                    predicted_for_lap,
-                                    split_pct,
-                                )
-                                instruction = (
-                                    f"At {split_pct}% of lap {predicted_for_lap}: "
-                                    f"projected full lap {float(predicted_time):.3f} s"
-                                )
-                                self.send_prediction(
-                                    pred,
-                                    value=float(predicted_time),
-                                    instruction=instruction,
-                                )
-
-                    case TyreWearPrediction():
-                        steer_angle = signals.get("steer_angle")
-                        accel_long = signals.get("accel_long")
-                        brake_prs = signals.get("brake_prs")
-                        throttle = signals.get("throttle")
-                        accel_lat = signals.get("accel_lat")
-                        if steer_angle is None or accel_long is None or brake_prs is None or throttle is None or accel_lat is None:
-                            logger.warning("One of the required signals for tyre wear prediction is missing, skipping tyre wear prediction")
-                            continue
-                        if pred.is_available:
-                            if pred.pred_class.need_prepare():
-                                pred.pred_class.prepare({})
-                            pred.pred_class.fill({
-                                "steer_angle": steer_angle.val,
-                                "speed": speed.val,
-                                "accel_long": accel_long.val,
-                                "brake_prs": brake_prs.val,
-                                "throttle": throttle.val,
-                                "accel_lat": accel_lat.val,
-                            })
-                            result = pred.pred_class.process_data({
-                                "is_finish_line_crossed": point is not None,
-                            })
-                            if result is not None:
-                                # After a finish crossing curr_lap_num is the lap in progress.
-                                predicted_for_lap = lap_detector.curr_lap_num
-                                logger.info(
-                                    "Tyre grip: {:.1f}% retention projected at end of lap {}",
-                                    float(result),
-                                    predicted_for_lap,
-                                )
-                                instruction = (
-                                    f"Projected tyre grip at end of lap {predicted_for_lap}: "
-                                    f"{float(result):.1f}% of baseline"
-                                )
-                                self.send_prediction(pred, value=float(result), instruction=instruction)
-
-                    case BrakeFadePrediction():
-                        steer_angle = signals.get("steer_angle")
-                        accel_long = signals.get("accel_long")
-                        brake_prs = signals.get("brake_prs")
-                        hv_soc = signals.get("hv_soc")
-                        ambient_temp = signals.get("ambient_temp")
-                        if (
-                            steer_angle is None
-                            or accel_long is None
-                            or brake_prs is None
-                            or hv_soc is None
-                            or ambient_temp is None
-                        ):
-                            logger.warning(
-                                "Brake fade sensors missing, skipping brake fade prediction"
-                            )
-                            continue
-                        if pred.is_available:
-                            if pred.pred_class.need_prepare():
-                                pred.pred_class.prepare({})
-                            pred.pred_class.fill({
-                                "steer_angle": steer_angle.val,
-                                "speed": speed.val,
-                                "accel_long": accel_long.val,
-                                "brake_prs": brake_prs.val,
-                                "hv_soc": hv_soc.val,
-                                "ambient_temp": ambient_temp.val,
-                            })
-                            result = pred.pred_class.process_data({
-                                "is_finish_line_crossed": point is not None,
-                            })
-                            if result is not None:
-                                predicted_for_lap = lap_detector.curr_lap_num
-                                logger.info(
-                                    "Brake fade: {:.1f}% performance projected at end of lap {}",
-                                    float(result),
-                                    predicted_for_lap,
-                                )
-                                instruction = (
-                                    f"Projected brake performance at end of lap {predicted_for_lap}: "
-                                    f"{float(result):.1f}% of baseline"
-                                )
-                                self.send_prediction(pred, value=float(result), instruction=instruction)
-                    case CarFluidsPrediction():
-                        oil_temp = signals.get("oil_temp")
-                        rpm = signals.get("rpm")
-                        engine_load = signals.get("engine_load")
-                        ambient_temp = signals.get("ambient_temp")
-                        if (
-                            oil_temp is None or rpm is None or engine_load is None or ambient_temp is None
-                        ):
-                            logger.warning(
-                                "Car fluids sensors missing, skipping car fluids prediction"
-                            )
-                            continue
-                        if pred.is_available:
-                            if pred.pred_class.need_prepare():
-                                pred.pred_class.prepare({"ts_ns": time.time_ns()})
-                            pred.pred_class.fill({
-                                "oil_temp": oil_temp.val,
-                                "rpm": rpm.val,
-                                "engine_load": engine_load.val,
-                                "speed": speed.val,
-                                "ambient_temp": ambient_temp.val,
-                            })
-                            result = pred.pred_class.process_data({
-                                "oil_temp": oil_temp.val,
-                                "rpm": rpm.val,
-                                "engine_load": engine_load.val,
-                                "speed": speed.val,
-                                "ambient_temp": ambient_temp.val,
-                            })
-                            if result is not None:
-                                logger.info(
-                                    "Car fluids prediction: Oil Temp in next {} seconds: {:.1f}°C ",
-                                    pred.pred_class.model.window_length_s,
-                                    float(result),
-                                )
-                                instruction = (
-                                    f"Predicted oil temperature in next {pred.pred_class.model.window_length_s} seconds: "
-                                    f"{float(result):.1f}°C"
-                                )
-                                self.send_prediction(pred, value=float(result), instruction=instruction)
-
-
-            # co sie dzieje z modelami keidyc jest przeciety start a kiedy leci nomralne okrazenie
-
-
-
+                if not pred.is_available:
+                    continue
+                run_result = pred.pred_class.run(signals, lap_ctx)
+                if run_result is not None:
+                    self.send_prediction(pred, value=run_result.value, instruction=run_result.instruction)
 
 
 def main():
@@ -453,15 +248,14 @@ def main():
             data = orjson.loads(raw_payload.decode("utf-8"))
             if topic == b"sensor_pred":
                 available_sensors = set([msg["sensor_id"] for msg in data])
-                pred_engine.handle_message(message=data,sensors=available_sensors,lap_detector=lap_detector)
-                # prepare dct sensor->value for windowto pass it to predictions??
-                #print((time.time_ns() - start)/1000000000)
+                pred_engine.handle_message(message=data, sensors=available_sensors, lap_detector=lap_detector)
 
         except Exception:
             logger.warning("Predictions engine timeout waiting for messages, retrying...")
 
     pred_engine.on_stop()
     logger.info("Predictions engine stopped")
+
 
 if __name__ == "__main__":
     main()

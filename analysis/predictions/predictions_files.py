@@ -1,5 +1,22 @@
+from __future__ import annotations
 
-from analysis.predictions.prediction_models import LackOfFuelPred, LapTimePred, TyreWearPred, BrakeFadePred, CarFluidsPred
+from loguru import logger
+
+from analysis.predictions.prediction_models import (
+    BrakeFadePred,
+    CarFluidsPred,
+    LackOfFuelPred,
+    LapTimePred,
+    TyreWearPred,
+)
+
+
+class RunResult:
+    """Value returned by ``PredictionClass.run`` when there is something to send."""
+
+    def __init__(self, value: float, instruction: str):
+        self.value = value
+        self.instruction = instruction
 
 
 class PredictionClass:
@@ -8,17 +25,14 @@ class PredictionClass:
         self.sensors = sensors
         self.is_prepared = False
 
-    def prepare(self, context: dict) -> None:
-        pass
-
     def need_prepare(self) -> bool:
         return not self.is_prepared
 
-    def fill(self, context: dict):
-        pass
-
-    def process_data(self, context: dict):
-        pass
+    # Subclasses override this with prediction-specific logic.
+    # ``signals`` maps sensor_id -> Value(ts_ns, val).
+    # ``lap_ctx`` carries lap detector state shared by every prediction.
+    def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
+        return None
 
 
 class FuelPrediction(PredictionClass):
@@ -29,28 +43,57 @@ class FuelPrediction(PredictionClass):
         )
         self.model = LackOfFuelPred()
 
-    def prepare(self, context: dict) -> None:
-        if self.is_prepared:
-            return
-        point = context.get("point")
-        if point is None:
-            return
-        self.model.set_start_point(point)
-        if self.model.start_point:
-            self.is_prepared = True
+    def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
+        fuel = signals.get("fuel_l")
+        speed = signals.get("speed")
+        if fuel is None or speed is None:
+            logger.warning("Fuel or speed signal missing, skipping fuel prediction")
+            return None
 
-    def fill(self, context: dict):
-        self.model.fill(
-            context["is_finish_line_crossed"],
-            context["curr_lap"],
-            context["fuel"],
-            context["speed"],
-        )
-    def process_data(self, context: dict):
-        return self.model.process_data(
-            context["is_finish_line_crossed"],
-            context["curr_lap"],
-        )
+        if self.need_prepare():
+            point = lap_ctx.get("start_point")
+            if point is None:
+                return None
+            self.model.set_start_point(point)
+            if self.model.start_point:
+                self.is_prepared = True
+
+        is_crossed = lap_ctx["is_finish_line_crossed"]
+        curr_lap = lap_ctx["curr_lap"]
+
+        self.model.fill(is_crossed, curr_lap, fuel.val, speed.val)
+        result = self.model.process_data(is_crossed, curr_lap)
+        if result is None:
+            return None
+
+        laps_left, burn_per_lap, predicted_fuel = result
+        predicted_for_lap = curr_lap
+
+        if laps_left is not None and burn_per_lap is not None:
+            logger.info(
+                "Fuel: {:.2f} L at end of lap {} | {:.1f} laps to empty | {:.3f} L/lap",
+                float(predicted_fuel),
+                predicted_for_lap,
+                float(laps_left),
+                float(burn_per_lap),
+            )
+            instruction = (
+                f"{float(laps_left):.1f} laps to empty. "
+                f"Fuel at end of lap {predicted_for_lap}: {float(predicted_fuel):.2f} L "
+                f"({float(burn_per_lap):.3f} L/lap)"
+            )
+        else:
+            logger.info(
+                "Fuel: {:.2f} L at end of lap {} | laps-to-empty unavailable",
+                float(predicted_fuel),
+                predicted_for_lap,
+            )
+            instruction = (
+                f"Fuel at end of lap {predicted_for_lap}: "
+                f"{float(predicted_fuel):.2f} L"
+            )
+
+        return RunResult(value=float(predicted_fuel), instruction=instruction)
 
 
 class LapTimePrediction(PredictionClass):
@@ -61,34 +104,55 @@ class LapTimePrediction(PredictionClass):
         )
         self.model = LapTimePred()
 
-    def prepare(self, context: dict) -> None:
-        if self.is_prepared:
-            return
-        p25 = context.get("p25")
-        p50 = context.get("p50")
-        p75 = context.get("p75")
-        track = context.get("track")
-        if p25 is None or p50 is None or p75 is None or track is None:
-            return
-        self.model.set_points(p25, p50, p75)
-        self.model.set_track(track)
-        self.is_prepared = True
+    def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
+        hv_soc = signals.get("hv_soc")
+        rpm = signals.get("rpm")
+        speed = signals.get("speed")
+        gps_lon = signals.get("gps_lon")
+        gps_lat = signals.get("gps_lat")
+        if hv_soc is None or rpm is None:
+            logger.warning("HV SOC or RPM signal missing, skipping lap time prediction")
+            return None
 
-    def fill(self, context: dict):
+        track = lap_ctx.get("track")
+        p25 = lap_ctx.get("p25")
+        p50 = lap_ctx.get("p50")
+        p75 = lap_ctx.get("p75")
+        if track is None or p25 is None or p50 is None or p75 is None:
+            return None
+        if gps_lon is None or gps_lat is None or speed is None:
+            return None
+
+        if self.need_prepare():
+            self.model.set_points(p25, p50, p75)
+            self.model.set_track(track)
+            self.is_prepared = True
+
+        lap_time = lap_ctx["lap_time"]
+        is_crossed = lap_ctx["is_finish_line_crossed"]
+
         self.model.fill(
-            context["lon"],
-            context["lat"],
-            context["lap_time"],
-            context["speed"],
-            context["hv_perc"],
-            context["rpm"],
+            gps_lon.val, gps_lat.val, lap_time,
+            speed.val, hv_soc.val, rpm.val,
         )
+        result = self.model.process_data(is_crossed, lap_time)
+        if result is None:
+            return None
 
-    def process_data(self, context: dict):
-        return self.model.process_data(
-            context["is_finish_line_crossed"],
-            context["lap_time"],
+        predicted_time, split_pct = result
+        predicted_for_lap = lap_ctx["curr_lap"]
+        logger.info(
+            "Lap time: {:.3f} s projected for lap {} at {}% distance",
+            float(predicted_time),
+            predicted_for_lap,
+            split_pct,
         )
+        instruction = (
+            f"At {split_pct}% of lap {predicted_for_lap}: "
+            f"projected full lap {float(predicted_time):.3f} s"
+        )
+        return RunResult(value=float(predicted_time), instruction=instruction)
+
 
 class TyreWearPrediction(PredictionClass):
     def __init__(self):
@@ -105,23 +169,39 @@ class TyreWearPrediction(PredictionClass):
         )
         self.model = TyreWearPred()
 
-    def prepare(self, context: dict) -> None:
-        if self.is_prepared:
-            return
-        self.is_prepared = True
+    def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
+        steer_angle = signals.get("steer_angle")
+        accel_long = signals.get("accel_long")
+        brake_prs = signals.get("brake_prs")
+        throttle = signals.get("throttle")
+        accel_lat = signals.get("accel_lat")
+        speed = signals.get("speed")
+        if steer_angle is None or accel_long is None or brake_prs is None or throttle is None or accel_lat is None:
+            logger.warning("Tyre wear signals missing, skipping tyre wear prediction")
+            return None
 
-    def fill(self, context: dict):
+        if self.need_prepare():
+            self.is_prepared = True
+
         self.model.fill(
-            context["steer_angle"],
-            context["speed"],
-            context["accel_long"],
-            context["brake_prs"],
-            context["throttle"],
-            context["accel_lat"],
+            steer_angle.val, speed.val, accel_long.val,
+            brake_prs.val, throttle.val, accel_lat.val,
         )
+        result = self.model.process_data(lap_ctx["is_finish_line_crossed"])
+        if result is None:
+            return None
 
-    def process_data(self, context: dict):
-        return self.model.process_data(context["is_finish_line_crossed"])
+        predicted_for_lap = lap_ctx["curr_lap"]
+        logger.info(
+            "Tyre grip: {:.1f}% retention projected at end of lap {}",
+            float(result),
+            predicted_for_lap,
+        )
+        instruction = (
+            f"Projected tyre grip at end of lap {predicted_for_lap}: "
+            f"{float(result):.1f}% of baseline"
+        )
+        return RunResult(value=float(result), instruction=instruction)
 
 
 class BrakeFadePrediction(PredictionClass):
@@ -139,23 +219,45 @@ class BrakeFadePrediction(PredictionClass):
         )
         self.model = BrakeFadePred()
 
-    def prepare(self, context: dict) -> None:
-        if self.is_prepared:
-            return
-        self.is_prepared = True
+    def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
+        steer_angle = signals.get("steer_angle")
+        accel_long = signals.get("accel_long")
+        brake_prs = signals.get("brake_prs")
+        hv_soc = signals.get("hv_soc")
+        ambient_temp = signals.get("ambient_temp")
+        speed = signals.get("speed")
+        if (
+            steer_angle is None
+            or accel_long is None
+            or brake_prs is None
+            or hv_soc is None
+            or ambient_temp is None
+        ):
+            logger.warning("Brake fade sensors missing, skipping brake fade prediction")
+            return None
 
-    def fill(self, context: dict):
+        if self.need_prepare():
+            self.is_prepared = True
+
         self.model.fill(
-            context["steer_angle"],
-            context["speed"],
-            context["accel_long"],
-            context["brake_prs"],
-            context["hv_soc"],
-            context["ambient_temp"],
+            steer_angle.val, speed.val, accel_long.val,
+            brake_prs.val, hv_soc.val, ambient_temp.val,
         )
+        result = self.model.process_data(lap_ctx["is_finish_line_crossed"])
+        if result is None:
+            return None
 
-    def process_data(self, context: dict):
-        return self.model.process_data(context["is_finish_line_crossed"])
+        predicted_for_lap = lap_ctx["curr_lap"]
+        logger.info(
+            "Brake fade: {:.1f}% performance projected at end of lap {}",
+            float(result),
+            predicted_for_lap,
+        )
+        instruction = (
+            f"Projected brake performance at end of lap {predicted_for_lap}: "
+            f"{float(result):.1f}% of baseline"
+        )
+        return RunResult(value=float(result), instruction=instruction)
 
 
 class CarFluidsPrediction(PredictionClass):
@@ -163,35 +265,46 @@ class CarFluidsPrediction(PredictionClass):
         super().__init__(
             name="Fluids in next delta time window",
             sensors={
-                "oil_temp","rpm","engine_load",
-                "speed", "ambient_temp"
+                "oil_temp", "rpm", "engine_load",
+                "speed", "ambient_temp",
             },
         )
         self.model = CarFluidsPred()
 
-    def prepare(self, context: dict) -> None:
-        if self.is_prepared:
-            return
-        ts_ns = context.get("ts_ns")
-        if ts_ns is None:
-            return
-        self.model.set_race_start_time(ts_ns)
-        self.is_prepared = True
+    def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
+        oil_temp = signals.get("oil_temp")
+        rpm = signals.get("rpm")
+        engine_load = signals.get("engine_load")
+        ambient_temp = signals.get("ambient_temp")
+        speed = signals.get("speed")
+        if oil_temp is None or rpm is None or engine_load is None or ambient_temp is None:
+            logger.warning("Car fluids sensors missing, skipping car fluids prediction")
+            return None
 
-    def fill(self, context: dict):
+        if self.need_prepare():
+            import time
+            self.model.set_race_start_time(time.time_ns())
+            self.is_prepared = True
+
         self.model.fill(
-            context["oil_temp"],
-            context["rpm"],
-            context["engine_load"],
-            context["speed"],
-            context["ambient_temp"],
+            oil_temp.val, rpm.val, engine_load.val,
+            speed.val, ambient_temp.val,
         )
+        result = self.model.process_data(
+            oil_temp.val, rpm.val, engine_load.val,
+            speed.val, ambient_temp.val,
+        )
+        if result is None:
+            return None
 
-    def process_data(self, context: dict):
-        return self.model.process_data(
-            context["oil_temp"],
-            context["rpm"],
-            context["engine_load"],
-            context["speed"],
-            context["ambient_temp"],
+        window = self.model.window_length_s
+        logger.info(
+            "Car fluids: oil temp in next {} s: {:.1f} C",
+            window,
+            float(result),
         )
+        instruction = (
+            f"Predicted oil temperature in next {window} seconds: "
+            f"{float(result):.1f}\u00b0C"
+        )
+        return RunResult(value=float(result), instruction=instruction)
