@@ -53,7 +53,6 @@ class RulesEngine:
                     sensors=sensors
                 )
                 self.rules[str(blob.name).split("/")[-1].removesuffix(".json")] = rule
-                print(self.rules)
         logger.info("Loaded {} rules: {}", len(self.rules), list(self.rules.keys()))
         self.sensors : dict[str,Sensor] = self.fetch_sensor()
         logger.info("Loaded {} sensors", len(self.sensors))
