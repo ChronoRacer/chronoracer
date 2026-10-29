@@ -14,7 +14,7 @@ VENV="/chronoracer/analysis-venv"
 }
 
 apt-get update
-apt-get install -y --no-install-recommends python3-venv
+apt-get install -y --no-install-recommends python3-venv libgomp1
 
 install -d -m 755 /chronoracer
 python3 -m venv "${VENV}"
@@ -22,7 +22,7 @@ python3 -m venv "${VENV}"
 "${VENV}/bin/python" -m pip check
 
 "${VENV}/bin/python" -c '
-import grpc, orjson, pathway, pydantic, zen, zmq
+import grpc, orjson, pathway, pydantic, zen, zmq, lightgbm
 from google.cloud import storage
 from loguru import logger
 '
