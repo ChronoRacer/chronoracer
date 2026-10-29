@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from loguru import logger
 
 from analysis.predictions.prediction_models import (
@@ -8,6 +7,7 @@ from analysis.predictions.prediction_models import (
     LackOfFuelPred,
     LapTimePred,
     TyreWearPred,
+    SpeedOnTurnsPred,
 )
 
 
@@ -270,6 +270,54 @@ class CarFluidsPrediction(PredictionClass):
             },
         )
         self.model = CarFluidsPred()
+
+    def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
+        oil_temp = signals.get("oil_temp")
+        rpm = signals.get("rpm")
+        engine_load = signals.get("engine_load")
+        ambient_temp = signals.get("ambient_temp")
+        speed = signals.get("speed")
+        if oil_temp is None or rpm is None or engine_load is None or ambient_temp is None:
+            logger.warning("Car fluids sensors missing, skipping car fluids prediction")
+            return None
+
+        if self.need_prepare():
+            import time
+            self.model.set_race_start_time(time.time_ns())
+            self.is_prepared = True
+
+        self.model.fill(
+            oil_temp.val, rpm.val, engine_load.val,
+            speed.val, ambient_temp.val,
+        )
+        result = self.model.process_data(
+            oil_temp.val, rpm.val, engine_load.val,
+            speed.val, ambient_temp.val,
+        )
+        if result is None:
+            return None
+
+        window = self.model.window_length_s
+        logger.info(
+            "Car fluids: oil temp in next {} s: {:.1f} C",
+            window,
+            float(result),
+        )
+        instruction = (
+            f"Predicted oil temperature in next {window} seconds: "
+            f"{float(result):.1f}\u00b0C"
+        )
+        return RunResult(value=float(result), instruction=instruction)
+
+
+
+class SpeedOnTurnsPrediction(PredictionClass):
+    def __init__(self):
+        super().__init__(
+            name="",
+            sensors={},
+        )
+        self.model = SpeedOnTurnsPred()
 
     def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
         oil_temp = signals.get("oil_temp")

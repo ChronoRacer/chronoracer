@@ -611,4 +611,9 @@ class CarFluidsPred:
         return next_oil_temp
 
 
+
+class SpeedOnTurnsPred:
+    def __init__(self):
+        pass
+
 # TODO COS Z PREDYKCJA FANCY STALOSCI KIEROWCY czy np nie wymienic bo coraz gorzej jediz ewolniej itd
