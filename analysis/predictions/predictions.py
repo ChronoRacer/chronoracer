@@ -15,6 +15,7 @@ from analysis.predictions.predictions_files import (
     LapTimePrediction,
     PredictionClass,
     TyreWearPrediction,
+    CarFluidsPrediction
 )
 from analysis.predictions.prediction_models import LapDetector, MPoint
 from analysis.shared.contract import (
@@ -23,7 +24,6 @@ from analysis.shared.contract import (
     PredictionUnavailableJSON,
 )
 import requests
-
 
 class Sensor(BaseModel):
     id: str
@@ -62,6 +62,7 @@ class PredictionsEngine:
             PredObj(pred_id="lap_time_prediction", is_available=False, pred_class=LapTimePrediction()),
             PredObj(pred_id="tyre_wear_prediction", is_available=False, pred_class=TyreWearPrediction()),
             PredObj(pred_id="brake_fade_prediction", is_available=False, pred_class=BrakeFadePrediction()),
+            PredObj(pred_id="car_fluids_prediction", is_available=False, pred_class=CarFluidsPrediction())
         ]
         self.config = config
 
@@ -381,6 +382,47 @@ class PredictionsEngine:
                                     f"{float(result):.1f}% of baseline"
                                 )
                                 self.send_prediction(pred, value=float(result), instruction=instruction)
+                    case CarFluidsPrediction():
+                        oil_temp = signals.get("oil_temp")
+                        rpm = signals.get("rpm")
+                        engine_load = signals.get("engine_load")
+                        ambient_temp = signals.get("ambient_temp")
+                        if (
+                            oil_temp is None or rpm is None or engine_load is None or ambient_temp is None
+                        ):
+                            logger.warning(
+                                "Car fluids sensors missing, skipping car fluids prediction"
+                            )
+                            continue
+                        if pred.is_available:
+                            if pred.pred_class.need_prepare():
+                                pred.pred_class.prepare({"ts_ns": time.time_ns()})
+                            pred.pred_class.fill({
+                                "oil_temp": oil_temp.val,
+                                "rpm": rpm.val,
+                                "engine_load": engine_load.val,
+                                "speed": speed.val,
+                                "ambient_temp": ambient_temp.val,
+                            })
+                            result = pred.pred_class.process_data({
+                                "oil_temp": oil_temp.val,
+                                "rpm": rpm.val,
+                                "engine_load": engine_load.val,
+                                "speed": speed.val,
+                                "ambient_temp": ambient_temp.val,
+                            })
+                            if result is not None:
+                                logger.info(
+                                    "Car fluids prediction: Oil Temp in next {} seconds: {:.1f}°C ",
+                                    pred.pred_class.model.window_length_s,
+                                    float(result),
+                                )
+                                instruction = (
+                                    f"Predicted oil temperature in next {pred.pred_class.model.window_length_s} seconds: "
+                                    f"{float(result):.1f}°C"
+                                )
+                                self.send_prediction(pred, value=float(result), instruction=instruction)
+
 
             # co sie dzieje z modelami keidyc jest przeciety start a kiedy leci nomralne okrazenie
 

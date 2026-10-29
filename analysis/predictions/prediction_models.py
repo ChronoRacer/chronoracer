@@ -9,7 +9,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import RidgeCV
 from shapely.geometry import Point
 import lightgbm as lgb
-
+import time
 # GPS aggregation cadence can change, so elapsed time must always come from
 # GPS timestamps instead of an assumed samples-per-second value.
 START_TIME_NS = 1_500_000_000
@@ -524,5 +524,91 @@ class BrakeFadePred:
         slope, intercept = np.polyfit(x, y, 1)
         predicted = slope * (self.lap_num + 1) + intercept
         return float(np.clip(predicted, 0.0, 100.0))
+
+
+
+from collections import namedtuple
+_feature_row_tuple = namedtuple("FeatureRow", ["oil_temp","oil_temp_delta","rpm","engine_load","speed_kmh","ambient_temp"])
+class CarFluidsPred:
+    def __init__(self, check_time_s : int = 2,fit_time_s : int = 15,window_length_s : int = 60):
+        self.check_time_s : int = check_time_s
+        self.window_length_s : int = window_length_s
+        self.fit_time_s : int = fit_time_s
+        self.window : list = []
+        self.window_partial : list = []
+        self._last_sample_bucket : int | None = None
+        self._last_fit_bucket : int | None = None
+
+        self.time_from_start_ns : float | None = None
+        self.pipeline = make_pipeline(StandardScaler(), RidgeCV(alphas=np.logspace(-2, 3, 20), cv=None))
+
+
+    def set_race_start_time(self, ts):
+        self.time_from_start_ns = ts
+
+    def _elapsed_s(self) -> int:
+        return int((time.time_ns() - self.time_from_start_ns) / 1_000_000_000)
+
+    def _horizon_steps(self) -> int:
+        return max(1, self.window_length_s // self.check_time_s)
+
+    def fill(self, oil_temp : float, rpm : float, engine_load : float, speed_kmh : float, ambient_temp : float ):
+        # Bucket by check_time_s so each interval contributes one averaged row
+        # (modulo-on-elapsed fired on every message during that second).
+        sample_bucket = self._elapsed_s() // self.check_time_s
+        delta = oil_temp - self.window[-1].oil_temp if self.window else 0.0
+        row = _feature_row_tuple(
+            oil_temp=oil_temp,
+            oil_temp_delta=delta,
+            rpm=rpm,
+            engine_load=engine_load,
+            speed_kmh=speed_kmh,
+            ambient_temp=ambient_temp,
+        )
+        if self._last_sample_bucket is not None and sample_bucket == self._last_sample_bucket:
+            self.window_partial.append(row)
+            return
+        if self.window_partial:
+            self.window.append(_feature_row_tuple(
+                oil_temp=float(np.mean([o.oil_temp for o in self.window_partial])),
+                oil_temp_delta=float(np.mean([o.oil_temp_delta for o in self.window_partial])),
+                rpm=float(np.mean([o.rpm for o in self.window_partial])),
+                engine_load=float(np.mean([o.engine_load for o in self.window_partial])),
+                speed_kmh=float(np.mean([o.speed_kmh for o in self.window_partial])),
+                ambient_temp=float(np.mean([o.ambient_temp for o in self.window_partial])),
+            ))
+            self.window_partial.clear()
+            max_rows = 2 * self._horizon_steps() + 1
+            if len(self.window) > max_rows:
+                self.window = self.window[-max_rows:]
+        self.window_partial.append(row)
+        self._last_sample_bucket = sample_bucket
+
+    def process_data(self,oil_temp : float, rpm : float, engine_load : float, speed_kmh : float, ambient_temp : float ):
+        horizon_steps = self._horizon_steps()
+        # Need past rows paired with oil_temp horizon_steps ahead (= window_length_s).
+        if len(self.window) <= horizon_steps or len(self.window) < self.window_length_s:
+            return None
+        fit_bucket = self._elapsed_s() // self.fit_time_s
+        if self._last_fit_bucket is not None and fit_bucket == self._last_fit_bucket:
+            return None
+        self._last_fit_bucket = fit_bucket
+
+        end_i = len(self.window) - horizon_steps
+        start_i = max(0, end_i - horizon_steps)
+        X_train = np.array([
+            [row.oil_temp, row.oil_temp_delta, row.rpm, row.engine_load, row.speed_kmh, row.ambient_temp]
+            for row in self.window[start_i:end_i]
+        ])
+        y_train = np.array([
+            self.window[i + horizon_steps].oil_temp for i in range(start_i, end_i)
+        ])
+        self.pipeline.fit(X_train, y_train)
+        delta = oil_temp - self.window[-1].oil_temp if self.window else 0.0
+        next_oil_temp = self.pipeline.predict(
+            np.array([[oil_temp, delta, rpm, engine_load, speed_kmh, ambient_temp]])
+        )[0]
+        return next_oil_temp
+
 
 # TODO COS Z PREDYKCJA FANCY STALOSCI KIEROWCY czy np nie wymienic bo coraz gorzej jediz ewolniej itd

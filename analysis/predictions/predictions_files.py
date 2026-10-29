@@ -1,5 +1,5 @@
 
-from analysis.predictions.prediction_models import LackOfFuelPred, LapTimePred, TyreWearPred, BrakeFadePred
+from analysis.predictions.prediction_models import LackOfFuelPred, LapTimePred, TyreWearPred, BrakeFadePred, CarFluidsPred
 
 
 class PredictionClass:
@@ -156,3 +156,42 @@ class BrakeFadePrediction(PredictionClass):
 
     def process_data(self, context: dict):
         return self.model.process_data(context["is_finish_line_crossed"])
+
+
+class CarFluidsPrediction(PredictionClass):
+    def __init__(self):
+        super().__init__(
+            name="Fluids in next delta time window",
+            sensors={
+                "oil_temp","rpm","engine_load",
+                "speed", "ambient_temp"
+            },
+        )
+        self.model = CarFluidsPred()
+
+    def prepare(self, context: dict) -> None:
+        if self.is_prepared:
+            return
+        ts_ns = context.get("ts_ns")
+        if ts_ns is None:
+            return
+        self.model.set_race_start_time(ts_ns)
+        self.is_prepared = True
+
+    def fill(self, context: dict):
+        self.model.fill(
+            context["oil_temp"],
+            context["rpm"],
+            context["engine_load"],
+            context["speed"],
+            context["ambient_temp"],
+        )
+
+    def process_data(self, context: dict):
+        return self.model.process_data(
+            context["oil_temp"],
+            context["rpm"],
+            context["engine_load"],
+            context["speed"],
+            context["ambient_temp"],
+        )
