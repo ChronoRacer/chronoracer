@@ -40,3 +40,6 @@ rules/test/files
 /dev/closed_track.csv
 /dev/closed_track_feed.py
 /dev/test.sh
+/dev/f1_tracks.py
+/dev/tracks/
+/dev/
