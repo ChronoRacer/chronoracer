@@ -1,6 +1,10 @@
-import math
+﻿import math
+import threading
+
 import numpy as np
+import pyproj
 from shapely.geometry.linestring import LineString
+from shapely import transform as shapely_transform
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import HuberRegressor
 from pydantic import BaseModel
@@ -10,6 +14,8 @@ from sklearn.linear_model import RidgeCV
 from shapely.geometry import Point
 import lightgbm as lgb
 import time
+import matplotlib.pyplot as plt
+
 # GPS aggregation cadence can change, so elapsed time must always come from
 # GPS timestamps instead of an assumed samples-per-second value.
 START_TIME_NS = 1_500_000_000
@@ -23,8 +29,20 @@ class MPoint(BaseModel):
     lon: float
 
 
+class MTurn(BaseModel):
+    middle: MPoint
+    radius_m: float
+    is_left_turn: bool
+
 class LapDetector:
-    def __init__(self, gps_lat: str, gps_lon: str):
+    def __init__(self,
+                 gps_lat: str,
+                 gps_lon: str,
+                 turn_tolerance: float = 2.0,
+                 sharp_turn_deg : float = 10.0,
+                 turn_radius : float = 120.0,
+                 distance_from_turns : float = 50.0
+                 ):
         self.sensors: set[str] = {gps_lat, gps_lon}
         self.lat_start: float | None = None
         self.lon_start: float | None = None
@@ -36,12 +54,21 @@ class LapDetector:
         self.p25 = None
         self.p50 = None
         self.p75 = None
+        self.turn_tolerance : float = turn_tolerance
+        self.sharp_turn_deg : float = sharp_turn_deg
+        self.distance_from_turns : float = distance_from_turns
+        self.turn_radius = turn_radius
+        self.turns_lst : list[MTurn] | None  = None
         self.curr_lap_num = 0
         self.lap_start_ts_ns: int | None = None
         self.lap_time : float = 0.0
 
+
     def is_start_set(self) -> bool:
         return self.lat_start is not None and self.lon_start is not None
+
+    def is_turns_set(self):
+        return self.turns_lst is not None and len(self.turns_lst) > 0
 
     def get_start_point(self) -> MPoint | None:
         if self.is_start_set():
@@ -135,13 +162,129 @@ class LapDetector:
         if self.track is not None:
             return self.track, self.p25, self.p50, self.p75
 
-        self.track = LineString(self.track_lon_lat)
-        self.p25  = self.track.interpolate(0.25, normalized=True)
-        self.p50 = self.track.interpolate(0.5, normalized=True)
-        self.p75 = self.track.interpolate(0.75, normalized=True)
+        project_to_meters = pyproj.Transformer.from_crs(
+            "EPSG:4326", "EPSG:3857", always_xy=True
+        )
 
-        return self.track,self.p25,self.p50,self.p75
+        project_to_wgs84 = pyproj.Transformer.from_crs(
+            "EPSG:3857", "EPSG:4326", always_xy=True
+        )
 
+        track_wgs84 = LineString(self.track_lon_lat)
+        track_meters = shapely_transform(track_wgs84, project_to_meters.transform, interleaved=False)
+
+        p25_meters = track_meters.interpolate(0.25, normalized=True)
+        p50_meters = track_meters.interpolate(0.50, normalized=True)
+        p75_meters = track_meters.interpolate(0.75, normalized=True)
+
+        p25_wgs84 = shapely_transform(p25_meters, project_to_wgs84.transform, interleaved=False, )
+        p50_wgs84 = shapely_transform(p50_meters, project_to_wgs84.transform, interleaved=False, )
+        p75_wgs84 = shapely_transform(p75_meters, project_to_wgs84.transform, interleaved=False, )
+
+        self.track = track_wgs84
+        self.p25 = MPoint(lat=p25_wgs84.y, lon=p25_wgs84.x)
+        self.p50 = MPoint(lat=p50_wgs84.y, lon=p50_wgs84.x)
+        self.p75 = MPoint(lat=p75_wgs84.y, lon=p75_wgs84.x)
+
+        now = time.time_ns()
+        #thread = threading.Thread(target=self._determine_turns,args=(track_meters,project_to_wgs84))
+        #thread.start()
+        self._determine_turns(track_meters,project_to_wgs84)
+        print(f"Turns detection took {(time.time_ns() - now) / 1e9:.3f} seconds")
+        return self.track, self.p25, self.p50, self.p75
+
+    def _get_turn_radius(self,ptA,ptB,ptC) -> float:
+        ax, ay = ptA
+        bx, by = ptB
+        cx, cy = ptC
+
+        a = math.hypot(cx - bx, cy - by)
+        b = math.hypot(cx - ax, cy - ay)
+        c = math.hypot(bx - ax, by - ay)
+
+        area = 0.5 * abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax))
+        if area < 1e-6:
+            return float('inf')
+
+        return (a * b * c) / (4 * area)
+
+    def _determine_turns(self,track_meters,meters_to_wgs84):
+        clean_track = track_meters.simplify(tolerance=self.turn_tolerance)
+        points = list(clean_track.coords)
+        prev_distance = -1
+
+        # 1. Collect all candidates that qualify geometrically as corner points
+        candidates = []
+        for i in range(1, len(points) - 1):
+            point_A = points[i - 1]
+            point_B = points[i]
+            point_C = points[i + 1]
+
+            dx_in = point_B[0] - point_A[0]
+            dy_in = point_B[1] - point_A[1]
+            direction_in = math.atan2(dy_in, dx_in)
+
+            dx_out = point_C[0] - point_B[0]
+            dy_out = point_C[1] - point_B[1]
+            direction_out = math.atan2(dy_out, dx_out)
+
+            angle_deg = math.degrees(direction_out - direction_in)
+            angle_deg = (angle_deg + 180) % 360 - 180
+            radius = self._get_turn_radius(point_A, point_B, point_C)
+
+            if abs(angle_deg) >= self.sharp_turn_deg and radius <= self.turn_radius:
+                middle_point = Point(point_B)
+                s_dist = track_meters.project(middle_point)
+                candidates.append({
+                    "point": middle_point,
+                    "s_dist": s_dist,
+                    "radius": radius,
+                    "angle_deg": angle_deg,
+                })
+
+        # 2. Cluster candidates closer than distance_from_turns and pick true Apex (min radius)
+        if candidates:
+            # Sort along track distance
+            candidates.sort(key=lambda c: c["s_dist"])
+            clusters = []
+            curr_cluster = [candidates[0]]
+
+            for cand in candidates[1:]:
+                # If within distance threshold of the cluster, belong to the same corner complex
+                if (cand["s_dist"] - curr_cluster[-1]["s_dist"]) <= self.distance_from_turns:
+                    curr_cluster.append(cand)
+                else:
+                    clusters.append(curr_cluster)
+                    curr_cluster = [cand]
+            if curr_cluster:
+                clusters.append(curr_cluster)
+
+            self.turns_lst = []
+            for cluster in clusters:
+                # Motorsport Apex: the point with minimum radius (tightest apex, slowest speed)
+                apex = min(cluster, key=lambda c: c["radius"])
+                p_wgs84 = shapely_transform(apex["point"], meters_to_wgs84.transform, interleaved=False)
+                self.turns_lst.append(
+                    MTurn(
+                        middle=MPoint(lat=p_wgs84.y, lon=p_wgs84.x),
+                        radius_m=apex["radius"],
+                        is_left_turn=apex["angle_deg"] > 0
+                    )
+                )
+
+
+        xs, ys = self.track.xy
+        plt.figure()
+        plt.plot(xs, ys)  # linia toru
+        # zakręty (mogą być puste gdy żaden kąt nie przekracza sharp_turn_deg):
+        if self.turns_lst:
+            for turn in self.turns_lst:
+                plt.scatter(turn.middle.lon, turn.middle.lat, c="red", zorder=2)
+        plt.xlabel("lon")
+        plt.ylabel("lat")
+        plt.axis("equal")
+        plt.savefig("track_with_turns2.png", dpi=300)
+        plt.close()
 
 class LackOfFuelPred:
     def __init__(self, initial_laps: int = 2):
@@ -228,14 +371,6 @@ class LackOfFuelPred:
 
 
 class LapTimePred:
-    """Full lap-time forecasts for the lap in progress, emitted at 25 / 50 / 75 %.
-
-    At each split, features are elapsed time + speed/hv/rpm. On the finish the
-    same-lap features are labelled with the measured lap time and the per-split
-    Ridge models are refit. Next time the car hits that % , they predict the
-    full time of the lap being driven.
-    """
-
     SPLITS = (25, 50, 75)
 
     def __init__(self):

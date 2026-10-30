@@ -314,12 +314,13 @@ class CarFluidsPrediction(PredictionClass):
 class SpeedOnTurnsPrediction(PredictionClass):
     def __init__(self):
         super().__init__(
-            name="",
-            sensors={},
+            name="Current lap — recommended speed for upcoming turns",
+            sensors={"steer_angle", "speed", "accel_long", "accel_lat", "brake_prs", "throttle"},
         )
         self.model = SpeedOnTurnsPred()
 
     def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
+        """
         oil_temp = signals.get("oil_temp")
         rpm = signals.get("rpm")
         engine_load = signals.get("engine_load")
@@ -356,3 +357,5 @@ class SpeedOnTurnsPrediction(PredictionClass):
             f"{float(result):.1f}\u00b0C"
         )
         return RunResult(value=float(result), instruction=instruction)
+        """
+        return None
