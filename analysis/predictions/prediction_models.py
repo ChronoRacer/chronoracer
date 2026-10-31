@@ -327,6 +327,8 @@ class LapDetector:
                 )
 
         xs, ys = self.track.xy
+        """
+        
         plt.figure()
         plt.plot(xs, ys)  # linia toru
         # zakręty (mogą być puste gdy żaden kąt nie przekracza sharp_turn_deg):
@@ -340,7 +342,8 @@ class LapDetector:
         plt.axis("equal")
         plt.savefig("track_with_turns2.png", dpi=300)
         plt.close()
-
+        
+        """
 class LackOfFuelPred:
     def __init__(self, initial_laps: int = 2):
         self.features: np.ndarray = np.empty((0, 2))
