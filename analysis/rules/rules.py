@@ -94,7 +94,7 @@ class RulesEngine:
                 self.send_decision(rule_name,decision)
 
     def send_decision(self,alert_id:str,decision:dict):
-        if decision["result"]["state"] not in ("YELLOW","RED","BLACK"):
+        if decision["result"]["state"] not in ("YELLOW","RED","BLACK", "SENSOR_ERROR"):
             return
         send_decision = False
         time_now = time.time_ns()
