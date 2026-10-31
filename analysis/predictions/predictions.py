@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 import orjson
 import zmq
+from bokeh.core.has_props import PropertyDef
 from google.cloud import storage
 import onnxruntime as ort
 import shutil
@@ -69,7 +70,6 @@ class PredictionsEngine:
             PredObj(pred_id="brake_fade_prediction", is_available=False, pred_class=BrakeFadePrediction()),
             PredObj(pred_id="car_fluids_prediction", is_available=False, pred_class=CarFluidsPrediction()),
             PredObj(pred_id="speed_on_turns_prediction", is_available=False, pred_class=SpeedOnTurnsPrediction()),
-
         ]
         self.config = config
 
@@ -214,10 +214,12 @@ class PredictionsEngine:
                 "curr_lap": lap_detector.curr_lap_num,
                 "lap_time": lap_detector.lap_time,
                 "start_point": lap_detector.get_start_point(),
-                "track": track,
+                "track_meters": lap_detector.track_meters,
+                "project_to_meters" : lap_detector._project_to_meters,
                 "p25": p25,
                 "p50": p50,
                 "p75": p75,
+                "turns_lst": lap_detector.turns_lst,
             }
 
             for pred in self.predictions:
@@ -253,7 +255,8 @@ def main():
                 available_sensors = set([msg["sensor_id"] for msg in data])
                 pred_engine.handle_message(message=data, sensors=available_sensors, lap_detector=lap_detector)
 
-        except Exception:
+        except Exception as ex:
+            print(ex)
             logger.warning("Predictions engine timeout waiting for messages, retrying...")
 
     pred_engine.on_stop()

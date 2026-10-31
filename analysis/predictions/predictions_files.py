@@ -311,51 +311,59 @@ class CarFluidsPrediction(PredictionClass):
 
 
 
+
+
+
+
+
+
+
+# NEW
 class SpeedOnTurnsPrediction(PredictionClass):
     def __init__(self):
         super().__init__(
             name="Current lap — recommended speed for upcoming turns",
-            sensors={"steer_angle", "speed", "accel_long", "accel_lat", "brake_prs", "throttle"},
+            sensors={"steer_angle", "speed", "accel_long", "accel_lat", "brake_prs", "throttle", "gps_lon", "gps_lat"},
         )
         self.model = SpeedOnTurnsPred()
 
     def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
-        """
-        oil_temp = signals.get("oil_temp")
-        rpm = signals.get("rpm")
-        engine_load = signals.get("engine_load")
-        ambient_temp = signals.get("ambient_temp")
         speed = signals.get("speed")
-        if oil_temp is None or rpm is None or engine_load is None or ambient_temp is None:
-            logger.warning("Car fluids sensors missing, skipping car fluids prediction")
+        gps_lon = signals.get("gps_lon")
+        gps_lat = signals.get("gps_lat")
+        accel_lat = signals.get("accel_lat")
+
+        if speed is None or gps_lon is None or gps_lat is None or accel_lat is None:
+            logger.warning("Speed on turns sensors missing, skipping speed on turns prediction")
             return None
+
+        if lap_ctx.get("is_finish_line_crossed"):
+            self.model.reset_lap()
 
         if self.need_prepare():
-            import time
-            self.model.set_race_start_time(time.time_ns())
+            turns = lap_ctx.get("turns_lst")
+            track_meters = lap_ctx.get("track_meters")
+            project_to_meters = lap_ctx.get("project_to_meters")
+            if turns is None or track_meters is None:
+                return None
+            self.model.set_turns(turns, track_meters,project_to_meters)
             self.is_prepared = True
 
-        self.model.fill(
-            oil_temp.val, rpm.val, engine_load.val,
-            speed.val, ambient_temp.val,
+        max_safe_kmh, real_speed_then,turn_idx = self.model.process_data(
+            gps_lon.val, gps_lat.val,
+            speed.val, accel_lat.val
         )
-        result = self.model.process_data(
-            oil_temp.val, rpm.val, engine_load.val,
-            speed.val, ambient_temp.val,
-        )
-        if result is None:
+        if max_safe_kmh is None or real_speed_then is None or turn_idx is None:
             return None
 
-        window = self.model.window_length_s
         logger.info(
-            "Car fluids: oil temp in next {} s: {:.1f} C",
-            window,
-            float(result),
+            "Speed on turn {:.1f}: recommended max speed {:.1f} km/h but real speed {:.1f} km/h",
+            float(turn_idx),
+            float(max_safe_kmh),
+            float(real_speed_then),
         )
         instruction = (
-            f"Predicted oil temperature in next {window} seconds: "
-            f"{float(result):.1f}\u00b0C"
+            f"Recommended max speed at upcoming turn: "
+            f"{float(max_safe_kmh):.1f} km/h (real speed then: {float(real_speed_then):.0f} m)"
         )
-        return RunResult(value=float(result), instruction=instruction)
-        """
-        return None
+        return RunResult(value=float(max_safe_kmh), instruction=instruction)

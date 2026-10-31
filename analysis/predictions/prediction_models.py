@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import RidgeCV
+from sklearn.mixture import BayesianGaussianMixture
 from shapely.geometry import Point
 import lightgbm as lgb
 import time
@@ -33,6 +34,7 @@ class MTurn(BaseModel):
     middle: MPoint
     radius_m: float
     is_left_turn: bool
+    s_m: float  # along-track distance on track_meters (EPSG:3857)
 
 class LapDetector:
     def __init__(self,
@@ -41,7 +43,7 @@ class LapDetector:
                  turn_tolerance: float = 2.0,
                  sharp_turn_deg : float = 10.0,
                  turn_radius : float = 120.0,
-                 distance_from_turns : float = 50.0
+                 distance_from_turns : float = 70.0
                  ):
         self.sensors: set[str] = {gps_lat, gps_lon}
         self.lat_start: float | None = None
@@ -59,6 +61,8 @@ class LapDetector:
         self.distance_from_turns : float = distance_from_turns
         self.turn_radius = turn_radius
         self.turns_lst : list[MTurn] | None  = None
+        self.track_meters: LineString | None = None
+        self._project_to_meters = None
         self.curr_lap_num = 0
         self.lap_start_ts_ns: int | None = None
         self.lap_time : float = 0.0
@@ -182,6 +186,8 @@ class LapDetector:
         p75_wgs84 = shapely_transform(p75_meters, project_to_wgs84.transform, interleaved=False, )
 
         self.track = track_wgs84
+        self.track_meters = track_meters
+        self._project_to_meters = project_to_meters
         self.p25 = MPoint(lat=p25_wgs84.y, lon=p25_wgs84.x)
         self.p50 = MPoint(lat=p50_wgs84.y, lon=p50_wgs84.x)
         self.p75 = MPoint(lat=p75_wgs84.y, lon=p75_wgs84.x)
@@ -190,7 +196,7 @@ class LapDetector:
         #thread = threading.Thread(target=self._determine_turns,args=(track_meters,project_to_wgs84))
         #thread.start()
         self._determine_turns(track_meters,project_to_wgs84)
-        print(f"Turns detection took {(time.time_ns() - now) / 1e9:.3f} seconds")
+        print("LICZBA ZAKRETÓW:", len(self.turns_lst) if self.turns_lst is not None else 0)
         return self.track, self.p25, self.p50, self.p75
 
     def _get_turn_radius(self,ptA,ptB,ptC) -> float:
@@ -208,13 +214,48 @@ class LapDetector:
 
         return (a * b * c) / (4 * area)
 
+    def _estimate_thresholds_bgm(self, angles: list[float], radii: list[float]) -> tuple[float, float]:
+        if len(angles) < 6:
+            return self.sharp_turn_deg, self.turn_radius
+
+        try:
+            X_ang = np.array(angles).reshape(-1, 1)
+            bgm_ang = BayesianGaussianMixture(n_components=2, random_state=42, max_iter=200)
+            bgm_ang.fit(X_ang)
+            ang_means = bgm_ang.means_.flatten()
+
+            straight_ang_idx = int(np.argmin(ang_means))
+            turn_ang_idx = int(np.argmax(ang_means))
+            ang_thresh = float((ang_means[straight_ang_idx] + ang_means[turn_ang_idx]) / 2.0)
+
+            finite_radii = [r for r in radii if 0 < r < 2000]
+            if len(finite_radii) >= 6:
+                X_rad = np.array(finite_radii).reshape(-1, 1)
+                bgm_rad = BayesianGaussianMixture(n_components=2, random_state=42, max_iter=200)
+                bgm_rad.fit(X_rad)
+                rad_means = bgm_rad.means_.flatten()
+                turn_rad_idx = int(np.argmin(rad_means))      # smaller radius = corners
+                straight_rad_idx = int(np.argmax(rad_means))  # larger radius = straights
+                rad_thresh = float((rad_means[turn_rad_idx] + rad_means[straight_rad_idx]) / 2.0)
+            else:
+                rad_thresh = self.turn_radius
+
+            ang_thresh = float(np.clip(ang_thresh, 5.0, 35.0))
+            rad_thresh = float(np.clip(rad_thresh, 40.0, 200.0))
+
+            return ang_thresh, rad_thresh
+        except Exception:
+            return self.sharp_turn_deg, self.turn_radius
+
     def _determine_turns(self,track_meters,meters_to_wgs84):
         clean_track = track_meters.simplify(tolerance=self.turn_tolerance)
         points = list(clean_track.coords)
-        prev_distance = -1
 
-        # 1. Collect all candidates that qualify geometrically as corner points
-        candidates = []
+        # Pre-pass: collect all vertex geometric features across the track
+        vertex_stats = []
+        all_angles = []
+        all_radii = []
+
         for i in range(1, len(points) - 1):
             point_A = points[i - 1]
             point_B = points[i]
@@ -232,7 +273,18 @@ class LapDetector:
             angle_deg = (angle_deg + 180) % 360 - 180
             radius = self._get_turn_radius(point_A, point_B, point_C)
 
-            if abs(angle_deg) >= self.sharp_turn_deg and radius <= self.turn_radius:
+            vertex_stats.append((point_B, angle_deg, radius))
+            all_angles.append(abs(angle_deg))
+            if radius != float('inf'):
+                all_radii.append(radius)
+
+        # Estimate dynamic thresholds via 2-component Bayesian Gaussian Mixture (BGM)
+        bgm_sharp_deg, bgm_turn_radius = self._estimate_thresholds_bgm(all_angles, all_radii)
+
+        # 1. Collect candidates matching the BGM-calibrated thresholds
+        candidates = []
+        for point_B, angle_deg, radius in vertex_stats:
+            if abs(angle_deg) >= bgm_sharp_deg and radius <= bgm_turn_radius:
                 middle_point = Point(point_B)
                 s_dist = track_meters.project(middle_point)
                 candidates.append({
@@ -264,22 +316,25 @@ class LapDetector:
                 # Motorsport Apex: the point with minimum radius (tightest apex, slowest speed)
                 apex = min(cluster, key=lambda c: c["radius"])
                 p_wgs84 = shapely_transform(apex["point"], meters_to_wgs84.transform, interleaved=False)
+                k = math.cos(math.radians(p_wgs84.y))  # skala 3857 -> prawdziwe metry
                 self.turns_lst.append(
                     MTurn(
                         middle=MPoint(lat=p_wgs84.y, lon=p_wgs84.x),
-                        radius_m=apex["radius"],
-                        is_left_turn=apex["angle_deg"] > 0
+                        radius_m=apex["radius"] * k,
+                        is_left_turn=apex["angle_deg"] > 0,
+                        s_m=float(apex["s_dist"]) * k,  # przybliżenie, wystarczy dla toru o rozmiarze kilku km
                     )
                 )
-
 
         xs, ys = self.track.xy
         plt.figure()
         plt.plot(xs, ys)  # linia toru
         # zakręty (mogą być puste gdy żaden kąt nie przekracza sharp_turn_deg):
         if self.turns_lst:
-            for turn in self.turns_lst:
-                plt.scatter(turn.middle.lon, turn.middle.lat, c="red", zorder=2)
+            for i, turn in enumerate(self.turns_lst):
+                plt.scatter(turn.middle.lon, turn.middle.lat, c="red", zorder=3)
+                plt.annotate(f"Turn {i+1}\nR={turn.radius_m:.0f}m", (turn.middle.lon, turn.middle.lat), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8)
+        plt.scatter(self.lon_start,self.lat_start, c="green", zorder=3)
         plt.xlabel("lon")
         plt.ylabel("lat")
         plt.axis("equal")
@@ -748,7 +803,135 @@ class CarFluidsPred:
 
 
 class SpeedOnTurnsPred:
-    def __init__(self):
-        pass
+    def __init__(self,
+                 default_max_g : float = 0.85,
+                 zone_m : float = 35,
+                 hysteresis_m : float = 5
+                 ):
+        self.default_max_lat_accel: float = default_max_g * 9.81
+        self.learned_lat_accels : list[float] = []
+        self.max_stable_lat_accel : float = self.default_max_lat_accel
 
-# TODO COS Z PREDYKCJA FANCY STALOSCI KIEROWCY czy np nie wymienic bo coraz gorzej jediz ewolniej itd
+        self.zone_m: float = zone_m
+        self.hysteresis_m: float = hysteresis_m
+
+        self.turns_lst: list[MTurn] | None = None
+        self.track_meters : LineString | None = None
+        self.project_to_meters = None
+        self.track_length_m : float  = 0.0
+
+        self.visited_turns: set[int] = set()
+        self.active : int | None = None
+        self.samples : list[tuple[float,float,float]] = []
+
+
+    def set_turns(self, turns: list[MTurn], track_meters, project_to_meters):
+        self.turns_lst = turns
+        self.track_meters = track_meters
+        self.project_to_meters = project_to_meters
+        self.track_length_m = track_meters.length if track_meters is not None else 0.0
+        self.reset_lap()
+
+    def reset_lap(self):
+        self.visited_turns.clear()
+        self.active = None
+        self.samples = []
+
+    def _dist2d(self, turn: MTurn, lon : float, lat : float) :
+        n , e = LapDetector._local_xy(turn.middle, MPoint(lat=lat, lon=lon))
+        return math.hypot(n,e)
+    def _dist1d(self, car_s : float,turn_s : float):
+        d = abs(car_s - turn_s)
+        return min(d, self.track_length_m - d)
+
+    def _update_grip_limit(self, lat_accel_samples : list):
+        high_g_samples =[g for g in lat_accel_samples]
+        if not high_g_samples:
+            return
+
+        self.learned_lat_accels.extend(high_g_samples)
+
+        if len(self.learned_lat_accels) > 1000:
+            self.learned_lat_accels = self.learned_lat_accels[-1000:]
+
+        self.max_stable_lat_accel = float(np.percentile(self.learned_lat_accels, 95))
+
+
+    def _finalize(self):
+        idx, samples = self.active, self.samples
+        self.visited_turns.add(idx)
+        self.active, self.samples = None, []
+        if len(samples) < 3:
+            return None,None,None
+
+        turn = self.turns_lst[idx]
+
+        samples.sort(key=lambda s: s[0])
+        nearest_samples = samples[:5]
+
+        apex_speed = float(np.median([s[1] for s in nearest_samples]))
+        apex_lat_accels = [s[2] for s in nearest_samples]
+
+        self._update_grip_limit(apex_lat_accels)
+
+        max_safe_kmh = math.sqrt(self.max_stable_lat_accel * turn.radius_m)*3.6
+        return max_safe_kmh, apex_speed, idx + 1
+
+    def process_data(self, lon, lat, speed_kmh, accel_lat):
+        if not self.turns_lst:
+            return None, None, None
+
+        x,y = self.project_to_meters.transform(lon, lat)
+        car_s = self.track_meters.project(Point(x,y))
+        abs_accel_lat =  abs(accel_lat)
+
+        if self.active is not None:
+            turn = self.turns_lst[self.active]
+
+            d_s = self._dist1d(car_s, turn.s_m)
+
+            if d_s > self.zone_m + self.hysteresis_m:
+                return self._finalize()
+
+            d_2d = self._dist2d(turn, lon, lat)
+            self.samples.append((d_2d, speed_kmh, abs_accel_lat))
+            return None, None, None
+
+        best, best_d_s = None, float("inf")
+        for idx, turn in enumerate(self.turns_lst):
+            if idx in self.visited_turns:
+                continue
+
+            d_s = self._dist1d(car_s, turn.s_m)
+            if d_s < best_d_s:
+                best, best_d_s = idx, d_s
+
+        if best is not None and best_d_s <= self.zone_m:
+            self.active = best
+            d_2d = self._dist2d(self.turns_lst[best], lon, lat)
+            self.samples.append((d_2d, speed_kmh, abs_accel_lat))
+
+        return None, None, None
+
+        return None, None, None
+        """
+        if not self.turns_lst or self.track is None:
+            return None
+
+        car_perc = self._car_perc(lon, lat)
+        if car_perc is None:
+            return None
+
+        for idx, (turn, turn_perc) in enumerate(zip(self.turns_lst, self._turn_percs)):
+            if idx in self.visited_turns:
+                continue
+
+            if self._perc_delta(car_perc, turn_perc) > self.ZONE_PERC:
+                continue
+
+            self.visited_turns.add(idx)
+
+            max_safe_kmh = math.sqrt(self.friction * self.gravity * turn.radius_m) * 3.6
+            return max_safe_kmh, speed_kmh
+        return None, None
+        """
