@@ -69,7 +69,7 @@ class PredictionsEngine:
             PredObj(pred_id="tyre_wear_prediction", is_available=False, pred_class=TyreWearPrediction()),
             PredObj(pred_id="brake_fade_prediction", is_available=False, pred_class=BrakeFadePrediction()),
             PredObj(pred_id="car_fluids_prediction", is_available=False, pred_class=CarFluidsPrediction()),
-            PredObj(pred_id="speed_on_turns_prediction", is_available=False, pred_class=SpeedOnTurnsPrediction()),
+            #PredObj(pred_id="speed_on_turns_prediction", is_available=False, pred_class=SpeedOnTurnsPrediction()),
         ]
         self.config = config
 
