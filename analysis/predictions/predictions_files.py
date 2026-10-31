@@ -100,7 +100,7 @@ class LapTimePrediction(PredictionClass):
     def __init__(self):
         super().__init__(
             name="Current lap — full lap time projected at 25/50/75% distance",
-            sensors={"speed", "hv_soc", "rpm"},
+            sensors={"speed", "hv_soc", "rpm", "gps_lon", "gps_lat"},
         )
         self.model = LapTimePred()
 
@@ -229,6 +229,7 @@ class BrakeFadePrediction(PredictionClass):
         if (
             steer_angle is None
             or accel_long is None
+            or speed is None
             or brake_prs is None
             or hv_soc is None
             or ambient_temp is None

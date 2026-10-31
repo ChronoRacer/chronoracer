@@ -610,11 +610,11 @@ class TyreWearPred:
 class BrakeFadePred:
     def __init__(
         self,
-        good_brakes_laps: int = 3,
-        steer_angle: float = 0.25,
+        good_brakes_laps: int = 2,
+        steer_angle: float = 20.0,
         speed: float = 50.0,
         brake_prs: float = 20.0,
-        min_fit_sample: int = 25,
+        min_fit_sample: int = 20,
         trend_window: int = 3,
     ):
         self.laps_with_good_brakes = good_brakes_laps
@@ -656,7 +656,7 @@ class BrakeFadePred:
         hv_soc: float,
         ambient_temp: float,
     ):
-        # Straight-line braking samples only (low steer, enough speed and pressure).
+        # Keep only mostly straight, meaningful braking samples.
         if abs(steer_angle) > self.steer_angle or speed_kmh < self.speed or brake_prs < self.brake_prs:
             return
 
@@ -714,8 +714,6 @@ class BrakeFadePred:
         slope, intercept = np.polyfit(x, y, 1)
         predicted = slope * (self.lap_num + 1) + intercept
         return float(np.clip(predicted, 0.0, 100.0))
-
-
 
 from collections import namedtuple
 _feature_row_tuple = namedtuple("FeatureRow", ["oil_temp","oil_temp_delta","rpm","engine_load","speed_kmh","ambient_temp"])

@@ -1,4 +1,4 @@
-import tempfile
+﻿import tempfile
 import time
 from pathlib import Path
 import orjson
@@ -214,6 +214,7 @@ class PredictionsEngine:
                 "curr_lap": lap_detector.curr_lap_num,
                 "lap_time": lap_detector.lap_time,
                 "start_point": lap_detector.get_start_point(),
+                "track": track,
                 "track_meters": lap_detector.track_meters,
                 "project_to_meters" : lap_detector._project_to_meters,
                 "p25": p25,
