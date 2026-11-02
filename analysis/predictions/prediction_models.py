@@ -731,7 +731,7 @@ class CarFluidsPred:
         self._last_fit_bucket : int | None = None
 
         self.time_from_start_ns : float | None = None
-        self.pipeline = make_pipeline(StandardScaler(), RidgeCV(alphas=np.logspace(-2, 3, 20), cv=None))
+        self.pipeline = RandomForestRegressor()
 
 
     def set_race_start_time(self, ts):
@@ -769,7 +769,7 @@ class CarFluidsPred:
                 ambient_temp=float(np.mean([o.ambient_temp for o in self.window_partial])),
             ))
             self.window_partial.clear()
-            max_rows = 2 * self._horizon_steps() + 1
+            max_rows = 3 * self._horizon_steps() + 1
             if len(self.window) > max_rows:
                 self.window = self.window[-max_rows:]
         self.window_partial.append(row)
@@ -777,8 +777,8 @@ class CarFluidsPred:
 
     def process_data(self,oil_temp : float, rpm : float, engine_load : float, speed_kmh : float, ambient_temp : float ):
         horizon_steps = self._horizon_steps()
-        # Need past rows paired with oil_temp horizon_steps ahead (= window_length_s).
-        if len(self.window) <= horizon_steps or len(self.window) < self.window_length_s:
+        # Need one full horizon of input rows and their future-temperature labels.
+        if len(self.window) < 2 * horizon_steps:
             return None
         fit_bucket = self._elapsed_s() // self.fit_time_s
         if self._last_fit_bucket is not None and fit_bucket == self._last_fit_bucket:
@@ -786,7 +786,7 @@ class CarFluidsPred:
         self._last_fit_bucket = fit_bucket
 
         end_i = len(self.window) - horizon_steps
-        start_i = max(0, end_i - horizon_steps)
+        start_i = 0
         X_train = np.array([
             [row.oil_temp, row.oil_temp_delta, row.rpm, row.engine_load, row.speed_kmh, row.ambient_temp]
             for row in self.window[start_i:end_i]
