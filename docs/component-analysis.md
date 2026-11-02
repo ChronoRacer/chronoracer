@@ -67,7 +67,8 @@ The [prediction registry and output formatting](../analysis/predictions/predicti
 | `tyre_wear_prediction` | Projects tyre grip retention at the end of the lap relative to a learned fresh-tyre baseline. It builds that baseline from early-lap cornering data. |
 | `brake_fade_prediction` | Projects brake performance at the end of the lap relative to a learned fresh-brake baseline, using selected straight-line braking samples. |
 | `car_fluids_prediction` | Predicts engine oil temperature over the configured forward horizon. Despite its ID and display name, the current implementation predicts oil temperature only. |
+| `coolant_temp_prediction` | Forecasts coolant temperature 60 seconds ahead from recent coolant/oil temperatures and current driving conditions. |
 
-These five predictions are registered and active in the current engine. `SpeedOnTurnsPrediction` is implemented in code but its registration is commented out, so `speed_on_turns_prediction` is not currently published. The active prediction classes use in-process models; the engine's ONNX download helper is not called by these registered predictions.
+These six predictions are registered and active in the current engine. `SpeedOnTurnsPrediction` is implemented in code but its registration is commented out, so `speed_on_turns_prediction` is not currently published. The active prediction classes use in-process models; the engine's ONNX download helper is not called by these registered predictions.
 
 The running/unavailable status reports whether each prediction's declared input set is present. A prediction can still skip output while it waits for a lap, GPS track context, or enough training data. Some models learn a baseline online during the race, so early results may be unavailable or provisional.

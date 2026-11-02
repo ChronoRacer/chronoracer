@@ -1,4 +1,4 @@
-﻿import math
+import math
 import threading
 
 import numpy as np
@@ -801,6 +801,117 @@ class CarFluidsPred:
         )[0]
         return next_oil_temp
 
+
+
+_coolant_feature_row = namedtuple(
+    "CoolantFeatureRow",
+    ["coolant_temp", "coolant_delta", "oil_temp", "rpm", "engine_load", "speed_kmh", "ambient_temp"],
+)
+
+
+class CoolantTempPred:
+    """Forecast coolant temperature from recent thermal and driving conditions."""
+
+    def __init__(self, check_time_s: int = 2, fit_time_s: int = 15, horizon_s: int = 60):
+        self.check_time_s = check_time_s
+        self.fit_time_s = fit_time_s
+        self.horizon_s = horizon_s
+        self.window: list = []
+        self.window_partial: list = []
+        self.last_sample_bucket: int | None = None
+        self.last_fit_bucket: int | None = None
+        self.time_from_start_ns: int | None = None
+        self.regressor = RandomForestRegressor()
+
+    def set_race_start_time(self, ts_ns: int):
+        self.time_from_start_ns = ts_ns
+
+    def _elapsed_s(self) -> int:
+        return int((time.time_ns() - self.time_from_start_ns) / 1_000_000_000)
+
+    def _horizon_steps(self) -> int:
+        return max(1, self.horizon_s // self.check_time_s)
+
+    def fill(
+        self,
+        coolant_temp: float,
+        oil_temp: float,
+        rpm: float,
+        engine_load: float,
+        speed_kmh: float,
+        ambient_temp: float,
+    ):
+        sample_bucket = self._elapsed_s() // self.check_time_s
+        previous_temp = self.window[-1].coolant_temp if self.window else coolant_temp
+        row = _coolant_feature_row(
+            coolant_temp=float(coolant_temp),
+            coolant_delta=float(coolant_temp) - previous_temp,
+            oil_temp=float(oil_temp),
+            rpm=float(rpm),
+            engine_load=float(engine_load),
+            speed_kmh=float(speed_kmh),
+            ambient_temp=float(ambient_temp),
+        )
+        if self.last_sample_bucket == sample_bucket:
+            self.window_partial.append(row)
+            return
+
+        if self.window_partial:
+            self.window.append(_coolant_feature_row(*(
+                float(np.mean([sample[i] for sample in self.window_partial]))
+                for i in range(len(_coolant_feature_row._fields))
+            )))
+            self.window_partial.clear()
+            max_rows = 3 * self._horizon_steps() + 1
+            if len(self.window) > max_rows:
+                self.window = self.window[-max_rows:]
+
+        self.window_partial.append(row)
+        self.last_sample_bucket = sample_bucket
+
+    def process_data(
+        self,
+        coolant_temp: float,
+        oil_temp: float,
+        rpm: float,
+        engine_load: float,
+        speed_kmh: float,
+        ambient_temp: float,
+    ) -> float | None:
+        horizon_steps = self._horizon_steps()
+        if len(self.window) < 2 * horizon_steps:
+            return None
+
+        fit_bucket = self._elapsed_s() // self.fit_time_s
+        if self.last_fit_bucket == fit_bucket:
+            return None
+        self.last_fit_bucket = fit_bucket
+
+        end_i = len(self.window) - horizon_steps
+        feature_names = _coolant_feature_row._fields
+        x_train = np.array([
+            [getattr(row, name) for name in feature_names]
+            for row in self.window[:end_i]
+        ])
+        y_train = np.array([
+            self.window[i + horizon_steps].coolant_temp for i in range(end_i)
+        ])
+        self.regressor.fit(x_train, y_train)
+
+        current_row = _coolant_feature_row(
+            coolant_temp=float(coolant_temp),
+            coolant_delta=(
+                float(coolant_temp) - self.window[-1].coolant_temp
+                if self.window else 0.0
+            ),
+            oil_temp=float(oil_temp),
+            rpm=float(rpm),
+            engine_load=float(engine_load),
+            speed_kmh=float(speed_kmh),
+            ambient_temp=float(ambient_temp),
+        )
+        forecast_temp = float(self.regressor.predict(np.array([[getattr(current_row, name) for name in feature_names]]))[0])
+        return forecast_temp
 
 
 class SpeedOnTurnsPred:

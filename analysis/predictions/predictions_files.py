@@ -4,6 +4,7 @@ from loguru import logger
 from analysis.predictions.prediction_models import (
     BrakeFadePred,
     CarFluidsPred,
+    CoolantTempPred,
     LackOfFuelPred,
     LapTimePred,
     TyreWearPred,
@@ -259,6 +260,55 @@ class BrakeFadePrediction(PredictionClass):
             f"{float(result):.1f}% of baseline"
         )
         return RunResult(value=float(result), instruction=instruction)
+
+
+class CoolantTemperaturePrediction(PredictionClass):
+    def __init__(self):
+        super().__init__(
+            name="Coolant temperature forecast",
+            sensors={"coolant_temp", "oil_temp", "rpm", "engine_load", "speed", "ambient_temp"},
+        )
+        self.model = CoolantTempPred()
+
+    def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
+        coolant_temp = signals.get("coolant_temp")
+        oil_temp = signals.get("oil_temp")
+        rpm = signals.get("rpm")
+        engine_load = signals.get("engine_load")
+        speed = signals.get("speed")
+        ambient_temp = signals.get("ambient_temp")
+        if any(value is None for value in (coolant_temp, oil_temp, rpm, engine_load, speed, ambient_temp)):
+            return None
+
+        if self.need_prepare():
+            import time
+            self.model.set_race_start_time(time.time_ns())
+            self.is_prepared = True
+
+        self.model.fill(
+            coolant_temp.val, oil_temp.val, rpm.val, engine_load.val,
+            speed.val, ambient_temp.val,
+        )
+        result = self.model.process_data(
+            coolant_temp.val, oil_temp.val, rpm.val, engine_load.val,
+            speed.val, ambient_temp.val,
+        )
+        if result is None:
+            return None
+
+        forecast_temp = result
+
+        horizon = self.model.horizon_s
+        logger.info(
+            "Coolant: {:.1f} C in next {} s",
+            forecast_temp,
+            horizon,
+        )
+        instruction = (
+            f"Coolant temperature in {horizon} s: {forecast_temp:.1f}°C; "
+            "Forecast from recent telemetry."
+        )
+        return RunResult(value=float(forecast_temp), instruction=instruction)
 
 
 class CarFluidsPrediction(PredictionClass):
