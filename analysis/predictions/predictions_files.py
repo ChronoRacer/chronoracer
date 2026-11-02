@@ -9,6 +9,7 @@ from analysis.predictions.prediction_models import (
     LapTimePred,
     TyreWearPred,
     SpeedOnTurnsPred,
+    LapComparePred
 )
 
 
@@ -418,3 +419,63 @@ class SpeedOnTurnsPrediction(PredictionClass):
             f"{float(max_safe_kmh):.1f} km/h (real speed then: {float(real_speed_then):.0f} m)"
         )
         return RunResult(value=float(max_safe_kmh), instruction=instruction)
+
+
+# lap time, avg speed, hard brakes, HV SoC — each finished lap vs previous / best
+class LapComparePrediction(PredictionClass):
+    def __init__(self):
+        super().__init__(
+            name="Lap comparison - finished lap vs previous one",
+            sensors={"speed", "brake_prs", "hv_soc"},
+        )
+        self.model = LapComparePred()
+
+    def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
+        speed = signals.get("speed")
+        brake_prs = signals.get("brake_prs")
+        hv_soc = signals.get("hv_soc")
+
+        if speed is None or brake_prs is None or hv_soc is None:
+            logger.warning("Lap compare sensors missing, skipping lap compare prediction")
+            return None
+
+        if self.need_prepare():
+            self.is_prepared = True
+
+        result = self.model.process_data(
+            is_finish_line_crossed=bool(lap_ctx.get("is_finish_line_crossed")),
+            lap_time=float(lap_ctx["lap_time"]),
+            lap_num=int(lap_ctx["curr_lap"]),
+            speed_kmh=speed.val,
+            hv_soc=hv_soc.val,
+            brake_prs=brake_prs.val,
+        )
+        if result is None:
+            return None
+        score = self.model._lap_score_func(result)
+        logger.info(
+            "Score: {}, Lap compare L{}: {:.3f}s ({:+.3f} vs prev, {:+.3f} vs best L{}) | "
+            "avg {:.1f} km/h ({:+.1f}) | hard brakes {} ({:+d}) | SoC Δ {:+.1f}% ({:+.1f})",
+            score,
+            result.lap_num,
+            result.lap_time,
+            result.delta_lap_time,
+            result.delta_best_lap_time,
+            result.best_lap_num,
+            result.avg_speed,
+            result.delta_lap_speed,
+            result.hard_brakes,
+            result.delta_hard_brakes,
+            result.hv_soc_delta,
+            result.delta_hv_soc,
+        )
+        instruction = (
+            f"L{result.lap_num} · {result.lap_time:.3f}s "
+            f"({result.delta_lap_time:+.3f} vs prev, "
+            f"{result.delta_best_lap_time:+.3f} vs best L{result.best_lap_num}) · "
+            f"avg {result.avg_speed:.0f} km/h ({result.delta_lap_speed:+.1f}) · "
+            f"hard brakes {result.hard_brakes} ({result.delta_hard_brakes:+d}) · "
+            f"SoC diff {result.hv_soc_delta:+.1f}% ({result.delta_hv_soc:+.1f} vs prev)"
+        )
+        res = score
+        return RunResult(value=float(res), instruction=instruction)

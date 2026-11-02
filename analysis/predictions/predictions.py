@@ -18,6 +18,7 @@ from analysis.predictions.predictions_files import (
     TyreWearPrediction,
     CarFluidsPrediction,
     CoolantTemperaturePrediction,
+    LapComparePrediction,
     SpeedOnTurnsPrediction
 )
 from analysis.predictions.prediction_models import LapDetector, MPoint
@@ -71,6 +72,7 @@ class PredictionsEngine:
             PredObj(pred_id="brake_fade_prediction", is_available=False, pred_class=BrakeFadePrediction()),
             PredObj(pred_id="car_fluids_prediction", is_available=False, pred_class=CarFluidsPrediction()),
             PredObj(pred_id="coolant_temp_prediction", is_available=False, pred_class=CoolantTemperaturePrediction()),
+            PredObj(pred_id="lap_compare_prediction", is_available=False, pred_class=LapComparePrediction()),
             #PredObj(pred_id="speed_on_turns_prediction", is_available=False, pred_class=SpeedOnTurnsPrediction()),
         ]
         self.config = config

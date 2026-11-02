@@ -1047,3 +1047,167 @@ class SpeedOnTurnsPred:
             return max_safe_kmh, speed_kmh
         return None, None
         """
+
+
+LapCompareResult = namedtuple(
+    "LapCompareResult",
+    [
+        "lap_num",
+        "lap_time",
+        "avg_speed",
+        "hard_brakes",
+        "hv_soc_delta",
+        "delta_lap_time",
+        "delta_best_lap_time",
+        "delta_lap_speed",
+        "delta_best_lap_speed",
+        "delta_hard_brakes",
+        "delta_hv_soc",
+        "best_lap_num",
+        "best_lap_time",
+    ],
+)
+
+
+class LapComparePred:
+
+    def __init__(self, hard_brake_thres: float = 50.0):
+        self.hard_brake_thres = hard_brake_thres
+
+        self.last_lap_time: float | None = None
+        self.last_lap_num: int | None = None
+        self.last_lap_speed: float | None = None
+        self.last_brakes_count: int | None = None
+        self.last_hv_delta: float | None = None
+
+        self.best_lap_time: float | None = None
+        self.best_lap_num: int | None = None
+        self.best_lap_speed: float | None = None
+
+        self._speed_partial_lst: list[float] = []
+        self.curr_brakes_count: int = 0
+        self._brake_active: bool = False
+        self._hv_soc_start: float | None = None
+
+    def _avg_speed(self) -> float:
+        if not self._speed_partial_lst:
+            return 0.0
+        return float(np.mean(self._speed_partial_lst))
+
+    def _note_sample(self, speed_kmh: float, brake_prs: float, hv_soc: float) -> None:
+        self._speed_partial_lst.append(speed_kmh)
+        if self._hv_soc_start is None:
+            self._hv_soc_start = hv_soc
+        hard = brake_prs > self.hard_brake_thres
+        if hard and not self._brake_active:
+            self.curr_brakes_count += 1
+        self._brake_active = hard
+
+    def _reset_lap_accumulators(self, hv_soc: float) -> None:
+        self._speed_partial_lst.clear()
+        self.curr_brakes_count = 0
+        self._brake_active = False
+        self._hv_soc_start = hv_soc
+
+    def _lap_score_func(
+            self,
+            result: LapCompareResult,
+            w_time_rel: float = 150.0,
+            w_brakes: float = 2.5,
+            w_soc: float = 3.0,
+            w_trend: float = 2.0,
+            best_lap_bonus: float = 10,
+    ) -> float:
+        if result.best_lap_time <= 0 or result.lap_time <= 0:
+            return 0.0
+        score = 100.0
+
+        time_deficit = max(0.0, result.delta_best_lap_time)
+        relative_time_loss = time_deficit / result.best_lap_time
+        score -= w_time_rel * relative_time_loss
+
+        score -= w_brakes * max(0, result.hard_brakes)
+
+        if result.hv_soc_delta < 0:
+            soc_consumed = abs(result.hv_soc_delta)
+            score -= w_soc * soc_consumed
+
+        if result.lap_num == result.best_lap_num or time_deficit <= 1e-4:
+            score += best_lap_bonus
+
+        if result.delta_lap_time < 0:
+            score += w_trend * abs(result.delta_lap_time)
+        else:
+            score -= (w_trend * 0.5) * result.delta_lap_time
+
+        return round(score, 2)
+    def process_data(
+        self,
+        is_finish_line_crossed: bool,
+        lap_time: float,
+        lap_num: int,
+        speed_kmh: float,
+        hv_soc: float,
+        brake_prs: float,
+    ) -> LapCompareResult | None:
+        # Accumulate every tick; emit a card only when the finish line is crossed.
+        if not is_finish_line_crossed:
+            self._note_sample(speed_kmh, brake_prs, hv_soc)
+            return None
+
+        avg_speed = self._avg_speed()
+        hard_brakes = self.curr_brakes_count
+        hv_soc_delta = (
+            hv_soc - self._hv_soc_start if self._hv_soc_start is not None else 0.0
+        )
+        # LapDetector increments curr_lap on crossing; card is for the lap just finished.
+        finished_lap_num = max(1, lap_num - 1)
+
+        if self.last_lap_time is None:
+            self.last_lap_time = lap_time
+            self.last_lap_num = finished_lap_num
+            self.last_lap_speed = avg_speed
+            self.last_brakes_count = hard_brakes
+            self.last_hv_delta = hv_soc_delta
+            self.best_lap_time = lap_time
+            self.best_lap_num = finished_lap_num
+            self.best_lap_speed = avg_speed
+            self._reset_lap_accumulators(hv_soc)
+            return None
+
+        delta_lap_time = lap_time - self.last_lap_time
+        delta_best_lap_time = lap_time - self.best_lap_time
+        delta_lap_speed = avg_speed - self.last_lap_speed
+        delta_best_lap_speed = avg_speed - self.best_lap_speed
+        delta_hard_brakes = hard_brakes - (self.last_brakes_count or 0)
+        delta_hv_soc = hv_soc_delta - (self.last_hv_delta if self.last_hv_delta is not None else 0.0)
+
+        result = LapCompareResult(
+            lap_num=finished_lap_num,
+            lap_time=lap_time,
+            avg_speed=avg_speed,
+            hard_brakes=hard_brakes,
+            hv_soc_delta=hv_soc_delta,
+            delta_lap_time=delta_lap_time,
+            delta_best_lap_time=delta_best_lap_time,
+            delta_lap_speed=delta_lap_speed,
+            delta_best_lap_speed=delta_best_lap_speed,
+            delta_hard_brakes=delta_hard_brakes,
+            delta_hv_soc=delta_hv_soc,
+            best_lap_num=self.best_lap_num,
+            best_lap_time=self.best_lap_time,
+        )
+
+        self.last_lap_time = lap_time
+        self.last_lap_num = finished_lap_num
+        self.last_lap_speed = avg_speed
+        self.last_brakes_count = hard_brakes
+        self.last_hv_delta = hv_soc_delta
+
+        if lap_time < self.best_lap_time:
+            self.best_lap_time = lap_time
+            self.best_lap_num = finished_lap_num
+            self.best_lap_speed = avg_speed
+
+        self._reset_lap_accumulators(hv_soc)
+        return result
