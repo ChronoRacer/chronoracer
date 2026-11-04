@@ -30,11 +30,12 @@ Race Terraform invokes `/chronoracer/entrypoint.sh` through VM startup metadata.
 3. [`render-env.sh`](render-env.sh) reads instance attributes from the GCE metadata server and writes
    `/chronoracer/analysis.env` at mode `600`:
 
-   | Variable             | Metadata key         |
-   |----------------------|----------------------|
-   | `RACE_ID`            | `race-id`            |
-   | `CORE_TELEMETRY_URL` | `core-telemetry-url` |
-   | `TELEMETRY_URL`      | `telemetry-url`      |
+   | Variable                | Metadata key              |
+   |-------------------------|---------------------------|
+   | `RACE_ID`               | `race-id`                 |
+   | `CORE_TELEMETRY_URL`    | `core-telemetry-url`      |
+   | `TELEMETRY_URL`         | `telemetry-url`           |
+   | `KAFKA_PRIVATE_BOOTSTRAP` | `kafka-private-bootstrap` |
 
    Values are owned by [Terraform](../../docs/component-terraform.md). Processes read them from the environment,
    loaded by systemd `EnvironmentFile=`.

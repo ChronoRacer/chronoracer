@@ -28,6 +28,7 @@ from analysis.shared.contract import (
     PredictionUnavailableJSON,
 )
 import requests
+from analysis.shared.kafka_producer import EventProducer
 
 
 class Sensor(BaseModel):
@@ -76,6 +77,7 @@ class PredictionsEngine:
             #PredObj(pred_id="speed_on_turns_prediction", is_available=False, pred_class=SpeedOnTurnsPrediction()),
         ]
         self.config = config
+        self.event_producer = EventProducer(config.KAFKA_PRIVATE_BOOTSTRAP)
 
     def fetch_sensor(self):
         sensors = {}
@@ -233,6 +235,12 @@ class PredictionsEngine:
                 run_result = pred.pred_class.run(signals, lap_ctx)
                 if run_result is not None:
                     self.send_prediction(pred, value=run_result.value, instruction=run_result.instruction)
+                    # Forward to the driver via the `event` topic — same data as Telemetry, no extra filter.
+                    self.event_producer.send(
+                        key=pred.pred_id.upper(),
+                        name=pred.pred_class.name,
+                        value=float(run_result.value) if run_result.value is not None else None,
+                    )
 
 
 def main():

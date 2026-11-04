@@ -74,7 +74,7 @@ class NewPredictionJSON(BaseModel):
 class DriverEventMessage(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     # Rule name or prediction id — the car computer uses this as a display label.
-    value: float | None
-    # Numeric reading or prediction result. None for prediction messages without a result yet.
-    state: str | None
+    value: float | dict[str, float] | None = None
+    # Numeric reading/prediction, or mapping {sensor_id: value} when multiple sensors participate in an alert.
+    state: str | None = None
     # Alert severity: BLACK, RED, YELLOW, SENSOR_ERROR. None for prediction messages.

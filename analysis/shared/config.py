@@ -8,7 +8,8 @@ from pydantic import  BaseModel
 REQUIRED_ENV = (
     "CORE_TELEMETRY_URL",
     #CLIENT_ID
-    "TELEMETRY_URL"
+    "TELEMETRY_URL",
+    "KAFKA_PRIVATE_BOOTSTRAP",
 )
 
 
@@ -20,6 +21,7 @@ class Config(BaseModel):
     CORE_TELEMETRY_URL: str
     TELEMETRY_URL : str
     CLIENT_ID : str
+    KAFKA_PRIVATE_BOOTSTRAP: str  # host:port of the private Kafka listener (e.g. kafka.zone.c.project.internal:9092)
 
 def load_config() -> Config | None:
     load_dotenv(find_dotenv())
@@ -36,5 +38,6 @@ def load_config() -> Config | None:
     return Config(
         CORE_TELEMETRY_URL=os.environ["CORE_TELEMETRY_URL"],
         CLIENT_ID="analysis_",
-        TELEMETRY_URL=telemetry_url
+        TELEMETRY_URL=telemetry_url,
+        KAFKA_PRIVATE_BOOTSTRAP=os.environ["KAFKA_PRIVATE_BOOTSTRAP"],
     )

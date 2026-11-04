@@ -9,6 +9,7 @@ from loguru import logger
 from pydantic import BaseModel
 from analysis.shared.config import load_config
 from analysis.shared.contract import NewAlertJSON, SensorValue
+from analysis.shared.kafka_producer import EventProducer
 
 
 class RuleObj(BaseModel):
@@ -36,12 +37,14 @@ class GoRulesSchema(BaseModel):
 
 TELEMETRY_RULES_ENDPOINT = "/analysis/v1/alerts"
 TIME_CACHE_NS = 3 * 1_000_000_000
+
 class RulesEngine:
     def __init__(self,config):
         self.config = config
         self.client = storage.Client("chronoracer")
         self.bucket = self.client.bucket("chronoracer-artifacts")
         self.engine = zen.ZenEngine({"loader": self.loader})
+        self.event_producer = EventProducer(config.KAFKA_PRIVATE_BOOTSTRAP)
 
         self.rules : dict[str,RuleObj] = {}
         for blob in self.client.list_blobs(self.bucket,prefix="analysis/rules/"):
@@ -118,6 +121,25 @@ class RulesEngine:
                     req.raise_for_status()
                 except Exception as ex:
                     pass # TODO
+
+            # Forward to the driver via the `event` topic — same data as Telemetry, no extra filter.
+            sensors_dict: dict[str, float] = {}
+            for dct in decision["result"].get("sensors", []):
+                for k, v in dct.items():
+                    sensors_dict[k] = float(v)
+
+            alert_value: float | dict[str, float] | None = None
+            if len(sensors_dict) == 1:
+                alert_value = next(iter(sensors_dict.values()))
+            elif len(sensors_dict) > 1:
+                alert_value = sensors_dict
+
+            self.event_producer.send(
+                key=alert_id.upper(),
+                name=alert_id,
+                value=alert_value,
+                state=decision["result"].get("state"),
+            )
 
     @staticmethod
     def _prepare_alert_json(alert_id,decision:dict):
