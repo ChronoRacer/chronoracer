@@ -8,13 +8,12 @@
  * the network-layer `string` serialization.
  */
 
-import type { CoreStatus, Gap, Snapshot } from '../../shared/protocol.js';
-import type { Point } from '../core/types.js';
+import type { Buckets, CoreStatus, Gap, Latest, Snapshot } from '../../shared/protocol.js';
 
-export type { RingStats } from '../../shared/protocol.js';
+export type { Buckets, Latest, RingStats } from '../../shared/protocol.js';
 
 export type GapEvent = Gap<bigint>;
 export type StoreStatus = CoreStatus<bigint>;
 export type StoreSnapshot = Snapshot<bigint>;
 
-export type Delta = { points: Point[]; gaps: GapEvent[] };
+export type Delta = { buckets: Record<string, Buckets>; latest: Latest; gaps: GapEvent[] };

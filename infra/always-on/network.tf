@@ -93,7 +93,7 @@ resource "google_compute_firewall" "kafka_private" {
     ports    = [tostring(local.kafka_private_port)]
   }
 
-  source_ranges = [var.subnet_cidr, var.relay_run_subnet_cidr]
+  source_ranges = [var.subnet_cidr, var.relay_run_subnet_cidr, var.telemetry_run_subnet_cidr]
   target_tags   = ["kafka"]
 }
 

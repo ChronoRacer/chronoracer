@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertsPanel } from './components/AlertsPanel';
 import { Drawer } from './components/Drawer';
+import { DriverPanel } from './components/DriverPanel';
 import { DrivingZone } from './components/DrivingZone';
 import { GapMarkers } from './components/GapMarkers';
 import { PowertrainZone } from './components/PowertrainZone';
@@ -11,7 +12,7 @@ import { useTelemetrySocket } from './hooks/useTelemetrySocket';
 import { FanoutTick } from './lib/fanout-tick';
 import { unknownSensors } from './sensors/layout';
 
-type DrawerKind = 'analysis' | 'service' | null;
+type DrawerKind = 'analysis' | 'driver' | 'service' | null;
 
 export function App() {
   const state = useTelemetrySocket();
@@ -43,6 +44,12 @@ export function App() {
             onExpand={() => setDrawer('analysis')}
           />
           <AlertsPanel alerts={state.alerts} variant="strip" onExpand={() => setDrawer('analysis')} />
+          <DriverPanel
+            enabled={state.driverEnabled}
+            messages={state.driverMessages}
+            variant="strip"
+            onExpand={() => setDrawer('driver')}
+          />
         </div>
 
         <div className="dash-stage">
@@ -56,6 +63,10 @@ export function App() {
               <PredictionsPanel predictions={state.predictions} />
               <AlertsPanel alerts={state.alerts} />
             </div>
+          </Drawer>
+
+          <Drawer open={drawer === 'driver'} title="Komunikacja z kierowcą" onClose={() => setDrawer(null)}>
+            <DriverPanel enabled={state.driverEnabled} messages={state.driverMessages} />
           </Drawer>
 
           <Drawer

@@ -74,6 +74,16 @@ resource "google_cloud_run_v2_service" "telemetry" {
       }
 
       env {
+        name  = "KAFKA_PRIVATE_BOOTSTRAP"
+        value = local.kafka_private_bootstrap
+      }
+
+      env {
+        name  = "KAFKA_EVENT_TOPIC"
+        value = local.platform.kafka_event_topic
+      }
+
+      env {
         name  = "OAUTH_CLIENT_ID"
         value = local.platform.oauth_client_id
       }

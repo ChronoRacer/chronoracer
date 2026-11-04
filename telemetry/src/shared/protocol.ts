@@ -16,14 +16,15 @@ export type Hello<U64 = string> = {
   selectedSensorCount: number;
 };
 
-export type Point<U64 = string> = {
-  sensorId: string;
-  timestampNanos: U64;
-  value: number;
-  driverId: string;
-};
+/**
+ * One sensor's buckets on the shared time grid, flat as `index, a, b` per bucket, ascending by `index`. Bucket
+ * `index` covers source time `[index, index + 1) × bucketMs`. `a` and `b` are its minimum and maximum in the order
+ * they occurred (equal for one sample); both are `null` when the bucket held a non-finite sample, which is a hole.
+ */
+export type Buckets = (number | null)[];
 
-export type SnapshotPoint<U64 = string> = Omit<Point<U64>, 'sensorId'>;
+/** Newest sample per sensor by source time, for instruments; `null` when it is not finite. */
+export type Latest = Record<string, number | null>;
 
 export type Gap<U64 = string> =
   | { kind: 'core'; atMs: number; firstSequence: U64; droppedPointCount: U64 }
@@ -36,15 +37,17 @@ export type CoreStatus<U64 = string> = {
 };
 
 export type RingStats = {
-  pointsInStore: number;
+  bucketsInStore: number;
   sensorCount: number;
   approxBytes: number;
-  evictedPoints: number;
+  evictedBuckets: number;
 };
 
 export type Snapshot<U64 = string> = CoreStatus<U64> & {
   sensorIds: string[];
-  pointsBySensor: Record<string, SnapshotPoint<U64>[]>;
+  bucketMs: number;
+  buckets: Record<string, Buckets>;
+  latest: Latest;
   gaps: Gap<U64>[];
   stats: RingStats;
 };
@@ -80,13 +83,41 @@ export type AnalysisSnapshot = {
   alerts: Alert[];
 };
 
+/**
+ * Kafka keys of driver messages on the `event` topic; the body is the UTF-8 text. Contract:
+ * docs/component-kafka.md#event.
+ */
+export const DRIVER_KEYS = ['MSG', 'BOX', 'FLAG', 'PACE'] as const;
+export type DriverKey = (typeof DRIVER_KEYS)[number];
+/** Characters, not bytes. */
+export const DRIVER_TEXT_MAX = 200;
+
+export type DriverMessageRequest = { key: DriverKey; text: string };
+
+/** `delivered` means Kafka acknowledged the write, not that the driver read it. */
+export type DriverMessageStatus = 'sending' | 'delivered' | 'failed';
+
+export type DriverMessage = DriverMessageRequest & {
+  id: string;
+  sentBy: string;
+  sentAtMs: number;
+  status: DriverMessageStatus;
+  error?: string;
+};
+
+/** `driverEnabled` is false when the server has no Kafka configuration; sending then answers 503. */
+export type DriverSnapshot = { driverEnabled: boolean; driverMessages: DriverMessage[] };
+
 export type ServerMessage<U64 = string> =
   /** `tickMs`: interval between pushes; the browser animates each update over one tick. */
-  | ({ type: 'snapshot'; tickMs: number } & Snapshot<U64> & AnalysisSnapshot)
+  | ({ type: 'snapshot'; tickMs: number } & Snapshot<U64> & AnalysisSnapshot & DriverSnapshot)
   | ({ type: 'status' } & CoreStatus<U64>)
-  | { type: 'points'; points: Point<U64>[] }
+  /** Buckets that changed since the last push; a bucket the browser already has replaces it. */
+  | { type: 'buckets'; buckets: Record<string, Buckets>; latest: Latest }
   | { type: 'gap'; gaps: Gap<U64>[] }
   | ({ type: 'analysis' } & AnalysisSnapshot)
+  /** Driver messages that are new or changed status; the browser replaces its copy by `id`. */
+  | { type: 'driver'; messages: DriverMessage[] }
   | { type: 'overloaded'; atMs: number };
 
 export type ClientMessage = { type: 'subscribe'; all: true } | { type: 'subscribe'; sensors: string[] };

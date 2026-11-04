@@ -70,7 +70,7 @@ button {
 
 .dash-chrome {
   display: grid;
-  grid-template-columns: minmax(10rem, 0.7fr) minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(10rem, 0.7fr) minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--gap);
   min-width: 0;
   align-items: stretch;
@@ -1529,6 +1529,154 @@ button {
   overflow-wrap: anywhere;
 }
 
+/* ---------- driver messages (drawer) ---------- */
+
+.driver {
+  gap: var(--gap);
+  max-width: 56rem;
+}
+
+.driver-compose {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.driver-keys,
+.driver-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.driver-key,
+.driver-preset,
+.driver-send {
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--track);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.driver-key {
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.driver-key.on {
+  color: var(--cyan);
+  border-color: color-mix(in srgb, var(--cyan) 55%, var(--line));
+  background: color-mix(in srgb, var(--cyan) 12%, var(--track));
+}
+
+.driver-preset {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  color: var(--text);
+  text-align: start;
+}
+
+.driver-key:hover:not(:disabled),
+.driver-preset:hover:not(:disabled) {
+  border-color: var(--muted);
+  color: var(--text);
+}
+
+.driver-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.driver-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--track);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+
+.driver-send {
+  padding: 8px 16px;
+  font-weight: 700;
+  color: var(--bg);
+  background: var(--cyan);
+  border-color: var(--cyan);
+}
+
+.driver-send:disabled {
+  color: var(--faint);
+  background: var(--track);
+  border-color: var(--line-strong);
+  cursor: not-allowed;
+}
+
+.driver-key:disabled,
+.driver-preset:disabled,
+.driver-input input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.driver-input input:focus-visible,
+.driver-key:focus-visible,
+.driver-preset:focus-visible,
+.driver-send:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.driver-error {
+  font-size: 0.8rem;
+  color: var(--red);
+  overflow-wrap: anywhere;
+}
+
+.driver-history {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.driver-item {
+  display: grid;
+  gap: 4px;
+  padding: 8px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--green);
+  border-radius: var(--radius);
+}
+
+.driver-item.is-sending {
+  border-left-color: var(--orange);
+}
+
+.driver-item.is-failed {
+  border-left-color: var(--red);
+}
+
+.driver-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
 /* ---------- responsive: keep one viewport; densify, don't stack ---------- */
 
 @media (max-width: 1280px) {
@@ -1537,7 +1685,7 @@ button {
   }
 
   .dash-chrome {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .drawer-split {

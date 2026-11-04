@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { Alert, Gap, Hello, Point, Prediction, ServerMessage } from '../../shared/protocol';
+import type { Alert, DriverMessage, Gap, Hello, Prediction, ServerMessage } from '../../shared/protocol';
+import { mergeDriverMessages } from '../lib/driver';
 import { DEFAULT_TICK_MS } from '../lib/fanout-tick';
 import { SeriesStore } from '../lib/series-store';
 import { wsUrl } from '../lib/ws-client';
@@ -14,11 +15,14 @@ export type TelemetryState = {
   gaps: Gap[];
   predictions: Prediction[];
   alerts: Alert[];
+  driverEnabled: boolean;
+  driverMessages: DriverMessage[];
   tickMs: number;
   store: SeriesStore;
 };
 
 const MAX_ALERTS = 200;
+const MAX_DRIVER_MESSAGES = 100;
 
 export function useTelemetrySocket(): TelemetryState {
   const [store] = useState(() => new SeriesStore());
@@ -29,6 +33,8 @@ export function useTelemetrySocket(): TelemetryState {
   const [gaps, setGaps] = useState<Gap[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [driverEnabled, setDriverEnabled] = useState(false);
+  const [driverMessages, setDriverMessages] = useState<DriverMessage[]>([]);
   const [tickMs, setTickMs] = useState(DEFAULT_TICK_MS);
 
   useEffect(() => {
@@ -77,8 +83,10 @@ export function useTelemetrySocket(): TelemetryState {
           setGaps(msg.gaps);
           setPredictions(msg.predictions);
           setAlerts(msg.alerts);
+          setDriverEnabled(msg.driverEnabled);
+          setDriverMessages(msg.driverMessages);
           setTickMs(msg.tickMs);
-          store.replace(msg.pointsBySensor);
+          store.replace(msg.bucketMs, msg.buckets, msg.latest);
           return;
         }
         if (msg.type === 'analysis') {
@@ -90,9 +98,13 @@ export function useTelemetrySocket(): TelemetryState {
           }
           return;
         }
-        if (msg.type === 'points') {
-          store.append(msg.points);
-          setSensorIds((known) => withNewSensors(known, msg.points));
+        if (msg.type === 'driver') {
+          setDriverMessages((prev) => mergeDriverMessages(prev, msg.messages, MAX_DRIVER_MESSAGES));
+          return;
+        }
+        if (msg.type === 'buckets') {
+          store.apply(msg.buckets, msg.latest);
+          setSensorIds((known) => withNewSensors(known, Object.keys(msg.buckets)));
           return;
         }
         if (msg.type === 'gap') {
@@ -120,7 +132,19 @@ export function useTelemetrySocket(): TelemetryState {
     };
   }, [store]);
 
-  return { connection, coreConnected, hello, sensorIds, gaps, predictions, alerts, tickMs, store };
+  return {
+    connection,
+    coreConnected,
+    hello,
+    sensorIds,
+    gaps,
+    predictions,
+    alerts,
+    driverEnabled,
+    driverMessages,
+    tickMs,
+    store,
+  };
 }
 
 function mergePredictions(known: Prediction[], changed: Prediction[]): Prediction[] {
@@ -131,8 +155,8 @@ function mergePredictions(known: Prediction[], changed: Prediction[]): Predictio
   return [...byId.values()];
 }
 
-function withNewSensors(known: string[], points: Point[]): string[] {
+function withNewSensors(known: string[], ids: string[]): string[] {
   const seen = new Set(known);
-  const added = [...new Set(points.map((p) => p.sensorId))].filter((id) => !seen.has(id));
+  const added = ids.filter((id) => !seen.has(id));
   return added.length === 0 ? known : [...known, ...added];
 }

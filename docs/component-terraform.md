@@ -42,8 +42,8 @@ Resources:
 
 - VPC and three subnets, all with Private Google Access: the `/24` VM subnet, a Relay Cloud Run subnet, and a
   Telemetry Cloud Run subnet (each Cloud Run subnet at least `/26`, the Google minimum for Direct VPC Egress)
-- Baseline firewall (IAP SSH only, no public `22` to the internet; no public Core; private Kafka from the VM subnet and
-  the Relay subnet to tag `kafka`; Core telemetry gRPC from the Telemetry subnet and the `analysis` source tag
+- Baseline firewall (IAP SSH only, no public `22` to the internet; no public Core; private Kafka from the VM subnet, the
+  Relay subnet, and the Telemetry subnet to tag `kafka`; Core telemetry gRPC from the Telemetry subnet and the `analysis` source tag
   to tag `core` — ports:
   [`platform.json`](../infra/contract/platform.json))
 - Private Cloud DNS zone `run.app.` attached to the race VPC. Its apex resolves to the Private Google Access VIPs

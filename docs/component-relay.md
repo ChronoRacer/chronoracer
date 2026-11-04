@@ -91,6 +91,7 @@ request body of any content type. Body is not parsed. Max 100KiB (102400 bytes);
 allowed.
 
 Relay produces the bytes to the private `event` topic under `key`. Topic: [Kafka](component-kafka.md). Output: `204`.
+Telemetry's [driver messages](component-telemetry.md#driver-messages) use the same topic.
 
 Reject: no active race; phase is not `applied`.
 

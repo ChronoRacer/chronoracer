@@ -28,7 +28,7 @@ Apache Kafka at `/opt/kafka` on family `chronoracer-kafka`.
 
 | Name       | Bind             | Advertised                                 | Protocol                                                                                                                                                                                       |
 |------------|------------------|--------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| PRIVATE    | `0.0.0.0:9092`   | `{kafka}.{zone}.c.{project}.internal:9092` | PLAINTEXT (Core, Relay). No Okta.                                                                                                                                                              |
+| PRIVATE    | `0.0.0.0:9092`   | `{kafka}.{zone}.c.{project}.internal:9092` | PLAINTEXT (Core, Relay, Telemetry). No Okta.                                                                                                                                                   |
 | PUBLIC     | `0.0.0.0:9094`   | `{kafka-fqdn}:9094`                        | SASL_SSL. TLS from the PKCS12 keystore. SASL/OAUTHBEARER validated with Apache `OAuthBearerValidatorCallbackHandler` against Auth0 JWKS (`kafka_oauth_*` in platform.json). No ACL authorizer. |
 | CONTROLLER | `127.0.0.1:9093` | not advertised                             | PLAINTEXT. Inter-broker uses PRIVATE.                                                                                                                                                          |
 
@@ -78,7 +78,8 @@ replays both topics from the start.
 
 ### `data`
 
-- Key: `{sensorId}` (`ID` column in `sensors.xlsx`). At most 12 ASCII characters.
+- Key: `{sensorId}`, a `name` from [`infra/contract/sensors.json`](../infra/contract/sensors.json). At most 12 ASCII
+  characters.
 - Avro: yes. Canonical schema: [`core/avro/sensor_data.avsc`](../core/avro/sensor_data.avsc)
 
 Car computer evaluates immediate warnings, so a short send delay only slows the Telemetry preview. Analysis wants a window, so
@@ -165,4 +166,15 @@ Unknown keys are ignored. Parse failures (missing key, missing `CHDRV` body, non
 
 - Key: operator-supplied Kafka key (uppercase compact keys preferred, same as other topics)
 - Avro: no. Body is opaque bytes. Core does not read this topic.
-- Producer: Relay operator HTTP. Size and HTTP contract: [Relay](component-relay.md).
+- Producers: Relay operator HTTP, any key and body (size and HTTP contract: [Relay](component-relay.md)); Telemetry
+  [driver messages](component-telemetry.md#driver-messages), only in the convention below.
+
+Driver messages: the key is one of the kinds below and the body is UTF-8 text for the driver's display, one line of
+at most 200 characters without control characters. The receiver should show an unknown key like `MSG`.
+
+| Key    | Kind                                       |
+|--------|--------------------------------------------|
+| `MSG`  | general message                            |
+| `BOX`  | pit instruction, e.g. come in or stay out  |
+| `FLAG` | flag or track condition                    |
+| `PACE` | pace instruction, e.g. push or save fuel   |

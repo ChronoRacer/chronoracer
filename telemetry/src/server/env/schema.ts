@@ -30,9 +30,9 @@ export const serverEnvShape = {
   CORE_TELEMETRY_URL: z.url(),
   RACE_ID: optionalString,
   TELEMETRY_SENSORS: z.string().optional().transform(parseSensorList).pipe(z.array(z.string()).min(1).optional()),
-  TELEMETRY_MAX_POINTS_PER_SENSOR: positiveInt(1000),
-  TELEMETRY_RETENTION_MS: positiveInt(5 * 60_000),
-  TELEMETRY_MAX_POINTS: positiveInt(50_000),
+  TELEMETRY_BUCKET_MS: positiveInt(50),
+  TELEMETRY_RETENTION_MS: positiveInt(60_000),
+  TELEMETRY_MAX_BUCKETS: positiveInt(100_000),
   TELEMETRY_FANOUT_TICK_MS: positiveInt(100),
   TELEMETRY_WS_MAX_BUFFERED_BYTES: positiveInt(1_048_576),
   TELEMETRY_CLIENT_DIR: optionalString,
@@ -43,6 +43,8 @@ export const serverEnvShape = {
   TELEMETRY_ROOT_URL: z.url().optional(),
   SESSION_SECRET: z.string().trim().min(32).optional(),
   ANALYSIS_INGEST_TOKEN: z.string().trim().min(32).optional(),
+  KAFKA_PRIVATE_BOOTSTRAP: optionalString,
+  KAFKA_EVENT_TOPIC: optionalString,
 };
 
 export type RawEnv = z.infer<z.ZodObject<typeof serverEnvShape>>;

@@ -2,6 +2,8 @@ import { EventEmitter } from "node:events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type WebSocket from "ws";
 import type { ServerMessage } from "../../shared/protocol.js";
+import { AnalysisStore } from "../analysis/index.js";
+import { DriverMessages } from "../driver/index.js";
 import type { Point } from "../core/types.js";
 import { PreviewStore } from "../store/index.js";
 import { FanoutHub } from "./hub.js";
@@ -32,11 +34,16 @@ class FakeSocket extends EventEmitter {
 }
 
 let seq = 0;
-const point = (sensorId: string): Point => ({ sensorId, timestampNanos: BigInt(++seq), value: seq, driverId: "d" });
+// Each point lands in its own bucket.
+const point = (sensorId: string): Point => ({ sensorId, timestampNanos: BigInt(++seq) * 10_000_000n, value: seq, driverId: "d" });
+const changedSensors = (messages: ServerMessage[]) =>
+  messages.map((m) => (m.type === "buckets" ? [Object.keys(m.buckets), Object.keys(m.latest)] : m.type));
 const hello = { protocolVersion: 1, raceId: "race", streamId: "A", nextSequence: 1n, selectedSensorCount: 0 };
 
 describe("FanoutHub", () => {
   let store: PreviewStore;
+  let analysis: AnalysisStore;
+  let driver: DriverMessages;
   let hub: FanoutHub;
   const tick = () => vi.advanceTimersByTime(TICK_MS);
   const connect = () => {
@@ -47,8 +54,10 @@ describe("FanoutHub", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    store = new PreviewStore({ maxPointsPerSensor: 100, maxAgeMs: 60_000, maxSensors: 10, maxTotalPoints: 1_000 });
-    hub = new FanoutHub(store, { tickMs: TICK_MS, maxBufferedBytes: MAX_BUFFERED });
+    store = new PreviewStore({ bucketMs: 10, maxAgeMs: 60_000, maxTotalBuckets: 1_000 });
+    analysis = new AnalysisStore();
+    driver = new DriverMessages(true);
+    hub = new FanoutHub(store, analysis, driver, { tickMs: TICK_MS, maxBufferedBytes: MAX_BUFFERED });
     hub.start();
     store.connect(hello);
   });
@@ -63,15 +72,26 @@ describe("FanoutHub", () => {
     const [snapshot] = all.take();
     expect(snapshot).toMatchObject({ type: "snapshot", connected: true, hello: { nextSequence: "1" } });
     const [filtered] = onlyA.take();
-    expect(filtered.type === "snapshot" && Object.keys(filtered.pointsBySensor)).toEqual(["a"]);
+    expect(filtered.type === "snapshot" && Object.keys(filtered.buckets)).toEqual(["a"]);
 
     tick();
     expect(all.take()).toEqual([]);
 
     store.ingest([point("a"), point("b")]);
     tick();
-    expect(all.take()).toMatchObject([{ type: "points", points: [{ sensorId: "a" }, { sensorId: "b" }] }]);
-    expect(onlyA.take()).toMatchObject([{ type: "points", points: [{ sensorId: "a" }] }]);
+    expect(changedSensors(all.take())).toEqual([[["a", "b"], ["a", "b"]]]);
+    expect(changedSensors(onlyA.take())).toEqual([[["a"], ["a"]]]);
+  });
+
+  it("sends the tick in the snapshot and ignores a subscribe that repeats the selection", () => {
+    const socket = connect();
+    tick();
+    expect(socket.take()).toMatchObject([{ type: "snapshot", tickMs: TICK_MS }]);
+
+    socket.subscribe({ type: "subscribe", all: true });
+    store.ingest([point("a")]);
+    tick();
+    expect(socket.take().map((m) => m.type)).toEqual(["buckets"]);
   });
 
   it("pushes Core status changes and gaps live", () => {
@@ -100,7 +120,50 @@ describe("FanoutHub", () => {
 
     socket.bufferedAmount = 0;
     tick();
-    expect(socket.take()).toMatchObject([{ type: "snapshot", pointsBySensor: { a: [{}, {}] } }]);
+    const messages = socket.take();
+    expect(messages.map((m) => m.type === "snapshot" && m.buckets.a.length)).toEqual([6]);
+  });
+
+  it("includes analysis state in the snapshot and pushes changes to every subscription", () => {
+    const ts = 1_767_225_600_000_001;
+    analysis.running({ timestamp: ts, prediction_id: "p1", name: "Tyre wear", refresh_rate: 5 });
+    const onlyA = connect();
+    onlyA.subscribe({ type: "subscribe", sensors: ["a"] });
+    tick();
+    expect(onlyA.take()).toMatchObject([
+      { type: "snapshot", predictions: [{ predictionId: "p1", name: "Tyre wear" }], alerts: [] },
+    ]);
+
+    analysis.prediction({ timestamp: ts + 1, prediction_id: "p1", sensors_id: ["a"], instruction: null, value: 0.4 });
+    analysis.alert({
+      timestamp: ts + 2,
+      alert_id: "hot",
+      sensors: [{ sensor_id: "a", value: 1 }],
+      analysis_message: "m",
+      analysis_reason: "r",
+    });
+    tick();
+    expect(onlyA.take()).toMatchObject([
+      { type: "analysis", predictions: [{ predictionId: "p1", latest: { value: 0.4 } }], alerts: [{ alertId: "hot" }] },
+    ]);
+    tick();
+    expect(onlyA.take()).toEqual([]);
+  });
+
+  it("includes driver messages in the snapshot and pushes status changes to every browser", () => {
+    const sent = driver.add({ key: "BOX", text: "BOX BOX" }, "op");
+    const all = connect();
+    const onlyA = connect();
+    onlyA.subscribe({ type: "subscribe", sensors: ["a"] });
+    tick();
+    expect(all.take()).toMatchObject([{ type: "snapshot", driverEnabled: true, driverMessages: [{ id: sent.id }] }]);
+    onlyA.take();
+
+    driver.settle(sent);
+    tick();
+    const update = [{ type: "driver", messages: [{ id: sent.id, status: "delivered" }] }];
+    expect(all.take()).toMatchObject(update);
+    expect(onlyA.take()).toMatchObject(update);
   });
 
   it("ignores invalid client messages", () => {
