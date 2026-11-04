@@ -68,31 +68,13 @@ class NewPredictionJSON(BaseModel):
     value:        float | None
 
 
-"""
-# THIS IS SCHEMA FOR JSON DATA SENT FROM ANALYSIS TO DASHBOARD
-class NewAnalysisJSON(BaseModel):
-    timestamp: int = Field(...,ge=1767225600000000) # timestamp in microseconds
-
-    alert_pred_id: int = Field(...,ge=1)
-
-    sensor_list: list[str]
-    # list of sensors to identify sensors between modules, these id are from core module
-    # i believe i get these list when i am connecting to core module
-
-    analysis_kind : int  = Field(...,min_length=1,pattern="^[a-zA-Z0-9_-]+$") # ALERT, PREDICTION,
-
-    analysis_message: str | None = Field(None,min_length=1,max_length=127,pattern="^[a-zA-Z0-9_-]+$")
-    # this is a message with id of sensor so you can map it to their name?
-    # but this message is only  with alerts, because predictions there is no reason there
-    # because reason are sending periodically
-
-    analysis_reason: str
-    # this is a description with flag and definition of the flag
-    # (this is constant i mean this is from definitions,
-    # this is not changing between records i mean, definitions are the same
-    # e.g RED-FLAG BECAUSE VALUE WAS HIGHER THAN BY ON WINDOW Z
-
-    value: float | None # additional value for prediction or alert, maybe value that break the rule??
-
-"""
-
+# MESSAGE WRITTEN TO THE `event` KAFKA TOPIC (PRIVATE LISTENER, kafka_event_topic in platform.json).
+# Key  = alert_id or prediction_id, uppercase compact (same convention as all other topics).
+# Body = this model serialised as UTF-8 JSON.
+class DriverEventMessage(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    # Rule name or prediction id — the car computer uses this as a display label.
+    value: float | None
+    # Numeric reading or prediction result. None for prediction messages without a result yet.
+    state: str | None
+    # Alert severity: BLACK, RED, YELLOW, SENSOR_ERROR. None for prediction messages.
