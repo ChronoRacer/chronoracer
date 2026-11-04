@@ -16,13 +16,27 @@ source "${CHRONORACER_DIR}/gce-metadata.sh"
 RACE_ID="$(gce_attr race-id)" || exit 1
 CORE_TELEMETRY_URL="$(gce_attr core-telemetry-url)" || exit 1
 TELEMETRY_URL="$(gce_attr telemetry-url)" || exit 1
-KAFKA_PRIVATE_BOOTSTRAP="$(gce_attr kafka-private-bootstrap)" || exit 1
+
+if KAFKA_PRIVATE_BOOTSTRAP="$(gce_attr kafka-private-bootstrap 2>/dev/null)"; then
+  :
+else
+  PROJECT="$(gce_project_id 2>/dev/null || echo "")"
+  ZONE="$(gce_zone 2>/dev/null || echo "")"
+  if [[ -n "${PROJECT}" && -n "${ZONE}" ]]; then
+    KAFKA_PRIVATE_BOOTSTRAP="kafka.${ZONE}.c.${PROJECT}.internal:9092"
+  else
+    KAFKA_PRIVATE_BOOTSTRAP="127.0.0.1:9092"
+  fi
+fi
+
+ANALYSIS_INGEST_TOKEN="$(gce_attr analysis-ingest-token 2>/dev/null || echo "TOKEN")"
 
 {
   printf 'RACE_ID=%s\n' "${RACE_ID}"
   printf 'CORE_TELEMETRY_URL=%s\n' "${CORE_TELEMETRY_URL}"
   printf 'TELEMETRY_URL=%s\n' "${TELEMETRY_URL}"
   printf 'KAFKA_PRIVATE_BOOTSTRAP=%s\n' "${KAFKA_PRIVATE_BOOTSTRAP}"
+  printf 'ANALYSIS_INGEST_TOKEN=%s\n' "${ANALYSIS_INGEST_TOKEN}"
 } >"${ANALYSIS_ENV}"
 chmod 600 "${ANALYSIS_ENV}"
 echo "Rendered Analysis environment: ${ANALYSIS_ENV}"

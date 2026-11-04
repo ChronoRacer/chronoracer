@@ -113,7 +113,7 @@ class RulesEngine:
 
         if send_decision:
             with requests.Session() as s:
-                s.headers.update({"Authorization": "Bearer TOKEN"})
+                s.headers.update({"Authorization": f"Bearer {self.config.ANALYSIS_INGEST_TOKEN}"})
                 payload = self._prepare_alert_json(alert_id,decision)
                 logger.info("Alert {} state {}: {}", alert_id, decision["result"]["state"], payload)
                 req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RULES_ENDPOINT,json=payload,timeout=2)

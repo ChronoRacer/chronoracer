@@ -132,7 +132,7 @@ class PredictionsEngine:
             response = requests.post(
                 self.config.TELEMETRY_URL + endpoint,
                 json=payload,
-                headers={"Authorization": "Bearer TOKEN"},
+                headers={"Authorization": f"Bearer {self.config.ANALYSIS_INGEST_TOKEN}"},
                 timeout=2,
             )
             response.raise_for_status()
