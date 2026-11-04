@@ -182,13 +182,10 @@ Resource names and ports remain owned by contract files. Cloud Run wiring belong
 
 ## Architecture
 
-<<<<<<< Updated upstream
-=======
 [IMPORTANT!] Current files implement the monolith described in
 [`telemetry/IMPLEMENTATION.md`](../telemetry/IMPLEMENTATION.md). Replace or extend that layout rather than
 reintroducing a multi-process Core client.
 
->>>>>>> Stashed changes
 Telemetry **MUST** not open multiple connections to Core, especially not one dedicated connection per user.
 It should instead have a fan-out architecture model with one, permanent and reliable connection to Core with an internal
 dedup and caching mechanism, later replaying the data to individual connected users. A monolith app is preferred over a
