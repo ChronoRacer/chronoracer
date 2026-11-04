@@ -1,8 +1,14 @@
+import { useCallback } from 'react';
 import { useSensor, type Reading } from '../hooks/useSensor';
-import { useSmoothedAngle, useSmoothedNumber } from '../hooks/useSmoothedNumber';
+import {
+  useMotionSvgAngleRotate,
+  useMotionSvgArc,
+  useMotionSvgDot,
+  useMotionSvgRotate,
+} from '../hooks/useSmoothedNumber';
 import type { SeriesStore } from '../lib/series-store';
 import { cardinal, formatFixed, formatSigned } from '../lib/format';
-import { describeArc, norm, polar } from '../lib/svg';
+import { describeArc, polar } from '../lib/svg';
 import { CenterBar, Card, Metric, Readout, VBar, cx, describe, liveClass } from './instruments';
 
 type ZoneProps = { store: SeriesStore };
@@ -28,8 +34,18 @@ function SpeedHero({ store }: ZoneProps) {
   const speed = useSensor(store, 'speed');
   const gpsSpeed = useSensor(store, 'gps_speed');
   const heading = useSensor(store, 'gps_heading');
-  const t = norm(useSmoothedNumber(speed.finite ?? 0), speed.spec?.min ?? 0, speed.spec?.max ?? 220);
-  const headingDeg = useSmoothedAngle(heading.finite ?? 0);
+  const arc = useMotionSvgArc(
+    speed.finite ?? 0,
+    speed.spec?.min ?? 0,
+    speed.spec?.max ?? 220,
+    120,
+    120,
+    72,
+    -SPEED_SWEEP,
+    SPEED_SWEEP,
+    describeArc,
+  );
+  const headingMark = useMotionSvgAngleRotate(heading.finite ?? 0, 120, 120);
 
   return (
     <Card title="Prędkość i kierunek" className="area-hero">
@@ -51,8 +67,8 @@ function SpeedHero({ store }: ZoneProps) {
             );
           })}
           <path d={describeArc(120, 120, 72, -SPEED_SWEEP, SPEED_SWEEP)} className="speed-track" />
-          <path d={describeArc(120, 120, 72, -SPEED_SWEEP, -SPEED_SWEEP + 2 * SPEED_SWEEP * t)} className={cx('speed-value', speed.stale && 'stale')} />
-          <g transform={`rotate(${headingDeg} 120 120)`} className={cx('heading-marker', heading.stale && 'stale')}>
+          <path ref={arc} className={cx('speed-value', speed.stale && 'stale')} />
+          <g ref={headingMark} className={cx('heading-marker', heading.stale && 'stale')}>
             <path d="M 120 4 L 128 20 L 120 16 L 112 20 Z" />
           </g>
         </svg>
@@ -108,7 +124,8 @@ function Pedals({ store }: ZoneProps) {
 function Steering({ store }: ZoneProps) {
   const angle = useSensor(store, 'steer_angle');
   const torque = useSensor(store, 'steer_torque');
-  const smooth = useSmoothedNumber(angle.finite ?? 0);
+  // Contract: left = plus; SVG rotates clockwise for plus, so negate for a driver's view.
+  const wheel = useMotionSvgRotate(angle.finite ?? 0, 70, 70, (v) => -v);
   const side = angle.finite === undefined || Math.round(angle.finite) === 0 ? '' : angle.finite > 0 ? 'L' : 'P';
 
   return (
@@ -116,8 +133,7 @@ function Steering({ store }: ZoneProps) {
       <div className="steering">
         <svg viewBox="0 0 140 140" className={cx('wheel-svg', angle.stale && 'stale')} aria-hidden>
           <circle cx="70" cy="70" r="66" className="wheel-guide" />
-          {/* Contract: left = plus; SVG rotates clockwise for plus, so negate for a driver's view. */}
-          <g transform={`rotate(${-smooth} 70 70)`}>
+          <g ref={wheel}>
             <circle cx="70" cy="70" r="54" className="wheel-rim" />
             <circle cx="70" cy="70" r="15" className="wheel-hub" />
             <path d="M 55 74 L 20 82 M 85 74 L 120 82 M 70 85 L 70 124" className="wheel-spoke" />
@@ -207,13 +223,12 @@ const STANDARD_G = 9.80665;
 function GForce({ store }: ZoneProps) {
   const long = useSensor(store, 'accel_long');
   const lat = useSensor(store, 'accel_lat');
-  const sx = useSmoothedNumber(lat.finite ?? 0);
-  const sy = useSmoothedNumber(long.finite ?? 0);
   const k = G_RADIUS / G_LIMIT;
   const clampG = (v: number) => Math.max(-G_LIMIT, Math.min(G_LIMIT, v));
   // Contract: lateral left = plus, longitudinal accelerating = plus. Screen: left is left, accelerating is up.
-  const toX = (latV: number) => 100 - clampG(latV) * k;
-  const toY = (longV: number) => 100 - clampG(longV) * k;
+  const toX = useCallback((latV: number) => 100 - clampG(latV) * k, [k]);
+  const toY = useCallback((longV: number) => 100 - clampG(longV) * k, [k]);
+  const dot = useMotionSvgDot(lat.finite ?? 0, long.finite ?? 0, toX, toY);
   const trail = recentPairs(store, 'accel_long', 'accel_lat', TRAIL_SEC)
     .map(([l, a]) => `${toX(a).toFixed(1)},${toY(l).toFixed(1)}`)
     .join(' ');
@@ -246,7 +261,7 @@ function GForce({ store }: ZoneProps) {
           </text>
         ))}
         {trail ? <polyline points={trail} className="g-trail" /> : null}
-        <circle cx={toX(sx)} cy={toY(sy)} r="6" className="g-dot" />
+        <circle ref={dot} r="6" className="g-dot" />
       </svg>
       <div className="stats">
         <Metric label="Wzdłużne">

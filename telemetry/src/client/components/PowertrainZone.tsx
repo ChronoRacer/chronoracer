@@ -1,5 +1,5 @@
 import { useSensor } from '../hooks/useSensor';
-import { useSmoothedNumber } from '../hooks/useSmoothedNumber';
+import { useMotionSvgArc, useMotionSvgRotate } from '../hooks/useSmoothedNumber';
 import type { SeriesStore } from '../lib/series-store';
 import { formatFixed } from '../lib/format';
 import { describeArc, norm, polar } from '../lib/svg';
@@ -42,13 +42,23 @@ const SOC_SWEEP = 135;
 
 function SocRing({ store }: ZoneProps) {
   const soc = useSensor(store, 'hv_soc');
-  const t = norm(useSmoothedNumber(soc.finite ?? 0), soc.spec?.min ?? 0, soc.spec?.max ?? 100);
+  const arc = useMotionSvgArc(
+    soc.finite ?? 0,
+    soc.spec?.min ?? 0,
+    soc.spec?.max ?? 100,
+    80,
+    80,
+    64,
+    -SOC_SWEEP,
+    SOC_SWEEP,
+    describeArc,
+  );
   return (
     <Card title="Bateria HV" className="area-soc">
       <div className={cx('ring', liveClass(soc))} title={describe(soc)}>
         <svg viewBox="0 0 160 160" aria-hidden>
           <path d={describeArc(80, 80, 64, -SOC_SWEEP, SOC_SWEEP)} className="ring-track" />
-          <path d={describeArc(80, 80, 64, -SOC_SWEEP, -SOC_SWEEP + 2 * SOC_SWEEP * t)} className="ring-value" />
+          <path ref={arc} className="ring-value" />
         </svg>
         <div className="ring-center">
           <Readout r={soc} digits={0} unit="" className="ring-readout" />
@@ -65,8 +75,8 @@ function RpmGauge({ store, ev }: ZoneProps & { ev: boolean }) {
   const rpm = useSensor(store, 'rpm');
   const min = rpm.spec?.min ?? 0;
   const max = rpm.spec?.max ?? 8000;
-  const t = norm(useSmoothedNumber(rpm.finite ?? 0), min, max);
-  const angle = -RPM_SWEEP + 2 * RPM_SWEEP * t;
+  const arc = useMotionSvgArc(rpm.finite ?? 0, min, max, 100, 100, 82, -RPM_SWEEP, RPM_SWEEP, describeArc);
+  const needle = useMotionSvgRotate(rpm.finite ?? 0, 100, 100, (v) => -RPM_SWEEP + 2 * RPM_SWEEP * norm(v, min, max));
   const redFrom = -RPM_SWEEP + 2 * RPM_SWEEP * norm(REDLINE_RPM, min, max);
   const steps = Math.round((max - min) / 1000);
 
@@ -76,7 +86,7 @@ function RpmGauge({ store, ev }: ZoneProps & { ev: boolean }) {
         <svg viewBox="0 0 200 170" aria-hidden>
           <path d={describeArc(100, 100, 82, -RPM_SWEEP, RPM_SWEEP)} className="tacho-track" />
           <path d={describeArc(100, 100, 82, redFrom, RPM_SWEEP)} className="tacho-redline" />
-          <path d={describeArc(100, 100, 82, -RPM_SWEEP, angle)} className="tacho-value" />
+          <path ref={arc} className="tacho-value" />
           {Array.from({ length: steps + 1 }, (_, i) => {
             const deg = -RPM_SWEEP + (2 * RPM_SWEEP * i) / steps;
             const outer = polar(100, 100, 74, deg);
@@ -91,7 +101,7 @@ function RpmGauge({ store, ev }: ZoneProps & { ev: boolean }) {
               </g>
             );
           })}
-          <g transform={`rotate(${angle} 100 100)`}>
+          <g ref={needle}>
             <line x1="100" y1="108" x2="100" y2="26" className="tacho-needle" />
           </g>
           <circle cx="100" cy="100" r="6" className="tacho-hub" />

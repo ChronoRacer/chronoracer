@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react';
 import type { TelemetryState } from '../hooks/useTelemetrySocket';
 import { useSensor, type Reading } from '../hooks/useSensor';
-import { useSmoothedNumber } from '../hooks/useSmoothedNumber';
+import { useMotionScale } from '../hooks/useSmoothedNumber';
 import type { SeriesStore } from '../lib/series-store';
 import { formatFixed, formatValue } from '../lib/format';
-import { norm } from '../lib/svg';
 import { CAR } from '../sensors/catalog';
 import { ConnectionStatus } from './ConnectionStatus';
 import { Metric, Readout, cx, describe, liveClass } from './instruments';
@@ -73,12 +72,12 @@ function GpsGroup({ store }: { store: SeriesStore }) {
 }
 
 function FuelMetric({ r }: { r: Reading }) {
-  const t = norm(useSmoothedNumber(r.finite ?? 0), r.spec?.min ?? 0, r.spec?.max ?? 60);
+  const fill = useMotionScale(r.finite ?? 0, r.spec?.min ?? 0, r.spec?.max ?? 60, 'X');
   return (
     <Metric label="Paliwo">
       <span className="fuel">
         <span className={cx('fuel-gauge', liveClass(r))} title={describe(r)}>
-          <span className="fuel-fill" style={{ transform: `scaleX(${t})` }} />
+          <span className="fuel-fill" ref={fill} />
         </span>
         <Readout r={r} digits={1} />
       </span>

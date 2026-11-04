@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
-import { useSmoothedNumber } from '../hooks/useSmoothedNumber';
+import { useMotionCenterScale, useMotionScale } from '../hooks/useSmoothedNumber';
 import type { Reading } from '../hooks/useSensor';
 import { formatAge, formatFixed, formatSigned, formatValue } from '../lib/format';
-import { clamp01, norm } from '../lib/svg';
+import { clamp01 } from '../lib/svg';
 
 export function cx(...names: (string | false | null | undefined)[]): string {
   return names.filter(Boolean).join(' ');
@@ -73,20 +73,14 @@ export function Metric({ label, children }: { label: string; children: ReactNode
   );
 }
 
-function useRangeFraction(r: Reading, fallbackMin: number, fallbackMax: number): number {
-  const min = r.spec?.min ?? fallbackMin;
-  const max = r.spec?.max ?? fallbackMax;
-  return norm(useSmoothedNumber(r.finite ?? min), min, max);
-}
-
 /** Vertical fill bar (pedals, brake channels). */
 export function VBar({ r, label, variant }: { r: Reading; label: string; variant: 'accel' | 'brake' }) {
-  const t = useRangeFraction(r, 0, 100);
+  const fill = useMotionScale(r.finite ?? 0, r.spec?.min ?? 0, r.spec?.max ?? 100, 'Y');
   return (
     <div className={cx('vbar', `vbar-${variant}`, liveClass(r))} title={describe(r)}>
       <span className="vbar-value">{formatFixed(r.value, 0)}</span>
       <div className="vbar-track">
-        <div className="vbar-fill" style={{ transform: `scaleY(${t})` }} />
+        <div className="vbar-fill" ref={fill} />
       </div>
       <span className="vbar-label">{label}</span>
     </div>
@@ -108,11 +102,11 @@ export function HBar({ r, label, digits = 0 }: { r: Reading; label: string; digi
 
 /** Bare fill track over the contract range, with the range ends below. */
 export function RangeTrack({ r, scale = false }: { r: Reading; scale?: boolean }) {
-  const t = useRangeFraction(r, 0, 100);
+  const fill = useMotionScale(r.finite ?? 0, r.spec?.min ?? 0, r.spec?.max ?? 100, 'X');
   return (
     <div className={cx('range', liveClass(r))}>
       <div className="bar-track">
-        <div className="hbar-fill" style={{ transform: `scaleX(${t})` }} />
+        <div className="hbar-fill" ref={fill} />
       </div>
       {scale ? (
         <div className="bar-scale">
@@ -139,8 +133,7 @@ export function CenterBar({
   posLabel?: string;
 }) {
   const span = Math.max(Math.abs(r.spec?.min ?? 1), Math.abs(r.spec?.max ?? 1), 1e-9);
-  const smooth = useSmoothedNumber(r.finite ?? 0);
-  const t = Math.max(-1, Math.min(1, smooth / span));
+  const fill = useMotionCenterScale(r.finite ?? 0, span);
   return (
     <div className={cx('cbar', liveClass(r))} title={describe(r)}>
       <div className="hbar-meta">
@@ -149,7 +142,7 @@ export function CenterBar({
       </div>
       <div className="bar-track">
         <div className="cbar-zero" />
-        <div className="cbar-fill" style={{ transform: `scaleX(${t})` }} />
+        <div className="cbar-fill" ref={fill} />
       </div>
       <div className="bar-scale">
         <span>{negLabel}</span>
@@ -164,14 +157,14 @@ export function CenterBar({
 export function Thermometer({ r, band }: { r: Reading; band?: readonly [number, number] }) {
   const min = r.spec?.min ?? 0;
   const max = r.spec?.max ?? 100;
-  const t = norm(useSmoothedNumber(r.finite ?? min), min, max);
+  const fill = useMotionScale(r.finite ?? min, min, max, 'Y');
   const bandLo = band ? clamp01((band[0] - min) / (max - min)) : 0;
   const bandHi = band ? clamp01((band[1] - min) / (max - min)) : 0;
   return (
     <div className={cx('thermo', liveClass(r))} title={describe(r)}>
       <div className="thermo-stem">
         {band ? <div className="thermo-band" style={{ bottom: `${bandLo * 100}%`, height: `${(bandHi - bandLo) * 100}%` }} /> : null}
-        <div className="thermo-fill" style={{ transform: `scaleY(${t})` }} />
+        <div className="thermo-fill" ref={fill} />
       </div>
       <div className="thermo-scale">
         <span>{max}</span>

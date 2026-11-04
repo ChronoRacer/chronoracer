@@ -83,7 +83,7 @@ telemetry/
       hooks/
         useTelemetrySocket.ts # WebSocket → store; connection, gaps, sensor list
         useSensor.ts          # one sensor's newest value, age, staleness, range check, tone
-        useSmoothedNumber.ts  # Motion tween over one tick (or jump) for live widget values; wrap-aware heading
+        useSmoothedNumber.ts  # MotionValue glide + DOM binders (no per-frame React); wrap-aware heading
       components/
         StatusBar.tsx         # zone 1: connection, GPS quality, 12 V, fuel, ambient, position
         DrivingZone.tsx       # zone 2: speed + heading, pedals, steering, wheel speeds, g-force
@@ -185,11 +185,13 @@ UI copy is Polish. Layout:
 - The browser subscribes to all sensors. Buckets and newest samples go to a per-sensor store, not React state, so an instrument
   re-renders only for its own sensors; each chart is created once and updated in place. Numeric readouts show the
   exact sample.
-- Motion follows the push interval, which the snapshot carries as `tickMs`. Live instrument values glide linearly to
-  each sample over one tick with Motion (`useSmoothedNumber`; the heading takes the shorter way round 0°/360°), so
-  they reach it as the next push lands and move at a steady speed in between. Charts slide their window every
-  animation frame, one tick behind the newest point at wall-clock speed (`SeriesStore.viewEnd`), instead of jumping
-  once per push; sub-pixel moves are not redrawn. Both put the display one tick behind the data.
+- Motion follows the push interval, which the snapshot carries as `tickMs`. Live instrument values glide with ease-out
+  over ~1.6 ticks via Motion (`useSmoothedMotion` and the `useMotion*` DOM binders; the heading takes the shorter way
+  round 0°/360°). Binders write `transform` / SVG attributes on the MotionValue's animation frames — they do **not**
+  re-render React each frame (that was the source of stepped motion). Consecutive pushes overlap so the needle does
+  not fully stop between samples, without overshooting. Charts slide their window every animation frame, one tick
+  behind the newest point at wall-clock speed (`SeriesStore.viewEnd`), instead of jumping once per push; sub-pixel
+  moves below ~0.15 px are not redrawn. Both put the display roughly one tick behind the data.
 - Bars animate with `transform: scale`; SVG needles/wheels use native `transform="rotate(a cx cy)"` (not CSS rotate on
   `<g>`, which breaks the origin). `prefers-reduced-motion` jumps to the sample instead of gliding.
 

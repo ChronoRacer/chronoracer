@@ -2,8 +2,8 @@
 /**
  * Local-only mock of Core's plaintext h2c TelemetryService.Watch.
  * Feeds Telemetry with synthetic points so the UI can be exercised without Core: MOCK_CORE_RATE points/s spread
- * evenly over the contract sensors, in batches of at most 1024 like Core. Each value is a slow wave with a fast
- * ripple; `brake_prs` also gets a 2 ms full-scale spike every 2 s, visible once the rate gives it samples that dense.
+ * evenly over the contract sensors, in batches of at most 1024 like Core. Each value is a slow smooth wave
+ * (~6 s) plus a gentle secondary (~2 s); no sub-tick noise. `brake_prs` still gets a short full-scale spike every 2 s.
  *
  *   node scripts/mock-core.mjs
  *   CORE_TELEMETRY_URL=http://127.0.0.1:9470 TELEMETRY_AUTH_DISABLED=1 pnpm start
@@ -53,7 +53,8 @@ function sample(sensorId, tMs) {
   const mid = (min + max) / 2;
   const amp = (max - min) / 2;
   const phase = phases[sensorId] ?? 0;
-  return mid + amp * (0.65 * Math.sin(tMs / 1000 + phase / 50) + 0.05 * Math.sin(tMs / 7 + phase));
+  // Periods ~6.3 s and ~2.1 s — above the fanout tick, so instruments glide instead of looking noisy.
+  return mid + amp * (0.7 * Math.sin(tMs / 1000 + phase / 50) + 0.15 * Math.sin(tMs / 333 + phase / 40));
 }
 
 let sent = 0;

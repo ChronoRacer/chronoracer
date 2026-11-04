@@ -40,8 +40,8 @@ const yRange =
     return hasData ? [Math.min(min, lo), Math.max(max, hi)] : [min, max];
   };
 
-// A narrow chart scrolls a few pixels per second; skipping sub-pixel moves spares most of its redraws.
-const MIN_SCROLL_PX = 0.5;
+// Skip only tiny scrolls; too high a threshold makes the window crawl in visible steps.
+const MIN_SCROLL_PX = 0.15;
 
 // Created once per card; each animation frame slides the shared time window, and new points replace the data.
 export function SensorChart({ store, series, min, max, height = 96 }: Props) {
