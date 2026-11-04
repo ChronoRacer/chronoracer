@@ -96,6 +96,12 @@ resource "google_project_iam_member" "controller_run" {
   # }
 }
 
+resource "google_project_iam_member" "controller_race_secrets" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.controller_race_secrets.id
+  member  = "serviceAccount:${google_service_account.controller.email}"
+}
+
 resource "google_service_account_iam_member" "controller_self" {
   service_account_id = google_service_account.controller.name
   role               = "roles/iam.serviceAccountUser"

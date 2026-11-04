@@ -6,6 +6,15 @@ umask 077
 : "${CHRONORACER_DIR:?CHRONORACER_DIR not set}"
 : "${ANALYSIS_ENV:?ANALYSIS_ENV not set}"
 
+need() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "missing required command: $1" >&2
+    exit 1
+  }
+}
+
+need gcloud
+
 [[ -f "${CHRONORACER_DIR}/gce-metadata.sh" ]] || {
   echo "gce-metadata.sh missing: ${CHRONORACER_DIR}/gce-metadata.sh" >&2
   exit 1
@@ -29,7 +38,18 @@ else
   fi
 fi
 
-ANALYSIS_INGEST_TOKEN="$(gce_attr analysis-ingest-token 2>/dev/null || echo "TOKEN")"
+ANALYSIS_INGEST_SECRET_ID="$(gce_attr analysis-ingest-secret-id)" || {
+  echo "missing instance metadata analysis-ingest-secret-id" >&2
+  exit 1
+}
+PROJECT="$(gce_project_id)" || exit 1
+ANALYSIS_INGEST_TOKEN="$(
+  gcloud secrets versions access latest --secret="${ANALYSIS_INGEST_SECRET_ID}" --project="${PROJECT}" | tr -d '\r\n'
+)"
+[[ ${#ANALYSIS_INGEST_TOKEN} -ge 32 ]] || {
+  echo "analysis ingest secret ${ANALYSIS_INGEST_SECRET_ID} missing or too short" >&2
+  exit 1
+}
 
 {
   printf 'RACE_ID=%s\n' "${RACE_ID}"

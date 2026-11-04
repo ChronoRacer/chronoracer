@@ -36,6 +36,7 @@ Race Terraform invokes `/chronoracer/entrypoint.sh` through VM startup metadata.
    | `CORE_TELEMETRY_URL`    | `core-telemetry-url`      |
    | `TELEMETRY_URL`         | `telemetry-url`           |
    | `KAFKA_PRIVATE_BOOTSTRAP` | `kafka-private-bootstrap` |
+   | `ANALYSIS_INGEST_TOKEN`     | `analysis-ingest-secret-id` (Secret Manager secret id; value read at boot) |
 
    Values are owned by [Terraform](../../docs/component-terraform.md). Processes read them from the environment,
    loaded by systemd `EnvironmentFile=`.

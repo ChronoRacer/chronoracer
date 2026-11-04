@@ -91,8 +91,24 @@ resource "google_cloud_run_v2_service" "telemetry" {
           }
         }
       }
+
+      env {
+        name = "ANALYSIS_INGEST_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.analysis_ingest.secret_id
+            version = "latest"
+          }
+        }
+      }
     }
   }
+
+  depends_on = [
+    google_secret_manager_secret_version.analysis_ingest,
+    google_secret_manager_secret_iam_member.analysis_ingest_telemetry,
+    google_secret_manager_secret_iam_member.analysis_ingest_run_agent,
+  ]
 
   lifecycle {
     ignore_changes = all
