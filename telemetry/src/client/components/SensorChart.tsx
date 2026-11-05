@@ -11,6 +11,7 @@ type Props = {
   series: readonly ChartSeries[];
   min: number | null;
   max: number | null;
+  /** Fixed height in px; omitted, the chart fills its parent's height. */
   height?: number;
 };
 
@@ -44,7 +45,7 @@ const yRange =
 const MIN_SCROLL_PX = 0.15;
 
 // Created once per card; each animation frame slides the shared time window, and new points replace the data.
-export function SensorChart({ store, series, min, max, height = 96 }: Props) {
+export function SensorChart({ store, series, min, max, height }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const tickMs = useContext(FanoutTick);
   const key = series.map((s) => `${s.id}:${s.color}:${s.dash?.join(',') ?? ''}`).join('|');
@@ -54,10 +55,10 @@ export function SensorChart({ store, series, min, max, height = 96 }: Props) {
     if (!el) {
       return;
     }
+    const size = () => ({ width: el.clientWidth || 300, height: height ?? Math.max(el.clientHeight, 80) });
     const plot = new uPlot(
       {
-        width: el.clientWidth || 300,
-        height,
+        ...size(),
         legend: { show: false },
         cursor: { sync: { key: 'sensors' } },
         scales: { x: { time: true }, y: { range: yRange(min, max) } },
@@ -89,7 +90,7 @@ export function SensorChart({ store, series, min, max, height = 96 }: Props) {
       });
     };
     draw(performance.now());
-    const resize = new ResizeObserver(() => plot.setSize({ width: el.clientWidth, height }));
+    const resize = new ResizeObserver(() => plot.setSize(size()));
     resize.observe(el);
 
     return () => {
@@ -100,7 +101,7 @@ export function SensorChart({ store, series, min, max, height = 96 }: Props) {
     // `key` stands for `series`, which callers usually pass as a fresh literal.
   }, [store, key, min, max, height, tickMs]);
 
-  return <div className="chart" ref={rootRef} />;
+  return <div className={height === undefined ? 'chart fill' : 'chart'} ref={rootRef} />;
 }
 
 // Series sampled at different instants share one x axis; uPlot spans the alignment holes but keeps NaN gaps.

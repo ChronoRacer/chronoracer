@@ -1,9 +1,10 @@
-import { useSensor } from '../hooks/useSensor';
-import { useMotionSvgArc, useMotionSvgRotate } from '../hooks/useSmoothedNumber';
+import { useSensor, type Reading } from '../hooks/useSensor';
+import { useMotionSvgArc } from '../hooks/useSmoothedNumber';
 import type { SeriesStore } from '../lib/series-store';
 import { formatFixed } from '../lib/format';
-import { describeArc, norm, polar } from '../lib/svg';
-import { Card, HBar, Readout, cx, describe, liveClass } from './instruments';
+import { describeArc, norm } from '../lib/svg';
+import { DIAL, DialScale } from './DrivingZone';
+import { HBar, cx, describe, liveClass } from './instruments';
 
 type ZoneProps = { store: SeriesStore };
 
@@ -11,109 +12,53 @@ type ZoneProps = { store: SeriesStore };
 const EV_RPM = 1;
 const REDLINE_RPM = 6500;
 
-export function PowertrainZone({ store }: ZoneProps) {
+const isEv = (rpm: Reading) => rpm.finite !== undefined && rpm.finite < EV_RPM;
+
+export function ModeChip({ store }: ZoneProps) {
   const rpm = useSensor(store, 'rpm');
+  const ev = isEv(rpm);
+  return (
+    <span className={cx('mode-chip', rpm.finite === undefined ? 'unknown' : ev ? 'ev' : 'ice')} title={describe(rpm)}>
+      {rpm.finite === undefined ? 'MODE —' : ev ? 'EV DRIVE' : 'ENGINE ON'}
+    </span>
+  );
+}
+
+/** RPM dial over throttle and engine load. */
+export function EnginePanel({ store }: ZoneProps) {
   const throttle = useSensor(store, 'throttle');
   const load = useSensor(store, 'engine_load');
-  const ev = rpm.finite !== undefined && rpm.finite < EV_RPM;
   return (
-    <section className="zone zone-powertrain" aria-label="Hybryda i napęd">
-      <h2 className="zone-title">
-        Hybryda i napęd
-        <span className={cx('mode-chip', rpm.finite === undefined ? 'unknown' : ev ? 'ev' : 'ice')}>
-          {rpm.finite === undefined ? 'tryb —' : ev ? 'napęd EV' : 'silnik włączony'}
-        </span>
-      </h2>
-      <div className="powertrain-grid">
-        <SocRing store={store} />
-        <RpmGauge store={store} ev={ev} />
-        <Card title="Przepustnica i obciążenie" className="area-bars">
-          <div className="bars">
-            <HBar r={throttle} label="Przepustnica (ECU)" />
-            <HBar r={load} label="Obciążenie silnika" />
-          </div>
-        </Card>
+    <div className="engine">
+      <RpmGauge store={store} />
+      <div className="bars">
+        <HBar r={throttle} label="THROTTLE" />
+        <HBar r={load} label="ENGINE LOAD" />
       </div>
-    </section>
+    </div>
   );
 }
 
-const SOC_SWEEP = 135;
-
-function SocRing({ store }: ZoneProps) {
-  const soc = useSensor(store, 'hv_soc');
-  const arc = useMotionSvgArc(
-    soc.finite ?? 0,
-    soc.spec?.min ?? 0,
-    soc.spec?.max ?? 100,
-    80,
-    80,
-    64,
-    -SOC_SWEEP,
-    SOC_SWEEP,
-    describeArc,
-  );
-  return (
-    <Card title="Bateria HV" className="area-soc">
-      <div className={cx('ring', liveClass(soc))} title={describe(soc)}>
-        <svg viewBox="0 0 160 160" aria-hidden>
-          <path d={describeArc(80, 80, 64, -SOC_SWEEP, SOC_SWEEP)} className="ring-track" />
-          <path ref={arc} className="ring-value" />
-        </svg>
-        <div className="ring-center">
-          <Readout r={soc} digits={0} unit="" className="ring-readout" />
-          <span className="ring-unit">% SOC</span>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
-const RPM_SWEEP = 120;
-
-function RpmGauge({ store, ev }: ZoneProps & { ev: boolean }) {
+function RpmGauge({ store }: ZoneProps) {
   const rpm = useSensor(store, 'rpm');
+  const ev = isEv(rpm);
   const min = rpm.spec?.min ?? 0;
   const max = rpm.spec?.max ?? 8000;
-  const arc = useMotionSvgArc(rpm.finite ?? 0, min, max, 100, 100, 82, -RPM_SWEEP, RPM_SWEEP, describeArc);
-  const needle = useMotionSvgRotate(rpm.finite ?? 0, 100, 100, (v) => -RPM_SWEEP + 2 * RPM_SWEEP * norm(v, min, max));
-  const redFrom = -RPM_SWEEP + 2 * RPM_SWEEP * norm(REDLINE_RPM, min, max);
-  const steps = Math.round((max - min) / 1000);
+  const arc = useMotionSvgArc(rpm.finite ?? min, min, max, DIAL.c, DIAL.c, DIAL.r, -DIAL.sweep, DIAL.sweep, describeArc);
+  const redFrom = -DIAL.sweep + 2 * DIAL.sweep * norm(REDLINE_RPM, min, max);
 
   return (
-    <Card title="Obroty silnika" className={cx('area-rpm', ev && 'ev')}>
-      <div className={cx('tacho', liveClass(rpm))} title={describe(rpm)}>
-        <svg viewBox="0 0 200 170" aria-hidden>
-          <path d={describeArc(100, 100, 82, -RPM_SWEEP, RPM_SWEEP)} className="tacho-track" />
-          <path d={describeArc(100, 100, 82, redFrom, RPM_SWEEP)} className="tacho-redline" />
-          <path ref={arc} className="tacho-value" />
-          {Array.from({ length: steps + 1 }, (_, i) => {
-            const deg = -RPM_SWEEP + (2 * RPM_SWEEP * i) / steps;
-            const outer = polar(100, 100, 74, deg);
-            const inner = polar(100, 100, 68, deg);
-            const label = polar(100, 100, 58, deg);
-            return (
-              <g key={i}>
-                <line x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y} className="tacho-tick" />
-                <text x={label.x} y={label.y} className="tacho-label" textAnchor="middle" dominantBaseline="central">
-                  {Math.round((min + ((max - min) * i) / steps) / 1000)}
-                </text>
-              </g>
-            );
-          })}
-          <g ref={needle}>
-            <line x1="100" y1="108" x2="100" y2="26" className="tacho-needle" />
-          </g>
-          <circle cx="100" cy="100" r="6" className="tacho-hub" />
-          <text x="100" y="160" className="tacho-caption" textAnchor="middle">
-            ×1000 rpm
-          </text>
-        </svg>
-        <div className="tacho-center">
-          <span className="readout-value">{formatFixed(rpm.value, 0)}</span>
-          <span className={cx('ev-badge', ev && 'on')}>EV</span>
-        </div>
+    <div className={cx('gauge gauge-rpm', ev && 'ev', liveClass(rpm))} title={describe(rpm)}>
+      <svg viewBox="0 0 200 200" aria-hidden>
+        <path d={describeArc(DIAL.c, DIAL.c, DIAL.r, -DIAL.sweep, DIAL.sweep)} className="dial-track" />
+        <path d={describeArc(DIAL.c, DIAL.c, DIAL.r + 10, redFrom, DIAL.sweep)} className="dial-redline" />
+        <path ref={arc} className="dial-value" />
+        <DialScale min={min} max={max} step={500} labelEvery={2} label={(v) => String(v / 1000)} />
+      </svg>
+      <div className="gauge-center">
+        <span className="gauge-num">{formatFixed(rpm.value, 0)}</span>
+        <span className="gauge-unit">{ev ? 'RPM · EV' : 'RPM'}</span>
       </div>
-    </Card>
+    </div>
   );
 }

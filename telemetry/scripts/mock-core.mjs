@@ -4,6 +4,7 @@
  * Feeds Telemetry with synthetic points so the UI can be exercised without Core: MOCK_CORE_RATE points/s spread
  * evenly over the contract sensors, in batches of at most 1024 like Core. Each value is a slow smooth wave
  * (~6 s) plus a gentle secondary (~2 s); no sub-tick noise. `brake_prs` still gets a short full-scale spike every 2 s.
+ * GPS position, heading, speed, and fix follow a lap of Tor Poznań at constant speed, so the map has a real track.
  *
  *   node scripts/mock-core.mjs
  *   CORE_TELEMETRY_URL=http://127.0.0.1:9470 TELEMETRY_AUTH_DISABLED=1 pnpm start
@@ -45,10 +46,58 @@ function pickSensors(request) {
   return ALL_SENSORS;
 }
 
+// Tor Poznań, traced from the GUGiK orthophoto (~4.1 km, clockwise), so the map shows a real track.
+const LAP = [
+  [52.420351, 16.801529], [52.420377, 16.80346], [52.420325, 16.805606], [52.420246, 16.807752],
+  [52.420167, 16.809897], [52.420089, 16.811829], [52.419958, 16.812901], [52.419605, 16.813438],
+  [52.419016, 16.813502], [52.418519, 16.813116], [52.418335, 16.812258], [52.418296, 16.81097],
+  [52.418362, 16.809254], [52.418492, 16.807537], [52.418754, 16.80625], [52.419147, 16.805177],
+  [52.419304, 16.804533], [52.419212, 16.804104], [52.418623, 16.804211], [52.417838, 16.80464],
+  [52.41738, 16.805177], [52.417472, 16.806679], [52.417576, 16.808395], [52.417498, 16.810112],
+  [52.417419, 16.811829], [52.417249, 16.812901], [52.416922, 16.813116], [52.416529, 16.812472],
+  [52.416333, 16.811507], [52.415875, 16.811078], [52.415221, 16.81097], [52.414763, 16.810648],
+  [52.414697, 16.809254], [52.414802, 16.807537], [52.415351, 16.80625], [52.41594, 16.805177],
+  [52.416071, 16.803675], [52.41581, 16.801958], [52.415221, 16.800456], [52.415482, 16.799812],
+  [52.416398, 16.799705], [52.417576, 16.79992], [52.418754, 16.800349], [52.419801, 16.800885],
+];
+const LAP_KMH = 110;
+const M_PER_DEG_LAT = 111_320;
+const lapLegs = LAP.map(([lat, lon], i) => {
+  const [lat2, lon2] = LAP[(i + 1) % LAP.length];
+  const north = (lat2 - lat) * M_PER_DEG_LAT;
+  const east = (lon2 - lon) * M_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
+  return { lat, lon, dLat: lat2 - lat, dLon: lon2 - lon, m: Math.hypot(north, east), heading: (Math.atan2(east, north) * 180) / Math.PI };
+});
+const lapM = lapLegs.reduce((sum, leg) => sum + leg.m, 0);
+
+function lapSample(sensorId, tMs) {
+  let at = ((tMs / 3.6e6) * LAP_KMH * 1000) % lapM;
+  const leg = lapLegs.find((l) => (at -= l.m) < 0) ?? lapLegs[0];
+  const f = 1 + at / leg.m;
+  switch (sensorId) {
+    case 'gps_lat':
+      return leg.lat + f * leg.dLat;
+    case 'gps_lon':
+      return leg.lon + f * leg.dLon;
+    case 'gps_heading':
+      return (leg.heading + 360) % 360;
+    case 'gps_speed':
+      return LAP_KMH;
+    case 'gps_fix':
+      return 3;
+    default:
+      return undefined;
+  }
+}
+
 function sample(sensorId, tMs) {
   const { min, max } = ranges[sensorId] ?? { min: 0, max: 100 };
   if (sensorId === 'brake_prs' && tMs % SPIKE_EVERY_MS < SPIKE_MS) {
     return max;
+  }
+  const onLap = lapSample(sensorId, tMs);
+  if (onLap !== undefined) {
+    return onLap;
   }
   const mid = (min + max) / 2;
   const amp = (max - min) / 2;

@@ -1,89 +1,70 @@
 import { useEffect, useState } from 'react';
+import { AlertToast } from './components/AlertToast';
 import { AlertsPanel } from './components/AlertsPanel';
 import { Drawer } from './components/Drawer';
 import { DriverPanel } from './components/DriverPanel';
-import { DrivingZone } from './components/DrivingZone';
-import { GapMarkers } from './components/GapMarkers';
-import { PowertrainZone } from './components/PowertrainZone';
+import { LiveView } from './components/LiveView';
 import { PredictionsPanel } from './components/PredictionsPanel';
 import { ServiceZone } from './components/ServiceZone';
-import { StatusBar } from './components/StatusBar';
+import { TopBar, type Tab } from './components/TopBar';
 import { useTelemetrySocket } from './hooks/useTelemetrySocket';
 import { FanoutTick } from './lib/fanout-tick';
 import { unknownSensors } from './sensors/layout';
 
-type DrawerKind = 'analysis' | 'driver' | 'service' | null;
-
 export function App() {
   const state = useTelemetrySocket();
   const other = unknownSensors(state.sensorIds);
-  const [drawer, setDrawer] = useState<DrawerKind>(null);
+  const [tab, setTab] = useState<Tab>('live');
+  const [driverOpen, setDriverOpen] = useState(false);
+  const newestAlertUs = state.alerts.reduce((max, a) => Math.max(max, a.timestampUs), 0);
+  // Like the toast, the history in the first snapshot counts as seen.
+  const [seenAlertUs, setSeenAlertUs] = useState<number>();
+  const unseenAlerts =
+    seenAlertUs === undefined ? 0 : state.alerts.filter((a) => a.timestampUs > seenAlertUs).length;
 
   useEffect(() => {
-    if (drawer === null) {
-      return;
+    if (tab === 'analysis' || (seenAlertUs === undefined && newestAlertUs > 0)) {
+      setSeenAlertUs(newestAlertUs);
     }
+  }, [tab, newestAlertUs, seenAlertUs]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setDrawer(null);
+        setDriverOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [drawer]);
+  }, []);
 
   return (
     <FanoutTick value={state.tickMs}>
       <div className="dash">
-        <StatusBar state={state} />
-        <div className="dash-chrome">
-          <GapMarkers gaps={state.gaps} />
-          <PredictionsPanel
-            predictions={state.predictions}
-            variant="strip"
-            onExpand={() => setDrawer('analysis')}
-          />
-          <AlertsPanel alerts={state.alerts} variant="strip" onExpand={() => setDrawer('analysis')} />
-          <DriverPanel
-            enabled={state.driverEnabled}
-            messages={state.driverMessages}
-            variant="strip"
-            onExpand={() => setDrawer('driver')}
-          />
-        </div>
+        <TopBar
+          state={state}
+          tab={tab}
+          onTab={setTab}
+          unseenAlerts={unseenAlerts}
+          onDriver={() => setDriverOpen(true)}
+        />
 
-        <div className="dash-stage">
-          <div className="zones-main">
-            <DrivingZone store={state.store} />
-            <PowertrainZone store={state.store} />
-          </div>
-
-          <Drawer open={drawer === 'analysis'} title="Predykcje i alerty" onClose={() => setDrawer(null)}>
-            <div className="drawer-split">
+        <main className="stage">
+          {tab === 'live' ? <LiveView store={state.store} /> : null}
+          {tab === 'charts' ? <ServiceZone store={state.store} extraIds={other} /> : null}
+          {tab === 'analysis' ? (
+            <div className="analysis">
               <PredictionsPanel predictions={state.predictions} />
               <AlertsPanel alerts={state.alerts} />
             </div>
-          </Drawer>
+          ) : null}
 
-          <Drawer open={drawer === 'driver'} title="Komunikacja z kierowcą" onClose={() => setDrawer(null)}>
+          <Drawer open={driverOpen} title="DRIVER RADIO" onClose={() => setDriverOpen(false)}>
             <DriverPanel enabled={state.driverEnabled} messages={state.driverMessages} />
           </Drawer>
+        </main>
 
-          <Drawer
-            open={drawer === 'service'}
-            title={other.length > 0 ? 'Serwis, wykresy i pozostałe sensory' : 'Serwis i wykresy'}
-            onClose={() => setDrawer(null)}
-          >
-            <ServiceZone store={state.store} extraIds={other} />
-          </Drawer>
-        </div>
-
-        <ServiceZone
-          store={state.store}
-          variant="strip"
-          onExpand={() => setDrawer('service')}
-          extraIds={other}
-        />
+        <AlertToast alerts={state.alerts} />
       </div>
     </FanoutTick>
   );

@@ -16,6 +16,7 @@ monolith: one process with the HTTP + WebSocket UI and a single Core `Watch`.
 | UI build         | Vite + React, static assets served by the same process                 |
 | Charts           | uPlot                                                                  |
 | Live instruments | Motion (`motion/react`) tweens on sensor-shaped SVG/CSS widgets        |
+| Track map        | Leaflet over the [GUGiK orthophoto](https://www.geoportal.gov.pl/) WMTS (Web Mercator, open data, Poland only, no key) |
 | Core client      | `@grpc/grpc-js` + nice-grpc (h2c only; the browser never talks to Core) |
 | Kafka producer   | `@platformatic/kafka`, pure TypeScript, no native addon; driver messages only |
 | Proto tooling    | Buf (`buf generate` → `src/server/gen`, plus `buf lint` / breaking)    |
@@ -73,10 +74,11 @@ telemetry/
     client/                   # Vite React app
       sensors/
         catalog.ts            # import of the sensor contract
-        layout.ts             # dashboard zones, status labels, sensors missing from the contract
+        layout.ts             # dashboard zones (incl. hidden sensors), status labels, sensors missing from the contract
         tones.ts              # color thresholds and nominal bands (UI judgement, not contract)
       lib/
-        series-store.ts       # per-sensor series, change notifications, chart window edge
+        series-store.ts       # per-sensor series, change notifications, chart window edge, sample pairing
+        trail.ts              # map trail for the page's lifetime (survives tab switches)
         fanout-tick.ts        # server push interval from the snapshot, as React context
         driver.ts             # driver message kinds' labels, presets, send, history merge
         format.ts  svg.ts     # readout formatting; gauge geometry
@@ -85,15 +87,20 @@ telemetry/
         useSensor.ts          # one sensor's newest value, age, staleness, range check, tone
         useSmoothedNumber.ts  # MotionValue glide + DOM binders (no per-frame React); wrap-aware heading
       components/
-        StatusBar.tsx         # zone 1: connection, GPS quality, 12 V, fuel, ambient, position
-        DrivingZone.tsx       # zone 2: speed + heading, pedals, steering, wheel speeds, g-force
-        PowertrainZone.tsx    # zone 3: HV SOC, rpm with EV mode, throttle and load
-        ServiceZone.tsx       # zone 4: temperatures, mixture, trims, MAF, ignition; generic sensor card
-        instruments.tsx       # shared card, readout, bars, thermometer
-        PredictionsPanel.tsx  # strip + drawer cards per prediction_id
-        AlertsPanel.tsx       # strip + recent alerts in the drawer
-        DriverPanel.tsx       # strip + composer and shared history in the drawer
-        Drawer.tsx            # stage overlay for analysis / service detail (Escape closes)
+        TopBar.tsx            # one row: brand, tabs, connection, gaps, driver strip, logout
+        ConnectionStatus.tsx  GapMarkers.tsx
+        LiveView.tsx          # LIVE grid
+        DrivingZone.tsx       # speed dial, pedals, steering, wheel speeds, g-force
+        PowertrainZone.tsx    # rpm dial, EV/engine mode, throttle and load
+        VehicleZone.tsx       # energy (HV SOC, fuel, 12 V) and temperatures
+        GpsTrack.tsx          # orthophoto map: car, heading, trail, follow
+        ServiceZone.tsx       # CHARTS tab: temperatures, mixture, trims, MAF, ignition; generic sensor card
+        instruments.tsx       # shared card, readout, bars, temperature bar
+        PredictionsPanel.tsx  # ANALYSIS cards per prediction_id
+        AlertsPanel.tsx       # ANALYSIS alert list
+        AlertToast.tsx        # corner popup for a new alert
+        DriverPanel.tsx       # top-bar strip + composer and shared history in the drawer
+        Drawer.tsx            # stage overlay for driver radio (Escape closes)
         SensorChart.tsx       # one uPlot per card, one or more sensors: shared window and cursor
 ```
 
@@ -139,49 +146,53 @@ as decimal strings. Do not expose gRPC-web.
 
 ## UI
 
-A dark, single-viewport dashboard: `100dvh`, no page scroll. Chrome (status, gaps, prediction/alert strips) and a
-service dock stay visible; driving and powertrain fill the remaining stage. Detail (full prediction cards, alert list,
-service charts, unknown sensors) opens as an overlay drawer with its own scroll. Escape closes the drawer.
+A dark, single-viewport dashboard: `100dvh`, no page scroll down to ~1000 px wide; below 820 px cards stack and the
+page scrolls. One top bar, then the stage with three tabs; every card's main visual takes the height that is left, so
+the stage has no empty bands. Driver radio opens as an overlay drawer with its own scroll; Escape closes it.
 
 Sensor names, units, ranges, and descriptions come from
 [`infra/contract/sensors.json`](../infra/contract/sensors.json), imported at build time. Which zone shows which
 sensor is [`src/client/sensors/layout.ts`](src/client/sensors/layout.ts); a test fails when a contract sensor is in no
-zone or in two.
+zone or in two. Its `hidden` zone lists sensors that are received but not shown, because the operator does not act
+on them: `gps_sats`, `gps_pdop`, `gps_alt`, `baro`, and `gps_speed` (the speed dial shows `speed`).
 
-UI copy is Polish. Layout:
+UI copy is English (CAPS labels where they fit); driver presets are the message text and stay in the driver's
+language.
 
-| Region (PL)                       | Always visible                                                                              | In drawer                                      |
-|-----------------------------------|---------------------------------------------------------------------------------------------|------------------------------------------------|
-| 1 pasek statusu                   | `gps_fix`, `gps_sats`, `gps_pdop`, `batt_volt`, `fuel_l`, `ambient_temp`, `baro`, position  | —                                              |
-| Predykcje / Alerty (pasek)        | status chip + latest value / message                                                        | full cards and alert list                      |
-| Kierowca (pasek)                  | last driver message and its status                                                          | composer (kind, text, presets), shared history |
-| 2 Jazda i dynamika                | speed hero, pedals, steering, wheels, g-force                                               | —                                              |
-| 3 Hybryda i napęd                 | HV SOC, rpm (EV badge), throttle / load                                                     | —                                              |
-| 4 Serwis (dock)                   | compact temps, λ, STFT/LTFT, MAF, ignition, O₂                                              | thermometers, 60 s charts, unknown sensors     |
+| Region       | Contents                                                                                                   |
+|--------------|------------------------------------------------------------------------------------------------------------|
+| Top bar      | brand, tabs `LIVE` / `CHARTS` / `ANALYSIS` (ANALYSIS counts unseen alerts), connection + race, gaps chip (only after a gap), driver strip, logout |
+| LIVE         | speed and rpm dials with mode, throttle, load · pedals · steering · g-force · wheel speeds │ track map │ energy (HV SOC, fuel, 12 V) · temperatures |
+| CHARTS       | 60 s chart per card filling the stage; unknown sensors after them                                          |
+| ANALYSIS     | prediction cards │ alert list                                                                              |
+| Alert toast  | corner popup only when a **new** alert arrives                                                             |
 
-- Zone 2–3 instruments show the newest value only. Service charts (last 60 s) open in the drawer; `lambda`/`lambda_cmd`
+- Track map: GUGiK orthophoto (zoom ≤ 19 native) with the car as a heading arrow and the trail driven since the page
+  opened, kept outside the component so a tab switch does not lose it. The map follows the car at zoom 17; zoom keeps
+  it centred, a drag stops following until *FOLLOW CAR*. A chip says *GPS 2D* or *NO GPS FIX · LAST POSITION* (fix
+  below 2D or position stale); a 3D fix shows nothing. Before the first position the map shows Poland and *WAITING FOR
+  GPS FIX*. Tiles load from `mapy.geoportal.gov.pl` in the browser; outside Poland the map has no imagery.
+- LIVE instruments show the newest value only. Charts live on the CHARTS tab; `lambda`/`lambda_cmd`
   and `stft`/`ltft` share a chart when compared. All charts share that window and hover cursor.
 - Orientation follows the contract: `steer_angle` and `accel_lat` left = plus, so the wheel turns and the g-dot moves
   to the screen's left for plus; `accel_long` plus (accelerating) is up.
 - Color carries state: cyan for speed, GPS, and EV; green for good values; orange/red for warnings, brake pressure,
-  and heat. Thresholds and nominal bands are [`src/client/sensors/tones.ts`](src/client/sensors/tones.ts) — UI
+  and heat. The rpm dial is neutral until its warning band. Thresholds and nominal bands are [`src/client/sensors/tones.ts`](src/client/sensors/tones.ts) — UI
   judgement for this car, not the contract. A wheel more than 3 km/h and 8 % off the four-wheel mean is highlighted.
 - The y axis is the contract `min`–`max`, widened when data leaves it; without a range it follows the data. A value
   outside the range is shown in red, never clipped. NaN and infinities are shown as the value and leave a one-bucket
   hole in the chart.
 - A sensor without points shows `—`. A sensor with no point for 5 s (arrival time in the browser) is dimmed. Hovering
   any value shows its sensor id, contract description, and the age of its last point.
-- Live sensors missing from the contract appear on the service dock and in the service drawer.
-- Predykcje and Alerty sit as expandable strips under the gap line. A prediction card is *na żywo* (green) with a result,
-  *oczekiwanie* (orange) when only announced, *niedostępna* (red) with analysis' `info` and the last result dimmed. It
-  shows `value`, `instruction`, or both, the `sensors_id` chips, and the refresh rate as sent: its unit is not
-  defined in the contract, so the UI does not judge staleness from it. Alerts show time, message, reason, and the
-  sensor values with contract units. Prediction/alert text from analysis is shown as sent (not translated).
+- Live sensors missing from the contract appear on the CHARTS tab.
+- ANALYSIS: a prediction card is *LIVE* (green), *WAITING* (orange), or *UNAVAILABLE* (red) with analysis' `info`.
+  Instruction/description type is emphasized; numeric results use a simpler mono motif. Alerts show time, message,
+  reason, and sensor values with contract units. Analysis text is shown as sent. New alerts also fire a corner toast
+  (history is not replayed as toasts).
 - Sensors in `STATUS_LABELS` (today `gps_fix`) show a state label instead of a number.
-- Kierowca: a preset fills the composer and focuses the text; only Enter or *Wyślij* sends, so a misclick never reaches
-  the driver. Presets are UI copy in [`src/client/lib/driver.ts`](src/client/lib/driver.ts), not part of the Kafka
-  convention. Status is *wysyłanie…*, *wysłano* (Kafka acknowledged; not a read receipt), or *błąd* with Kafka's
-  reason. Without Kafka configuration the composer is disabled and says so.
+- Driver strip → drawer: a preset fills the composer; only Enter or *SEND* sends. Presets are UI copy in
+  [`src/client/lib/driver.ts`](src/client/lib/driver.ts). Status is *SENDING…*, *SENT* (Kafka ack, not a read receipt),
+  or *FAILED*. Without Kafka configuration the composer is disabled.
 - The browser subscribes to all sensors. Buckets and newest samples go to a per-sensor store, not React state, so an instrument
   re-renders only for its own sensors; each chart is created once and updated in place. Numeric readouts show the
   exact sample.
@@ -298,8 +309,9 @@ variable's name.
 - `pnpm start` — `node dist/server/index.js`, serving `dist/client` and `/ws`
 - `pnpm test` — Vitest
 - `pnpm load:charts [points/s]` — build, then [`scripts/mock-core.mjs`](scripts/mock-core.mjs) at that rate
-  (default 900 000) into the server with auth off on `PORT` (default 8080); charts are in the service drawer. Ctrl+C
-  stops both. The mock alone takes `MOCK_CORE_RATE` and `MOCK_CORE_PORT`.
+  (default 900 000) into the server with auth off on `PORT` (default 8080); charts are on the CHARTS tab. Ctrl+C
+  stops both. The mock alone takes `MOCK_CORE_RATE` and `MOCK_CORE_PORT`. Its GPS laps Tor Poznań at 110 km/h with a
+  3D fix, so the map shows a real track; the other sensors are smooth waves.
 - Dockerfile is multi-stage: generate + build, then a production `node` image with `TELEMETRY_SENSORS=*`
 
 Dev loop: `pnpm dev:client` proxies `/auth`, `/api`, `/healthz`, and `/ws` to the Node server. With OAuth on, set

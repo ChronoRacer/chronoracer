@@ -4,50 +4,21 @@ import { formatValue } from '../lib/format';
 import { sensorSpec } from '../sensors/catalog';
 import { Card, cx } from './instruments';
 
-type Props = {
-  predictions: Prediction[];
-  /** Compact strip in the chrome; full cards go in the drawer. */
-  variant?: 'strip' | 'full';
-  onExpand?: () => void;
-};
+type Props = { predictions: Prediction[] };
 
-const STATUS_LABEL = { live: 'na żywo', waiting: 'oczekiwanie', unavailable: 'niedostępna' } as const;
+const STATUS_LABEL = { live: 'LIVE', waiting: 'WAITING', unavailable: 'UNAVAILABLE' } as const;
 const STATUS_TONE = { live: 'ok', waiting: 'warn', unavailable: 'bad' } as const;
 
-export function PredictionsPanel({ predictions, variant = 'full', onExpand }: Props) {
-  const sorted = [...predictions].sort((a, b) => title(a).localeCompare(title(b), 'pl'));
-
-  if (variant === 'strip') {
-    return (
-      <button type="button" className="meta-strip" onClick={onExpand} aria-label="Rozwiń predykcje">
-        <span className="zone-title">Predykcje</span>
-        {sorted.length === 0 ? (
-          <span className="hint">brak</span>
-        ) : (
-          <div className="meta-chips">
-            {sorted.map((p) => {
-              const status = predictionStatus(p);
-              return (
-                <span key={p.predictionId} className={cx('chip', `tone-${STATUS_TONE[status]}`)}>
-                  <span className="meta-chip-name">{title(p)}</span>
-                  {p.latest?.value !== null && p.latest?.value !== undefined
-                    ? formatValue('', p.latest.value)
-                    : p.latest?.instruction ?? STATUS_LABEL[status]}
-                </span>
-              );
-            })}
-          </div>
-        )}
-      </button>
-    );
-  }
+export function PredictionsPanel({ predictions }: Props) {
+  const sorted = [...predictions].sort((a, b) => title(a).localeCompare(title(b), 'en'));
 
   return (
-    <section className="zone" aria-label="Predykcje">
+    <section className="zone zone-predictions" aria-label="Predictions">
+      <h2 className="zone-title">PREDICTIONS</h2>
       {sorted.length === 0 ? (
-        <div className="gaps-strip empty">Brak predykcji z analysis</div>
+        <p className="empty-note">NO PREDICTIONS FROM ANALYSIS</p>
       ) : (
-        <div className="service-grid">
+        <div className="predictions">
           {sorted.map((p) => (
             <PredictionCard key={p.predictionId} prediction={p} />
           ))}
@@ -57,7 +28,7 @@ export function PredictionsPanel({ predictions, variant = 'full', onExpand }: Pr
   );
 }
 
-const title = (p: Prediction) => p.name ?? p.predictionId;
+const title = (p: Prediction) => (p.name ?? p.predictionId).toUpperCase();
 
 function PredictionCard({ prediction: p }: { prediction: Prediction }) {
   const status = predictionStatus(p);
@@ -70,18 +41,21 @@ function PredictionCard({ prediction: p }: { prediction: Prediction }) {
     >
       {p.unavailable ? (
         <p className="prediction-info">
-          {p.unavailable.info} <span className="hint">od {formatTimeUs(p.unavailable.timestampUs)}</span>
+          {p.unavailable.info} <span className="hint">SINCE {formatTimeUs(p.unavailable.timestampUs)}</span>
         </p>
+      ) : null}
+
+      {latest?.instruction !== null && latest?.instruction !== undefined ? (
+        <p className="prediction-instruction">{latest.instruction}</p>
       ) : null}
 
       {latest ? (
         <div className={cx('prediction-body', p.unavailable && 'stale')}>
           {latest.value !== null ? (
-            <span className="readout big">
-              <span className="readout-value">{formatValue('', latest.value)}</span>
+            <span className="prediction-value">
+              <span className="prediction-value-num">{formatValue('', latest.value)}</span>
             </span>
           ) : null}
-          {latest.instruction !== null ? <p className="prediction-instruction">{latest.instruction}</p> : null}
         </div>
       ) : null}
 
@@ -89,7 +63,7 @@ function PredictionCard({ prediction: p }: { prediction: Prediction }) {
         <div className="chips">
           {latest.sensorIds.map((id) => (
             <span key={id} className="chip" title={sensorSpec(id)?.description}>
-              {id}
+              {id.toUpperCase()}
             </span>
           ))}
         </div>
@@ -97,7 +71,7 @@ function PredictionCard({ prediction: p }: { prediction: Prediction }) {
 
       <footer className="prediction-meta" title={`prediction_id ${p.predictionId}`}>
         <span>{formatRefreshRate(p.refreshRate)}</span>
-        {latest ? <span>o {formatTimeUs(latest.timestampUs)}</span> : null}
+        {latest ? <span>AT {formatTimeUs(latest.timestampUs)}</span> : null}
       </footer>
     </Card>
   );

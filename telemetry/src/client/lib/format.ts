@@ -30,10 +30,10 @@ export function formatSigned(value: number | undefined, digits: number): string 
 
 export function formatAge(ms: number | undefined): string {
   if (ms === undefined) {
-    return 'brak danych';
+    return 'no data';
   }
   const sec = Math.floor(ms / 1000);
-  return sec < 60 ? `${sec} s temu` : `${Math.floor(sec / 60)} min temu`;
+  return sec < 60 ? `${sec} s ago` : `${Math.floor(sec / 60)} min ago`;
 }
 
 const CARDINALS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'] as const;

@@ -17,7 +17,7 @@ export function Drawer({ open, title, onClose, children }: Props) {
       <header className="drawer-head">
         <h2 className="zone-title">{title}</h2>
         <button type="button" className="drawer-close" onClick={onClose}>
-          Zamknij
+          CLOSE
         </button>
       </header>
       <div className="drawer-body">{children}</div>

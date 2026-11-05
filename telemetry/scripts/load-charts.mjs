@@ -64,6 +64,6 @@ start('telemetry', 'dist/server/index.js', {
 });
 
 console.log(
-  `\n  ${rate.toLocaleString('pl-PL')} pkt/s → http://127.0.0.1:${port}\n` +
-    '  Wykresy: „Rozwiń wykresy” w pasku Serwis na dole. Ctrl+C kończy.\n',
+  `\n  ${rate.toLocaleString('en-GB')} pts/s → http://127.0.0.1:${port}\n` +
+    '  UI tabs: LIVE / CHARTS / ANALYSIS. Ctrl+C stops.\n',
 );

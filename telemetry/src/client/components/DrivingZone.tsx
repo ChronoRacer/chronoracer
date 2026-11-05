@@ -1,98 +1,78 @@
 import { useCallback } from 'react';
 import { useSensor, type Reading } from '../hooks/useSensor';
-import {
-  useMotionSvgAngleRotate,
-  useMotionSvgArc,
-  useMotionSvgDot,
-  useMotionSvgRotate,
-} from '../hooks/useSmoothedNumber';
-import type { SeriesStore } from '../lib/series-store';
-import { cardinal, formatFixed, formatSigned } from '../lib/format';
+import { useMotionSvgArc, useMotionSvgDot, useMotionSvgRotate } from '../hooks/useSmoothedNumber';
+import { recentPairs, type SeriesStore } from '../lib/series-store';
+import { formatFixed, formatSigned } from '../lib/format';
 import { describeArc, polar } from '../lib/svg';
 import { CenterBar, Card, Metric, Readout, VBar, cx, describe, liveClass } from './instruments';
 
 type ZoneProps = { store: SeriesStore };
 
-export function DrivingZone({ store }: ZoneProps) {
+/** Shared by the speed and rpm dials: 270° sweep in a 200×200 box. */
+export const DIAL = { c: 100, r: 84, sweep: 135 } as const;
+
+/** Tick marks every `step`, labelled every `labelEvery` steps, from `min` to `max`. */
+export function DialScale({
+  min,
+  max,
+  step,
+  labelEvery,
+  label = (v) => String(v),
+}: {
+  min: number;
+  max: number;
+  step: number;
+  labelEvery: number;
+  label?: (v: number) => string;
+}) {
+  const steps = Math.round((max - min) / step);
   return (
-    <section className="zone zone-driving" aria-label="Jazda i dynamika">
-      <h2 className="zone-title">Jazda i dynamika</h2>
-      <div className="driving-grid">
-        <SpeedHero store={store} />
-        <Pedals store={store} />
-        <Steering store={store} />
-        <Wheels store={store} />
-        <GForce store={store} />
-      </div>
-    </section>
+    <>
+      {Array.from({ length: steps + 1 }, (_, i) => {
+        const deg = -DIAL.sweep + (2 * DIAL.sweep * i) / steps;
+        const major = i % labelEvery === 0;
+        const outer = polar(DIAL.c, DIAL.c, DIAL.r + 13, deg);
+        const inner = polar(DIAL.c, DIAL.c, DIAL.r + (major ? 7 : 9), deg);
+        const text = polar(DIAL.c, DIAL.c, DIAL.r - 19, deg);
+        return (
+          <g key={i}>
+            <line x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y} className={cx('dial-tick', major && 'major')} />
+            {major ? (
+              <text x={text.x} y={text.y} className="dial-label" textAnchor="middle" dominantBaseline="central">
+                {label(min + i * step)}
+              </text>
+            ) : null}
+          </g>
+        );
+      })}
+    </>
   );
 }
 
-const SPEED_SWEEP = 130;
-
-function SpeedHero({ store }: ZoneProps) {
+export function SpeedGauge({ store }: ZoneProps) {
   const speed = useSensor(store, 'speed');
-  const gpsSpeed = useSensor(store, 'gps_speed');
-  const heading = useSensor(store, 'gps_heading');
-  const arc = useMotionSvgArc(
-    speed.finite ?? 0,
-    speed.spec?.min ?? 0,
-    speed.spec?.max ?? 220,
-    120,
-    120,
-    72,
-    -SPEED_SWEEP,
-    SPEED_SWEEP,
-    describeArc,
-  );
-  const headingMark = useMotionSvgAngleRotate(heading.finite ?? 0, 120, 120);
+  const min = speed.spec?.min ?? 0;
+  const max = speed.spec?.max ?? 220;
+  const arc = useMotionSvgArc(speed.finite ?? min, min, max, DIAL.c, DIAL.c, DIAL.r, -DIAL.sweep, DIAL.sweep, describeArc);
 
   return (
-    <Card title="Prędkość i kierunek" className="area-hero">
-      <div className="hero">
-        <svg viewBox="0 0 240 240" className="hero-svg" aria-hidden>
-          <circle cx="120" cy="120" r="110" className="compass-ring" />
-          {Array.from({ length: 36 }, (_, i) => i * 10).map((deg) => {
-            const major = deg % 90 === 0;
-            const outer = polar(120, 120, 110, deg);
-            const inner = polar(120, 120, major ? 100 : deg % 30 === 0 ? 104 : 107, deg);
-            return <line key={deg} x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y} className={major ? 'compass-tick major' : 'compass-tick'} />;
-          })}
-          {(['N', 'E', 'S', 'W'] as const).map((label, i) => {
-            const p = polar(120, 120, 90, i * 90);
-            return (
-              <text key={label} x={p.x} y={p.y} className="compass-cardinal" textAnchor="middle" dominantBaseline="central">
-                {label}
-              </text>
-            );
-          })}
-          <path d={describeArc(120, 120, 72, -SPEED_SWEEP, SPEED_SWEEP)} className="speed-track" />
-          <path ref={arc} className={cx('speed-value', speed.stale && 'stale')} />
-          <g ref={headingMark} className={cx('heading-marker', heading.stale && 'stale')}>
-            <path d="M 120 4 L 128 20 L 120 16 L 112 20 Z" />
-          </g>
-        </svg>
-        <div className="hero-center">
-          <Readout r={speed} digits={0} unit="" className="hero-speed" />
-          <span className="hero-unit">{speed.spec?.unit ?? 'km/h'}</span>
-          <span className={cx('hero-sub', liveClass(gpsSpeed))} title={describe(gpsSpeed)}>
-            GPS {formatFixed(gpsSpeed.value, 0)}
-          </span>
-        </div>
+    <div className={cx('gauge gauge-speed', liveClass(speed))} title={describe(speed)}>
+      <svg viewBox="0 0 200 200" aria-hidden>
+        <path d={describeArc(DIAL.c, DIAL.c, DIAL.r, -DIAL.sweep, DIAL.sweep)} className="dial-track" />
+        <path ref={arc} className="dial-value" />
+        <DialScale min={min} max={max} step={20} labelEvery={2} />
+      </svg>
+      <div className="gauge-center">
+        <span className="gauge-num">{formatFixed(speed.value, 0)}</span>
+        <span className="gauge-unit">{speed.spec?.unit ?? 'km/h'}</span>
       </div>
-      <div className={cx('hero-heading', liveClass(heading))} title={describe(heading)}>
-        <span className="metric-label">Kurs</span>
-        <span className="readout-value">
-          {formatFixed(heading.value, 0)}° {heading.finite === undefined ? '' : cardinal(heading.finite)}
-        </span>
-      </div>
-    </Card>
+    </div>
   );
 }
 
 const BRAKE_SPLIT = 5;
 
-function Pedals({ store }: ZoneProps) {
+export function PedalsCard({ store }: ZoneProps) {
   const accel = useSensor(store, 'accel_pedal');
   const brakeA = useSensor(store, 'brake_prs');
   const brakeB = useSensor(store, 'brake_prs_b');
@@ -101,51 +81,53 @@ function Pedals({ store }: ZoneProps) {
 
   return (
     <Card
-      title="Pedały"
+      title="PEDALS"
       className="area-pedals"
       aside={
         <span
           className={cx('chip', split !== undefined && split > BRAKE_SPLIT ? 'tone-bad' : 'tone-neutral')}
-          title={`Różnica kanałów hamulca A/B; alarm powyżej ${BRAKE_SPLIT}`}
+          title={`Brake A/B channel delta; alarm above ${BRAKE_SPLIT}`}
         >
           A/B Δ {formatFixed(split, 1)}
         </span>
       }
     >
-      <div className="pedals">
-        <VBar r={accel} label="Gaz" variant="accel" />
-        <VBar r={brakeA} label="Hamulec A" variant="brake" />
-        <VBar r={brakeB} label="Hamulec B" variant="brake" />
+      <div className="pedals grow">
+        <VBar r={accel} label="GAS" variant="accel" />
+        <VBar r={brakeA} label="BRAKE A" variant="brake" />
+        <VBar r={brakeB} label="BRAKE B" variant="brake" />
       </div>
     </Card>
   );
 }
 
-function Steering({ store }: ZoneProps) {
+export function SteeringCard({ store }: ZoneProps) {
   const angle = useSensor(store, 'steer_angle');
   const torque = useSensor(store, 'steer_torque');
   // Contract: left = plus; SVG rotates clockwise for plus, so negate for a driver's view.
   const wheel = useMotionSvgRotate(angle.finite ?? 0, 70, 70, (v) => -v);
-  const side = angle.finite === undefined || Math.round(angle.finite) === 0 ? '' : angle.finite > 0 ? 'L' : 'P';
+  const side = angle.finite === undefined || Math.round(angle.finite) === 0 ? '' : angle.finite > 0 ? 'L' : 'R';
 
   return (
-    <Card title="Kierownica" className="area-steer">
-      <div className="steering">
-        <svg viewBox="0 0 140 140" className={cx('wheel-svg', angle.stale && 'stale')} aria-hidden>
-          <circle cx="70" cy="70" r="66" className="wheel-guide" />
-          <g ref={wheel}>
-            <circle cx="70" cy="70" r="54" className="wheel-rim" />
-            <circle cx="70" cy="70" r="15" className="wheel-hub" />
-            <path d="M 55 74 L 20 82 M 85 74 L 120 82 M 70 85 L 70 124" className="wheel-spoke" />
-            <rect x="64" y="12" width="12" height="7" rx="2" className="wheel-mark" />
-          </g>
-        </svg>
-      </div>
-      <div className={cx('steering-readout', liveClass(angle))} title={describe(angle)}>
-        <span className="readout-value">{formatSigned(angle.value, 0)}°</span>
-        <span className="steering-side">{side}</span>
-      </div>
-      <CenterBar r={torque} label="Moment" digits={0} />
+    <Card
+      title="STEERING"
+      className="area-steer"
+      aside={
+        <span className={cx('card-value', liveClass(angle))} title={describe(angle)}>
+          <span className="readout-value">{formatSigned(angle.value, 0)}°</span> {side}
+        </span>
+      }
+    >
+      <svg viewBox="0 0 140 140" className={cx('wheel-svg grow', angle.stale && 'stale')} aria-hidden>
+        <circle cx="70" cy="70" r="66" className="wheel-guide" />
+        <g ref={wheel}>
+          <circle cx="70" cy="70" r="54" className="wheel-rim" />
+          <circle cx="70" cy="70" r="15" className="wheel-hub" />
+          <path d="M 55 74 L 20 82 M 85 74 L 120 82 M 70 85 L 70 124" className="wheel-spoke" />
+          <rect x="64" y="12" width="12" height="7" rx="2" className="wheel-mark" />
+        </g>
+      </svg>
+      <CenterBar r={torque} label="TORQUE" digits={0} />
     </Card>
   );
 }
@@ -161,7 +143,7 @@ const WHEEL_RECTS = [
 const SLIP_KMH = 3;
 const SLIP_RATIO = 0.08;
 
-function Wheels({ store }: ZoneProps) {
+export function WheelsCard({ store }: ZoneProps) {
   const readings = [
     useSensor(store, 'wheel_fl'),
     useSensor(store, 'wheel_fr'),
@@ -179,10 +161,10 @@ function Wheels({ store }: ZoneProps) {
   const [fl, fr, rl, rr] = readings;
 
   return (
-    <Card title="Prędkości kół" className="area-wheels" aside={<span className="card-unit">km/h</span>}>
-      <div className="chassis">
-        <WheelValue r={fl} label="PL" slip={slips[0]} className="w-fl" />
-        <WheelValue r={fr} label="PP" slip={slips[1]} className="w-fr" />
+    <Card title="WHEEL SPEEDS" className="area-wheels" aside={<span className="card-unit">km/h</span>}>
+      <div className="chassis grow">
+        <WheelValue r={fl} label="FL" slip={slips[0]} className="w-fl" />
+        <WheelValue r={fr} label="FR" slip={slips[1]} className="w-fr" />
         <svg viewBox="0 0 120 200" className="chassis-svg" aria-hidden>
           <path d="M 34 30 Q 34 10 60 10 Q 86 10 86 30 L 88 170 Q 88 192 60 192 Q 32 192 32 170 Z" className="car-body" />
           <path d="M 40 58 Q 60 48 80 58 L 78 82 Q 60 76 42 82 Z" className="car-glass" />
@@ -199,8 +181,8 @@ function Wheels({ store }: ZoneProps) {
             />
           ))}
         </svg>
-        <WheelValue r={rl} label="TL" slip={slips[2]} className="w-rl" />
-        <WheelValue r={rr} label="TP" slip={slips[3]} className="w-rr" />
+        <WheelValue r={rl} label="RL" slip={slips[2]} className="w-rl" />
+        <WheelValue r={rr} label="RR" slip={slips[3]} className="w-rr" />
       </div>
     </Card>
   );
@@ -220,7 +202,7 @@ const G_RADIUS = 88;
 const TRAIL_SEC = 1.5;
 const STANDARD_G = 9.80665;
 
-function GForce({ store }: ZoneProps) {
+export function GForceCard({ store }: ZoneProps) {
   const long = useSensor(store, 'accel_long');
   const lat = useSensor(store, 'accel_lat');
   const k = G_RADIUS / G_LIMIT;
@@ -236,64 +218,44 @@ function GForce({ store }: ZoneProps) {
     long.finite !== undefined && lat.finite !== undefined ? Math.hypot(long.finite, lat.finite) / STANDARD_G : undefined;
 
   return (
-    <Card title="Przeciążenia" className="area-gforce" aside={<span className="card-unit">{formatFixed(combined, 2)} g</span>}>
-      <svg viewBox="0 0 200 200" className={cx('gforce-svg', (long.stale || lat.stale) && 'stale')} aria-hidden>
+    <Card
+      title="G-FORCE"
+      className="area-gforce"
+      aside={
+        <span className="card-value">
+          <span className="readout-value">{formatFixed(combined, 2)}</span> g
+        </span>
+      }
+    >
+      <svg viewBox="0 0 200 200" className={cx('gforce-svg grow', (long.stale || lat.stale) && 'stale')} aria-hidden>
         {[4, 8, 12].map((ring) => (
           <circle key={ring} cx="100" cy="100" r={ring * k} className={ring === 12 ? 'g-ring outer' : 'g-ring'} />
         ))}
-        <line x1="100" y1="8" x2="100" y2="192" className="g-axis" />
-        <line x1="8" y1="100" x2="192" y2="100" className="g-axis" />
-        <text x="100" y="5" className="g-label" textAnchor="middle" dominantBaseline="hanging">
-          PRZYS
+        <line x1="100" y1="12" x2="100" y2="188" className="g-axis" />
+        <line x1="12" y1="100" x2="188" y2="100" className="g-axis" />
+        <text x="100" y="20" className="g-label" textAnchor="middle">
+          ACCEL
         </text>
-        <text x="100" y="196" className="g-label" textAnchor="middle">
-          HAM
+        <text x="100" y="186" className="g-label" textAnchor="middle">
+          BRAKE
         </text>
-        <text x="4" y="98" className="g-label">
+        <text x="18" y="97" className="g-label">
           L
         </text>
-        <text x="196" y="98" className="g-label" textAnchor="end">
-          P
+        <text x="182" y="97" className="g-label" textAnchor="end">
+          R
         </text>
-        {[4, 8].map((ring) => (
-          <text key={ring} x={100 + ring * k * 0.71 + 2} y={100 - ring * k * 0.71 - 2} className="g-ring-label">
-            {ring}
-          </text>
-        ))}
         {trail ? <polyline points={trail} className="g-trail" /> : null}
         <circle ref={dot} r="6" className="g-dot" />
       </svg>
       <div className="stats">
-        <Metric label="Wzdłużne">
+        <Metric label="LONG">
           <Readout r={long} digits={1} signed />
         </Metric>
-        <Metric label="Poprzeczne">
+        <Metric label="LAT">
           <Readout r={lat} digits={1} signed />
         </Metric>
       </div>
     </Card>
   );
-}
-
-/** Recent samples of `a`, each paired with the newest `b` at or before it. */
-function recentPairs(store: SeriesStore, a: string, b: string, windowSec: number): [number, number][] {
-  const sa = store.get(a);
-  const sb = store.get(b);
-  if (!sa || !sb || sa.times.length === 0) {
-    return [];
-  }
-  const from = sa.times[sa.times.length - 1] - windowSec;
-  const pairs: [number, number][] = [];
-  let j = sb.times.length - 1;
-  for (let i = sa.times.length - 1; i >= 0 && sa.times[i] >= from; i--) {
-    while (j >= 0 && sb.times[j] > sa.times[i]) {
-      j--;
-    }
-    const va = sa.values[i];
-    const vb = j >= 0 ? sb.values[j] : null;
-    if (va !== null && vb !== null && Number.isFinite(va) && Number.isFinite(vb)) {
-      pairs.push([va, vb]);
-    }
-  }
-  return pairs.reverse();
 }

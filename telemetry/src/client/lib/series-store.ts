@@ -130,3 +130,26 @@ export class SeriesStore {
     }
   }
 }
+
+/** Recent samples of `a`, each paired with the newest `b` at or before it. */
+export function recentPairs(store: SeriesStore, a: string, b: string, windowSec: number): [number, number][] {
+  const sa = store.get(a);
+  const sb = store.get(b);
+  if (!sa || !sb || sa.times.length === 0) {
+    return [];
+  }
+  const from = sa.times[sa.times.length - 1] - windowSec;
+  const pairs: [number, number][] = [];
+  let j = sb.times.length - 1;
+  for (let i = sa.times.length - 1; i >= 0 && sa.times[i] >= from; i--) {
+    while (j >= 0 && sb.times[j] > sa.times[i]) {
+      j--;
+    }
+    const va = sa.values[i];
+    const vb = j >= 0 ? sb.values[j] : null;
+    if (va !== null && vb !== null && Number.isFinite(va) && Number.isFinite(vb)) {
+      pairs.push([va, vb]);
+    }
+  }
+  return pairs.reverse();
+}

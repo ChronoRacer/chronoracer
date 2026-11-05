@@ -1,10 +1,10 @@
 import type { DriverKey, DriverMessage, DriverMessageRequest } from '../../shared/protocol';
 
 export const DRIVER_KEY_LABEL: Record<DriverKey, string> = {
-  MSG: 'Wiadomość',
-  BOX: 'Boks',
-  FLAG: 'Flaga',
-  PACE: 'Tempo',
+  MSG: 'MESSAGE',
+  BOX: 'BOX',
+  FLAG: 'FLAG',
+  PACE: 'PACE',
 };
 
 /** One-click texts; UI copy for this team, not part of the Kafka contract. */

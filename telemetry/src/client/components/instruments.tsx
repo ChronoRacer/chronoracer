@@ -11,7 +11,7 @@ export function cx(...names: (string | false | null | undefined)[]): string {
 /** Tooltip: sensor id, contract description, age of the last point. */
 export function describe(...readings: Reading[]): string {
   return readings
-    .map((r) => `${r.id} — ${r.spec?.description ?? 'brak w kontrakcie sensorów'} (${formatAge(r.ageMs)})`)
+    .map((r) => `${r.id} — ${r.spec?.description ?? 'not in the sensor contract'} (${formatAge(r.ageMs)})`)
     .join('\n');
 }
 
@@ -153,22 +153,18 @@ export function CenterBar({
   );
 }
 
-/** Vertical thermometer over the contract range, with the nominal band shaded. */
-export function Thermometer({ r, band }: { r: Reading; band?: readonly [number, number] }) {
+/** Horizontal temperature bar over the contract range, with the nominal band shaded. */
+export function TempBar({ r, band }: { r: Reading; band?: readonly [number, number] }) {
   const min = r.spec?.min ?? 0;
   const max = r.spec?.max ?? 100;
-  const fill = useMotionScale(r.finite ?? min, min, max, 'Y');
+  const fill = useMotionScale(r.finite ?? min, min, max, 'X');
   const bandLo = band ? clamp01((band[0] - min) / (max - min)) : 0;
   const bandHi = band ? clamp01((band[1] - min) / (max - min)) : 0;
   return (
-    <div className={cx('thermo', liveClass(r))} title={describe(r)}>
-      <div className="thermo-stem">
-        {band ? <div className="thermo-band" style={{ bottom: `${bandLo * 100}%`, height: `${(bandHi - bandLo) * 100}%` }} /> : null}
-        <div className="thermo-fill" ref={fill} />
-      </div>
-      <div className="thermo-scale">
-        <span>{max}</span>
-        <span>{min}</span>
+    <div className={cx('range', liveClass(r))}>
+      <div className="bar-track temp-track">
+        <div className="hbar-fill" ref={fill} />
+        {band ? <div className="temp-band" style={{ left: `${bandLo * 100}%`, width: `${(bandHi - bandLo) * 100}%` }} /> : null}
       </div>
     </div>
   );

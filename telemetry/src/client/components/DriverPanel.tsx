@@ -17,23 +17,23 @@ type Props = {
   onExpand?: () => void;
 };
 
-const STATUS_LABEL = { sending: 'wysyłanie…', delivered: 'wysłano', failed: 'błąd' } as const;
+const STATUS_LABEL = { sending: 'SENDING…', delivered: 'SENT', failed: 'FAILED' } as const;
 const STATUS_TONE = { sending: 'warn', delivered: 'ok', failed: 'bad' } as const;
 const STATUS_HINT = {
-  sending: 'Czeka na potwierdzenie Kafki',
-  delivered: 'Kafka potwierdziła zapis; to nie znaczy, że kierowca już przeczytał',
-  failed: 'Kafka nie przyjęła wiadomości',
+  sending: 'Waiting for Kafka ack',
+  delivered: 'Kafka acknowledged write; not a driver read receipt',
+  failed: 'Kafka rejected the message',
 } as const;
 
-const formatTime = (ms: number) => new Date(ms).toLocaleTimeString('pl-PL');
+const formatTime = (ms: number) => new Date(ms).toLocaleTimeString('en-GB');
 
 export function DriverPanel({ enabled, messages, variant = 'full', onExpand }: Props) {
   const latest = messages.at(-1);
 
   if (variant === 'strip') {
     return (
-      <button type="button" className="meta-strip" onClick={onExpand} aria-label="Rozwiń komunikację z kierowcą">
-        <span className="zone-title">Kierowca</span>
+      <button type="button" className="meta-strip" onClick={onExpand} aria-label="Expand driver radio">
+        <span className="zone-title">DRIVER</span>
         {latest ? (
           <span className="meta-latest">
             <span className="alert-time">{formatTime(latest.sentAtMs)}</span>
@@ -41,19 +41,19 @@ export function DriverPanel({ enabled, messages, variant = 'full', onExpand }: P
             <StatusChip message={latest} />
           </span>
         ) : (
-          <span className="hint">{enabled ? 'wyślij wiadomość' : 'wyłączone'}</span>
+          <span className="hint">{enabled ? 'SEND MESSAGE' : 'DISABLED'}</span>
         )}
       </button>
     );
   }
 
   return (
-    <section className="zone driver" aria-label="Komunikacja z kierowcą">
+    <section className="zone driver" aria-label="Driver radio">
       <Composer enabled={enabled} />
       {messages.length === 0 ? (
-        <div className="gaps-strip empty">Nie wysłano jeszcze żadnej wiadomości</div>
+        <p className="empty-note">NO MESSAGES SENT YET</p>
       ) : (
-        <ul className="driver-history" aria-label="Wysłane wiadomości">
+        <ul className="driver-history" aria-label="Sent messages">
           {[...messages].reverse().map((m) => (
             <li key={m.id} className={cx('driver-item', `is-${m.status}`)}>
               <div className="alert-head">
@@ -119,10 +119,10 @@ function Composer({ enabled }: { enabled: boolean }) {
     <form className="driver-compose" onSubmit={submit}>
       {enabled ? null : (
         <div className="driver-error" role="status">
-          Wysyłanie wyłączone: serwer nie ma konfiguracji Kafki.
+          SEND DISABLED: SERVER HAS NO KAFKA CONFIG.
         </div>
       )}
-      <div className="driver-keys" role="radiogroup" aria-label="Rodzaj wiadomości">
+      <div className="driver-keys" role="radiogroup" aria-label="Message kind">
         {DRIVER_KEYS.map((k) => (
           <button
             key={k}
@@ -143,24 +143,24 @@ function Composer({ enabled }: { enabled: boolean }) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           maxLength={DRIVER_TEXT_MAX}
-          placeholder="Treść dla kierowcy"
-          aria-label="Treść wiadomości"
+          placeholder="Message for driver"
+          aria-label="Message text"
           disabled={!enabled}
           autoFocus
         />
-        <span className="card-unit" aria-label="Liczba znaków">
+        <span className="card-unit" aria-label="Character count">
           {text.length}/{DRIVER_TEXT_MAX}
         </span>
         <button type="submit" className="driver-send" disabled={!canSend}>
-          {pending ? 'Wysyłanie…' : 'Wyślij'}
+          {pending ? 'SENDING…' : 'SEND'}
         </button>
       </div>
       {error ? (
         <div className="driver-error" role="alert">
-          Nie wysłano: {error}
+          NOT SENT: {error}
         </div>
       ) : null}
-      <div className="driver-presets" aria-label="Gotowe wiadomości">
+      <div className="driver-presets" aria-label="Preset messages">
         {DRIVER_PRESETS.map((p) => (
           <button
             key={`${p.key}:${p.text}`}

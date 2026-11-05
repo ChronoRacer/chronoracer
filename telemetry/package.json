@@ -25,6 +25,7 @@
     "@t3-oss/env-core": "^0.13.11",
     "denque": "^2.1.0",
     "hono": "^4.9.0",
+    "leaflet": "^1.9.4",
     "motion": "^14.1.0",
     "nice-grpc": "^2.1.17",
     "nice-grpc-common": "^2.0.2",
@@ -37,6 +38,7 @@
   },
   "devDependencies": {
     "@bufbuild/buf": "^1.57.2",
+    "@types/leaflet": "^1.9.22",
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
