@@ -16,6 +16,24 @@ resource "google_project_iam_member" "controller_dns" {
   member  = "serviceAccount:${google_service_account.controller.email}"
 }
 
+resource "google_project_iam_member" "controller_secret_admin" {
+  project = var.project_id
+  role    = "roles/secretmanager.admin"
+  member  = "serviceAccount:${google_service_account.controller.email}"
+}
+
+resource "google_project_iam_member" "controller_version_adder" {
+  project = var.project_id
+  role    = "roles/secretmanager.secretVersionAdder"
+  member  = "serviceAccount:${google_service_account.controller.email}"
+
+  condition {
+    title       = "restrict_to_analysis_token_secret"
+    description = "Allows adding secret versions only to secrets matching r-analysis-ingest-*"
+    expression  = "resource.name.startsWith(\"projects/${var.project_id}/secrets/r-analysis-ingest-\")"
+  }
+}
+
 resource "google_project_iam_member" "controller_firestore" {
   project = var.project_id
   role    = "roles/datastore.user"
