@@ -1,3 +1,4 @@
+import time
 import orjson
 from confluent_kafka import Producer, KafkaException
 from loguru import logger
@@ -9,17 +10,22 @@ _EVENT_TOPIC = "event"
 
 class EventProducer:
     def __init__(self, bootstrap: str) -> None:
-        self._producer = Producer({
-            "bootstrap.servers": bootstrap,
-            "linger.ms": 0,            # send immediately — driver needs low latency
-            "compression.type": "snappy",  # matches Core/Relay convention
-            "queue.buffering.max.messages": 1000,
-        })
-        logger.info("EventProducer connected to private Kafka at {}", bootstrap)
+        try:
+            self._producer = Producer({
+                "bootstrap.servers": bootstrap,
+                "linger.ms": 0,            # send immediately — driver needs low latency
+                "compression.type": "snappy",  # matches Core/Relay convention
+                "queue.buffering.max.messages": 1000,
+            })
+            logger.info("EventProducer connected to private Kafka at {}", bootstrap)
+        except Exception as exc:
+            logger.error("EventProducer failed to connect to Kafka at {}: {}", bootstrap, exc)
+            raise
 
     def send(self, key: str, name: str, value: float | dict[str, float] | None, state: str | None = None) -> None:
         msg = DriverEventMessage(name=name, value=value, state=state)
         body = orjson.dumps(msg.model_dump(mode="json"))
+        t0 = time.perf_counter()
         try:
             self._producer.produce(
                 topic=_EVENT_TOPIC,
@@ -28,18 +34,44 @@ class EventProducer:
                 on_delivery=_delivery_report,
             )
             self._producer.poll(0)
+            duration_ms = (time.perf_counter() - t0) * 1000
+            logger.debug("EventProducer queued message key={} in {:.2f} ms", key, duration_ms)
         except KafkaException as exc:
-            logger.warning("EventProducer: failed to produce key={}: {}", key, exc)
+            duration_ms = (time.perf_counter() - t0) * 1000
+            logger.error("EventProducer: failed to produce key={} ({:.2f} ms): {}", key, duration_ms, exc)
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - t0) * 1000
+            logger.error("EventProducer: unexpected error producing key={} ({:.2f} ms): {}", key, duration_ms, exc)
 
-    def flush(self) -> None:
-        self._producer.flush()
+    def flush(self, timeout: float = 5.0) -> int:
+        t0 = time.perf_counter()
+        remaining = self._producer.flush(timeout)
+        duration_ms = (time.perf_counter() - t0) * 1000
+        if remaining > 0:
+            logger.error(
+                "EventProducer flush timed out after {:.2f} ms with {} messages still in queue",
+                duration_ms,
+                remaining,
+            )
+        else:
+            logger.debug("EventProducer flushed in {:.2f} ms", duration_ms)
+        return remaining
 
 
 def _delivery_report(err, msg) -> None:
     if err is not None:
-        logger.warning(
+        logger.error(
             "EventProducer delivery error topic={} key={}: {}",
             msg.topic(),
             msg.key(),
             err,
         )
+    else:
+        latency = msg.latency() if hasattr(msg, "latency") and callable(msg.latency) else None
+        if latency is not None and latency >= 0:
+            logger.debug(
+                "EventProducer delivered message topic={} key={} (latency: {:.2f} ms)",
+                msg.topic(),
+                msg.key(),
+                latency * 1000,
+            )

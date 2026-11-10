@@ -33,21 +33,47 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
                         logger.info("Connected to Core: stream_id={}", event.hello.stream_id)
                         self.retry_delay_seconds = 1
                     elif event.HasField("point_batch"):
-                        for point in event.point_batch.points:
-                            self.next(
-                                sensor_id=point.sensor_id,
-                                timestamp_nano=point.timestamp_nanos,
-                                value=point.value,
-                                driver_id=point.driver_id
-                            )
+                        points = event.point_batch.points
+                        if points:
+                            now_ns = time.time_ns()
+                            latencies_ms = [
+                                (now_ns - p.timestamp_nanos) / 1_000_000
+                                for p in points
+                                if p.timestamp_nanos > 0
+                            ]
+                            if latencies_ms:
+                                avg_latency = sum(latencies_ms) / len(latencies_ms)
+                                max_latency = max(latencies_ms)
+                                min_latency = min(latencies_ms)
+                                if avg_latency > 1500.0:
+                                    logger.warning(
+                                        "High ingestion latency from Core: avg={:.1f}ms, max={:.1f}ms, min={:.1f}ms ({} points)",
+                                        avg_latency, max_latency, min_latency, len(points),
+                                    )
+                                else:
+                                    logger.debug(
+                                        "Ingested point_batch ({} points) from Core, latency: avg={:.1f}ms, max={:.1f}ms",
+                                        len(points), avg_latency, max_latency,
+                                    )
+                        for point in points:
+                            try:
+                                self.next(
+                                    sensor_id=point.sensor_id,
+                                    timestamp_nano=point.timestamp_nanos,
+                                    value=point.value,
+                                    driver_id=point.driver_id
+                                )
+                            except Exception as ex:
+                                logger.error("Failed to forward point {} to Pathway: {}", point.sensor_id, ex)
                     elif event.HasField("gap"):
-                        pass
+                        logger.warning("gRPC stream gap detected from Core")
                 logger.warning("gRPC stream from Core finished. Reconnecting...")
             except grpc.RpcError as ex:
-                logger.warning(
-                    "Cannot connect to Core ({}) - retrying in {}s...",
-                    ex.code() if hasattr(ex, "code") else ex,
+                logger.error(
+                    "gRPC error from Core (code={}) - retrying in {}s... Details: {}",
+                    ex.code() if hasattr(ex, "code") else "UNKNOWN",
                     self.retry_delay_seconds,
+                    ex,
                 )
             except Exception as ex:
                 logger.error(
