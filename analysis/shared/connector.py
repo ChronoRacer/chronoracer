@@ -3,6 +3,7 @@ import time
 import pathway as pw
 import grpc
 from analysis.shared.config import Config
+from analysis.shared.sensor_map import load_physical_to_business, to_business_id
 from loguru import logger
 
 from analysis.shared.proto import telemetry_v1_pb2_grpc
@@ -15,6 +16,8 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
         self.config = config
         self.retry_delay_seconds = 1
         self.max_retry_delay_seconds = 5
+        self.physical_to_business = load_physical_to_business()
+        self._unmapped_warned: set[str] = set()
 
     def run(self):
         address_without_prefix = self.config.CORE_TELEMETRY_URL.removeprefix("http://")
@@ -56,15 +59,24 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
                                         len(points), avg_latency, max_latency,
                                     )
                         for point in points:
+                            business_id = to_business_id(point.sensor_id, self.physical_to_business)
+                            if business_id is None:
+                                if point.sensor_id not in self._unmapped_warned:
+                                    logger.warning(
+                                        "Dropping unmapped physical sensor_id={!r}; add it to analysis/sensor_config.json",
+                                        point.sensor_id,
+                                    )
+                                    self._unmapped_warned.add(point.sensor_id)
+                                continue
                             try:
                                 self.next(
-                                    sensor_id=point.sensor_id,
+                                    sensor_id=business_id,
                                     timestamp_nano=point.timestamp_nanos,
                                     value=point.value,
                                     driver_id=point.driver_id
                                 )
                             except Exception as ex:
-                                logger.error("Failed to forward point {} to Pathway: {}", point.sensor_id, ex)
+                                logger.error("Failed to forward point {} to Pathway: {}", business_id, ex)
                     elif event.HasField("gap"):
                         logger.warning("gRPC stream gap detected from Core")
                 logger.warning("gRPC stream from Core finished. Reconnecting...")
@@ -89,4 +101,3 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
 
     def on_stop(self):
         pass
-
