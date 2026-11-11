@@ -1,4 +1,6 @@
+import threading
 import time
+
 import orjson
 from confluent_kafka import Producer, KafkaException
 from loguru import logger
@@ -6,6 +8,7 @@ from loguru import logger
 from analysis.shared.contract import DriverEventMessage
 
 _EVENT_TOPIC = "event"
+_POLL_INTERVAL_S = 0.1
 
 
 class EventProducer:
@@ -21,6 +24,22 @@ class EventProducer:
         except Exception as exc:
             logger.error("EventProducer failed to connect to Kafka at {}: {}", bootstrap, exc)
             raise
+
+        self._stop = threading.Event()
+        self._poller = threading.Thread(
+            target=self._poll_loop,
+            name="event-producer-poll",
+            daemon=True,
+        )
+        self._poller.start()
+
+    def _poll_loop(self) -> None:
+        # Delivery callbacks (and accurate msg.latency) only run when poll() is called.
+        while not self._stop.wait(_POLL_INTERVAL_S):
+            try:
+                self._producer.poll(0)
+            except Exception as exc:
+                logger.debug("EventProducer poll error: {}", exc)
 
     def send(self, key: str, name: str, value: float | dict[str, float] | None, state: str | None = None) -> None:
         msg = DriverEventMessage(name=name, value=value, state=state)
@@ -57,6 +76,11 @@ class EventProducer:
             logger.debug("EventProducer flushed in {:.2f} ms", duration_ms)
         return remaining
 
+    def close(self) -> None:
+        self._stop.set()
+        self._poller.join(timeout=1.0)
+        self.flush()
+
 
 def _delivery_report(err, msg) -> None:
     if err is not None:
@@ -66,12 +90,12 @@ def _delivery_report(err, msg) -> None:
             msg.key(),
             err,
         )
-    else:
-        latency = msg.latency() if hasattr(msg, "latency") and callable(msg.latency) else None
-        if latency is not None and latency >= 0:
-            logger.debug(
-                "EventProducer delivered message topic={} key={} (latency: {:.2f} ms)",
-                msg.topic(),
-                msg.key(),
-                latency * 1000,
-            )
+        return
+    latency = msg.latency() if hasattr(msg, "latency") and callable(msg.latency) else None
+    if latency is not None and latency >= 0:
+        logger.debug(
+            "EventProducer delivered message topic={} key={} (latency: {:.2f} ms)",
+            msg.topic(),
+            msg.key(),
+            latency * 1000,
+        )
