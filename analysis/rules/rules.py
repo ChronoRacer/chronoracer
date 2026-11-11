@@ -57,22 +57,8 @@ class RulesEngine:
                 )
                 self.rules[str(blob.name).split("/")[-1].removesuffix(".json")] = rule
         logger.info("Loaded {} rules: {}", len(self.rules), list(self.rules.keys()))
-        self.sensors : dict[str,Sensor] = self.fetch_sensor()
-        logger.info("Loaded {} sensors", len(self.sensors))
         self.time_cache : dict[str,int] = {} # (rule_id) ---> time in ns
-    def fetch_sensor(self):
-        sensors = {}
-        blob = self.bucket.blob("analysis/sensors.json")
-        data_str = blob.download_as_text()
-        json_data = orjson.loads(data_str)
-        for obj in json_data["sensors"]:
-            sensors[obj["name"]] = Sensor(
-                id=obj["name"],
-                min=obj["min"],
-                max=obj["max"],
-                desc=obj["description"]
-            )
-        return sensors
+
 
     @staticmethod
     def _get_mandatory_sensors(rule_obj: dict) -> list[str]:

@@ -1,12 +1,14 @@
 """Check every JDM rule from the bucket against the production evaluation path.
 
-Rules and sensors.json are downloaded into rules/test/files/ for the run and the
-folder is removed afterwards. Every input is built the way RulesEngine builds it
+Rules, ``sensors.json``, and ``sensor_config.json`` are downloaded into
+``rules/test/files/`` for the run and the folder is removed afterwards.
+Every input is built the way RulesEngine builds it
 (Pathway window -> _get_signals -> GoRulesSchema), so a passing rule behaves the
-same in production.
+same in production. Signal ids in rules are business keys; physical bounds come
+from ``sensors.json`` via ``sensor_config.json``.
 
     python -m analysis.rules.test.rule_test
-    python -m analysis.rules.test.rule_test --rules-dir /path/to/rules --sensors /path/to/sensors.json
+    python -m analysis.rules.test.rule_test --rules-dir /path/to/rules --sensors /path/to/sensors.json --sensor-config /path/to/sensor_config.json
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from analysis.rules.rules import GoRulesSchema, RulesEngine
 BUCKET = "chronoracer-artifacts"
 RULES_PREFIX = "analysis/rules/"
 SENSORS_BLOB = "analysis/sensors.json"
+SENSOR_CONFIG_BLOB = "analysis/sensor_config.json"
 FILES_DIR = Path(__file__).with_name("files")
 
 ALERT_STATES = ("YELLOW", "RED", "BLACK")
@@ -57,7 +60,7 @@ class RuleReport:
         return not self.errors
 
 
-def download(destination: Path) -> tuple[Path, Path]:
+def download(destination: Path) -> tuple[Path, Path, Path]:
     from google.cloud import storage
 
     rules_dir = destination / "rules"
@@ -73,8 +76,14 @@ def download(destination: Path) -> tuple[Path, Path]:
         raise FileNotFoundError(f"No rules in gs://{BUCKET}/{RULES_PREFIX}")
     sensors_path = destination / "sensors.json"
     bucket.blob(SENSORS_BLOB).download_to_filename(str(sensors_path))
-    logger.info("Downloaded {} rules and sensors.json into {}", count, destination)
-    return rules_dir, sensors_path
+    sensor_config_path = destination / "sensor_config.json"
+    bucket.blob(SENSOR_CONFIG_BLOB).download_to_filename(str(sensor_config_path))
+    logger.info(
+        "Downloaded {} rules, sensors.json, and sensor_config.json into {}",
+        count,
+        destination,
+    )
+    return rules_dir, sensors_path, sensor_config_path
 
 
 def _nodes(rule: dict, node_type: str) -> list[dict]:
@@ -124,10 +133,17 @@ def _signals(sensors: list[str], values: dict[str, float], samples: int) -> dict
 
 
 class RuleChecker:
-    def __init__(self, name: str, rule: dict, sensor_bounds: dict[str, tuple[float, float]]):
+    def __init__(
+        self,
+        name: str,
+        rule: dict,
+        sensor_bounds: dict[str, tuple[float | None, float | None]],
+        business_to_physical: dict[str, str],
+    ):
         self.name = name
         self.rule = rule
         self.sensor_bounds = sensor_bounds
+        self.business_to_physical = business_to_physical
         self.engine = zen.ZenEngine({"loader": lambda key: rule})
         self.report = RuleReport(name=name)
         self.seen_errors: set[str] = set()
@@ -153,6 +169,76 @@ class RuleChecker:
                 return {k: v for k, v in trace["input"].items() if k not in ("eval_ts_ms", "signals")}
         return {}
 
+    def _threshold_prefix_sensors(self, prefix: str, sensors: list[str]) -> list[str]:
+        matches = [sensor for sensor in sensors if prefix in sensor or sensor.startswith(prefix)]
+        return matches
+
+    def _clamp_to_bounds(self, sensor: str, value: float) -> float:
+        if sensor not in self.sensor_bounds:
+            return value
+        low, high = self.sensor_bounds[sensor]
+        if _is_number(low):
+            value = max(value, float(low))
+        if _is_number(high):
+            value = min(value, float(high))
+        return value
+
+    def threshold_values_for_sensor(self, sensor: str, params: dict[str, Any]) -> list[float]:
+        values: list[float] = []
+        for key, value in params.items():
+            if not key.endswith("_threshold") or not _is_number(value):
+                continue
+            prefix = key[: -len("_threshold")]
+            if sensor not in self._threshold_prefix_sensors(prefix, [sensor]):
+                continue
+            threshold = float(value)
+            values.extend(
+                (
+                    threshold - EPS,
+                    threshold + EPS,
+                    -threshold - EPS,
+                    -threshold + EPS,
+                    threshold,
+                    -threshold,
+                )
+            )
+        return values
+
+    def threshold_crossing_combos(
+        self, sensors: list[str], params: dict[str, Any], base: dict[str, float]
+    ) -> list[dict[str, float]]:
+        """Build simultaneous threshold-crossing inputs for multi-sensor alert rules."""
+        linked: dict[str, float] = {}
+        for key, value in params.items():
+            if not key.endswith("_threshold") or not _is_number(value):
+                continue
+            prefix = key[: -len("_threshold")]
+            matches = self._threshold_prefix_sensors(prefix, sensors)
+            if not matches:
+                continue
+            sensor = matches[0]
+            threshold = float(value)
+            # fuel-like: alert below threshold; others: alert above magnitude
+            if prefix == "fuel" or "fuel" in sensor:
+                linked[sensor] = threshold - EPS
+            elif "accel" in sensor or prefix == "accel":
+                linked[sensor] = abs(threshold) + EPS
+            else:
+                linked[sensor] = threshold + EPS
+
+        if len(linked) < 2:
+            return []
+
+        combos = [{**base, **{sensor: self._clamp_to_bounds(sensor, value) for sensor, value in linked.items()}}]
+        # accel polarity variant
+        accel_sensors = [sensor for sensor in linked if "accel" in sensor]
+        if accel_sensors:
+            negative = dict(combos[0])
+            for sensor in accel_sensors:
+                negative[sensor] = self._clamp_to_bounds(sensor, -abs(linked[sensor]))
+            combos.append(negative)
+        return combos
+
     def candidates(
         self, sensor: str, params: dict[str, Any], global_points: list[float]
     ) -> tuple[float, list[float]]:
@@ -160,8 +246,13 @@ class RuleChecker:
         for key, value in params.items():
             if sensor in key and _is_number(value):
                 points.add(float(value))
+        points.update(self.threshold_values_for_sensor(sensor, params))
         if sensor in self.sensor_bounds:
-            points.update(self.sensor_bounds[sensor])
+            low, high = self.sensor_bounds[sensor]
+            if _is_number(low):
+                points.add(float(low))
+            if _is_number(high):
+                points.add(float(high))
         if not points:
             points = {0.0, 100.0}
         ordered = sorted(points)
@@ -193,21 +284,38 @@ class RuleChecker:
             )
         for key, value in params.items():
             if key == "sensor_id" or key.endswith("_sensor_id"):
-                sensor_id = str(value).strip()
+                sensor_id = str(value).strip().strip('"').strip("'")
                 if sensor_id not in sensors:
                     report.errors.append(f"{key}={sensor_id!r} is not a signal read by the rule {sensors}")
+                elif self.business_to_physical and sensor_id not in self.business_to_physical:
+                    report.errors.append(f"{key}={sensor_id!r} is not in sensor_config.json")
                 elif self.sensor_bounds and sensor_id not in self.sensor_bounds:
-                    report.errors.append(f"{key}={sensor_id!r} is not in sensors.json")
+                    physical = self.business_to_physical.get(sensor_id, sensor_id)
+                    report.errors.append(
+                        f"{key}={sensor_id!r} has no bounds "
+                        f"(physical={physical!r} missing from sensors.json)"
+                    )
         for sensor in sensors:
+            if self.business_to_physical and sensor not in self.business_to_physical:
+                report.errors.append(
+                    f"signal {sensor!r} is not a business key in sensor_config.json "
+                    "(rules must use business keys after ingest remap)"
+                )
+                continue
             if self.sensor_bounds and sensor not in self.sensor_bounds:
-                report.errors.append(f"signal {sensor!r} is not in sensors.json")
+                physical = self.business_to_physical.get(sensor, sensor)
+                report.errors.append(
+                    f"signal {sensor!r} has no bounds "
+                    f"(physical={physical!r} missing from sensors.json)"
+                )
                 continue
             rule_min, rule_max = params.get(f"{sensor}_min"), params.get(f"{sensor}_max")
             if sensor in self.sensor_bounds and (rule_min, rule_max) != (None, None):
                 bounds = self.sensor_bounds[sensor]
                 if (rule_min, rule_max) != bounds:
                     report.warnings.append(
-                        f"{sensor} bounds in rule [{rule_min}, {rule_max}] differ from sensors.json {list(bounds)}"
+                        f"{sensor} bounds in rule [{rule_min}, {rule_max}] differ from "
+                        f"sensors.json physical bounds {list(bounds)}"
                     )
 
     def check_result(self, result: dict, row_id: str | None, payload: dict) -> None:
@@ -285,6 +393,12 @@ class RuleChecker:
                 for value in candidates[sensor]:
                     attempt({**base, sensor: value}, samples)
 
+        if len(sensors) > 1 and report.rows_hit != row_ids:
+            for combo in self.threshold_crossing_combos(sensors, params, base):
+                attempt(combo, persistence)
+                if report.rows_hit == row_ids:
+                    break
+
         combos = 1
         for values in candidates.values():
             combos *= len(values)
@@ -309,11 +423,33 @@ class RuleChecker:
         return report
 
 
-def load_sensor_bounds(path: Path | None) -> dict[str, tuple[float, float]]:
+def load_sensor_config(path: Path | None) -> dict[str, str]:
     if path is None:
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
-    return {item["name"]: (item["min"], item["max"]) for item in data["sensors"]}
+    if not isinstance(data, dict):
+        raise ValueError("sensor_config.json must be an object")
+    return {str(k): str(v) for k, v in data.items()}
+
+
+def load_sensor_bounds(
+    sensors_path: Path | None,
+    business_to_physical: dict[str, str],
+) -> dict[str, tuple[float | None, float | None]]:
+    """Bounds keyed by business key (via sensor_config) or physical name if unmapped."""
+    if sensors_path is None:
+        return {}
+    data = json.loads(sensors_path.read_text(encoding="utf-8"))
+    physical_bounds = {
+        item["name"]: (item["min"], item["max"]) for item in data["sensors"]
+    }
+    if not business_to_physical:
+        return physical_bounds
+    bounds: dict[str, tuple[float | None, float | None]] = {}
+    for business_key, physical_id in business_to_physical.items():
+        if physical_id in physical_bounds:
+            bounds[business_key] = physical_bounds[physical_id]
+    return bounds
 
 
 def print_summary(reports: list[RuleReport]) -> None:
@@ -342,16 +478,21 @@ def print_summary(reports: list[RuleReport]) -> None:
     )
 
 
-def run(rules_dir: Path, sensors_path: Path | None) -> int:
+def run(
+    rules_dir: Path,
+    sensors_path: Path | None,
+    sensor_config_path: Path | None,
+) -> int:
     files = sorted(rules_dir.glob("*.json"))
     if not files:
         raise FileNotFoundError(f"No rule files in {rules_dir}")
-    bounds = load_sensor_bounds(sensors_path)
+    business_to_physical = load_sensor_config(sensor_config_path)
+    bounds = load_sensor_bounds(sensors_path, business_to_physical)
     reports = []
     for path in files:
         logger.info("Checking {}", path.name)
         rule = json.loads(path.read_text(encoding="utf-8"))
-        reports.append(RuleChecker(path.name, rule, bounds).run())
+        reports.append(RuleChecker(path.name, rule, bounds, business_to_physical).run())
     print_summary(reports)
     return 0 if all(r.ok for r in reports) else 1
 
@@ -360,6 +501,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--rules-dir", type=Path, help="use local rule files instead of the bucket")
     parser.add_argument("--sensors", type=Path, help="local sensors.json used with --rules-dir")
+    parser.add_argument(
+        "--sensor-config",
+        type=Path,
+        help="local sensor_config.json (BUSINESS_KEY -> physical) used with --rules-dir",
+    )
     parser.add_argument("--keep-files", action="store_true", help=f"do not remove {FILES_DIR} after the run")
     args = parser.parse_args()
 
@@ -368,11 +514,11 @@ def main() -> int:
     logger.add(sys.stderr, level="INFO")
 
     if args.rules_dir:
-        return run(args.rules_dir, args.sensors)
+        return run(args.rules_dir, args.sensors, args.sensor_config)
 
     try:
-        rules_dir, sensors_path = download(FILES_DIR)
-        return run(rules_dir, sensors_path)
+        rules_dir, sensors_path, sensor_config_path = download(FILES_DIR)
+        return run(rules_dir, sensors_path, sensor_config_path)
     finally:
         if not args.keep_files and FILES_DIR.exists():
             shutil.rmtree(FILES_DIR)
