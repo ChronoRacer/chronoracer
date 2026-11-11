@@ -12,7 +12,6 @@ from analysis.predictions.prediction_models import (
     LapComparePred
 )
 
-
 class RunResult:
     """Value returned by ``PredictionClass.run`` when there is something to send."""
 
@@ -22,9 +21,16 @@ class RunResult:
 
 
 class PredictionClass:
-    def __init__(self, name: str, sensors: set[str]):
+    def __init__(
+        self,
+        name: str,
+        sensors: set[str],
+        refresh_rate: str | None = None,
+    ):
         self.name = name
         self.sensors = sensors
+        # Display label for Telemetry; None → UI "nieregularne odświeżanie".
+        self.refresh_rate = refresh_rate
         self.is_prepared = False
 
     def need_prepare(self) -> bool:
@@ -40,14 +46,15 @@ class PredictionClass:
 class FuelPrediction(PredictionClass):
     def __init__(self):
         super().__init__(
-            name="Current lap — projected fuel level and laps to empty",
-            sensors={"fuel_l", "speed"},
+            name="CURRENT LAP - PROJECTED FUEL LEVEL AND LAPS TO EMPTY",
+            sensors={"FUEL_TANK_L", "CAR_SPEED_KMH"},
+            refresh_rate="every lap",
         )
         self.model = LackOfFuelPred()
 
     def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
-        fuel = signals.get("fuel_l")
-        speed = signals.get("speed")
+        fuel = signals.get("FUEL_TANK_L")
+        speed = signals.get("CAR_SPEED_KMH")
         if fuel is None or speed is None:
             logger.warning("Fuel or speed signal missing, skipping fuel prediction")
             return None
@@ -101,17 +108,18 @@ class FuelPrediction(PredictionClass):
 class LapTimePrediction(PredictionClass):
     def __init__(self):
         super().__init__(
-            name="Current lap — full lap time projected at 25/50/75% distance",
-            sensors={"speed", "hv_soc", "rpm", "gps_lon", "gps_lat"},
+            name="CURRENT LAP - FULL LAP TIME PROJECTED AT 25/50/75% DISTANCE",
+            sensors={"CAR_SPEED_KMH", "STATE_OF_CHARGE_PERC", "RPM", "GPS_LON_DEG", "GPS_LAT_DEG"},
+            refresh_rate="every 25/50/75% distance",
         )
         self.model = LapTimePred()
 
     def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
-        hv_soc = signals.get("hv_soc")
-        rpm = signals.get("rpm")
-        speed = signals.get("speed")
-        gps_lon = signals.get("gps_lon")
-        gps_lat = signals.get("gps_lat")
+        hv_soc = signals.get("STATE_OF_CHARGE_PERC")
+        rpm = signals.get("RPM")
+        speed = signals.get("CAR_SPEED_KMH")
+        gps_lon = signals.get("GPS_LON_DEG")
+        gps_lat = signals.get("GPS_LAT_DEG")
         if hv_soc is None or rpm is None:
             logger.warning("HV SOC or RPM signal missing, skipping lap time prediction")
             return None
@@ -159,25 +167,26 @@ class LapTimePrediction(PredictionClass):
 class TyreWearPrediction(PredictionClass):
     def __init__(self):
         super().__init__(
-            name="Current lap — projected tyre grip retention vs fresh baseline",
+            name="CURRENT LAP - PROJECTED TYRE GRIP RETENTION VS FRESH BASELINE",
             sensors={
-                "steer_angle",
-                "speed",
-                "accel_long",
-                "accel_lat",
-                "brake_prs",
-                "throttle",
+                "STEER_ANGLE_DEG",
+                "CAR_SPEED_KMH",
+                "ACCEL_LON_MS2",
+                "ACCEL_LAT_MS2",
+                "BRAKE_PRESSURE_PERC",
+                "THROTTLE_PERC",
             },
+            refresh_rate="every lap",
         )
         self.model = TyreWearPred()
 
     def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
-        steer_angle = signals.get("steer_angle")
-        accel_long = signals.get("accel_long")
-        brake_prs = signals.get("brake_prs")
-        throttle = signals.get("throttle")
-        accel_lat = signals.get("accel_lat")
-        speed = signals.get("speed")
+        steer_angle = signals.get("STEER_ANGLE_DEG")
+        accel_long = signals.get("ACCEL_LON_MS2")
+        brake_prs = signals.get("BRAKE_PRESSURE_PERC")
+        throttle = signals.get("THROTTLE_PERC")
+        accel_lat = signals.get("ACCEL_LAT_MS2")
+        speed = signals.get("CAR_SPEED_KMH")
         if steer_angle is None or accel_long is None or brake_prs is None or throttle is None or accel_lat is None:
             logger.warning("Tyre wear signals missing, skipping tyre wear prediction")
             return None
@@ -209,25 +218,26 @@ class TyreWearPrediction(PredictionClass):
 class BrakeFadePrediction(PredictionClass):
     def __init__(self):
         super().__init__(
-            name="Current lap — projected brake performance vs fresh baseline",
+            name="CURRENT LAP - PROJECTED BRAKE PERFORMANCE VS FRESH BASELINE",
             sensors={
-                "steer_angle",
-                "speed",
-                "accel_long",
-                "brake_prs",
-                "hv_soc",
-                "ambient_temp",
+                "STEER_ANGLE_DEG",
+                "CAR_SPEED_KMH",
+                "ACCEL_LON_MS2",
+                "BRAKE_PRESSURE_PERC",
+                "STATE_OF_CHARGE_PERC",
+                "AMBIENT_TEMP_C",
             },
+            refresh_rate="every lap",
         )
         self.model = BrakeFadePred()
 
     def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
-        steer_angle = signals.get("steer_angle")
-        accel_long = signals.get("accel_long")
-        brake_prs = signals.get("brake_prs")
-        hv_soc = signals.get("hv_soc")
-        ambient_temp = signals.get("ambient_temp")
-        speed = signals.get("speed")
+        steer_angle = signals.get("STEER_ANGLE_DEG")
+        accel_long = signals.get("ACCEL_LON_MS2")
+        brake_prs = signals.get("BRAKE_PRESSURE_PERC")
+        hv_soc = signals.get("STATE_OF_CHARGE_PERC")
+        ambient_temp = signals.get("AMBIENT_TEMP_C")
+        speed = signals.get("CAR_SPEED_KMH")
         if (
             steer_angle is None
             or accel_long is None
@@ -265,19 +275,20 @@ class BrakeFadePrediction(PredictionClass):
 
 class CoolantTemperaturePrediction(PredictionClass):
     def __init__(self):
-        super().__init__(
-            name="Coolant temperature forecast",
-            sensors={"coolant_temp", "oil_temp", "rpm", "engine_load", "speed", "ambient_temp"},
-        )
         self.model = CoolantTempPred()
+        super().__init__(
+            name="COOLANT TEMPERATURE FORECAST",
+            sensors={"COOLANT_TEMP_C", "OIL_TEMP_C", "RPM", "ENGINE_LOAD_PERC", "CAR_SPEED_KMH", "AMBIENT_TEMP_C"},
+            refresh_rate=f"every {self.model.fit_time_s} s",
+        )
 
     def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
-        coolant_temp = signals.get("coolant_temp")
-        oil_temp = signals.get("oil_temp")
-        rpm = signals.get("rpm")
-        engine_load = signals.get("engine_load")
-        speed = signals.get("speed")
-        ambient_temp = signals.get("ambient_temp")
+        coolant_temp = signals.get("COOLANT_TEMP_C")
+        oil_temp = signals.get("OIL_TEMP_C")
+        rpm = signals.get("RPM")
+        engine_load = signals.get("ENGINE_LOAD_PERC")
+        speed = signals.get("CAR_SPEED_KMH")
+        ambient_temp = signals.get("AMBIENT_TEMP_C")
         if any(value is None for value in (coolant_temp, oil_temp, rpm, engine_load, speed, ambient_temp)):
             return None
 
@@ -314,21 +325,22 @@ class CoolantTemperaturePrediction(PredictionClass):
 
 class CarFluidsPrediction(PredictionClass):
     def __init__(self):
-        super().__init__(
-            name="Fluids in next delta time window",
-            sensors={
-                "oil_temp", "rpm", "engine_load",
-                "speed", "ambient_temp",
-            },
-        )
         self.model = CarFluidsPred()
+        super().__init__(
+            name="OIL TEMPERATURE FORECAST",
+            sensors={
+                "OIL_TEMP_C", "RPM", "ENGINE_LOAD_PERC",
+                "CAR_SPEED_KMH", "AMBIENT_TEMP_C",
+            },
+            refresh_rate=f"every {self.model.fit_time_s} s",
+        )
 
     def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
-        oil_temp = signals.get("oil_temp")
-        rpm = signals.get("rpm")
-        engine_load = signals.get("engine_load")
-        ambient_temp = signals.get("ambient_temp")
-        speed = signals.get("speed")
+        oil_temp = signals.get("OIL_TEMP_C")
+        rpm = signals.get("RPM")
+        engine_load = signals.get("ENGINE_LOAD_PERC")
+        ambient_temp = signals.get("AMBIENT_TEMP_C")
+        speed = signals.get("CAR_SPEED_KMH")
         if oil_temp is None or rpm is None or engine_load is None or ambient_temp is None:
             logger.warning("Car fluids sensors missing, skipping car fluids prediction")
             return None
@@ -362,28 +374,30 @@ class CarFluidsPrediction(PredictionClass):
         return RunResult(value=float(result), instruction=instruction)
 
 
-
-
-
-
-
-
-
-
 # NEW
 class SpeedOnTurnsPrediction(PredictionClass):
     def __init__(self):
         super().__init__(
-            name="Current lap — recommended speed for upcoming turns",
-            sensors={"steer_angle", "speed", "accel_long", "accel_lat", "brake_prs", "throttle", "gps_lon", "gps_lat"},
+            name="CURRENT LAP - RECOMMENDED SPEED FOR UPCOMING TURNS",
+            sensors={
+                "STEER_ANGLE_DEG",
+                "CAR_SPEED_KMH",
+                "ACCEL_LON_MS2",
+                "ACCEL_LAT_MS2",
+                "BRAKE_PRESSURE_PERC",
+                "THROTTLE_PERC",
+                "GPS_LON_DEG",
+                "GPS_LAT_DEG",
+            },
+            refresh_rate="at each turn",
         )
         self.model = SpeedOnTurnsPred()
 
     def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
-        speed = signals.get("speed")
-        gps_lon = signals.get("gps_lon")
-        gps_lat = signals.get("gps_lat")
-        accel_lat = signals.get("accel_lat")
+        speed = signals.get("CAR_SPEED_KMH")
+        gps_lon = signals.get("GPS_LON_DEG")
+        gps_lat = signals.get("GPS_LAT_DEG")
+        accel_lat = signals.get("ACCEL_LAT_MS2")
 
         if speed is None or gps_lon is None or gps_lat is None or accel_lat is None:
             logger.warning("Speed on turns sensors missing, skipping speed on turns prediction")
@@ -425,15 +439,16 @@ class SpeedOnTurnsPrediction(PredictionClass):
 class LapComparePrediction(PredictionClass):
     def __init__(self):
         super().__init__(
-            name="Lap comparison - finished lap vs previous one",
-            sensors={"speed", "brake_prs", "hv_soc"},
+            name="LAP COMPARISON - FINISHED LAP VS PREVIOUS ONE",
+            sensors={"CAR_SPEED_KMH", "BRAKE_PRESSURE_PERC", "STATE_OF_CHARGE_PERC"},
+            refresh_rate="every lap",
         )
         self.model = LapComparePred()
 
     def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
-        speed = signals.get("speed")
-        brake_prs = signals.get("brake_prs")
-        hv_soc = signals.get("hv_soc")
+        speed = signals.get("CAR_SPEED_KMH")
+        brake_prs = signals.get("BRAKE_PRESSURE_PERC")
+        hv_soc = signals.get("STATE_OF_CHARGE_PERC")
 
         if speed is None or brake_prs is None or hv_soc is None:
             logger.warning("Lap compare sensors missing, skipping lap compare prediction")

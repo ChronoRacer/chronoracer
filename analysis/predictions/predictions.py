@@ -53,6 +53,7 @@ class PredObj:
         self.pred_id = pred_id
         self.is_available = is_available
         self.pred_class = pred_class
+        self.state_announced = False
 
 
 TELEMETRY_PREDICTIONS_ENDPOINT = "/analysis/v1/predictions"
@@ -65,7 +66,6 @@ class PredictionsEngine:
         self.client = storage.Client("chronoracer")
         self.bucket = self.client.bucket("chronoracer-artifacts")
         self.local_dir: Path = Path(tempfile.mkdtemp(prefix="onnx_"))
-        self.sensors: dict[str, Sensor] = self.fetch_sensor()
         self.predictions: list[PredObj] = [
             PredObj(pred_id="fuel_prediction", is_available=False, pred_class=FuelPrediction()),
             PredObj(pred_id="lap_time_prediction", is_available=False, pred_class=LapTimePrediction()),
@@ -78,20 +78,6 @@ class PredictionsEngine:
         ]
         self.config = config
         self.event_producer = EventProducer(config.KAFKA_PRIVATE_BOOTSTRAP)
-
-    def fetch_sensor(self):
-        sensors = {}
-        blob = self.bucket.blob("analysis/sensors.json")
-        data_str = blob.download_as_text()
-        json_data = orjson.loads(data_str)
-        for obj in json_data["sensors"]:
-            sensors[obj["name"]] = Sensor(
-                id=obj["name"],
-                min=obj["min"],
-                max=obj["max"],
-                desc=obj["description"],
-            )
-        return sensors
 
     def import_model(self, model_file: str, prefix: str = "analysis/predictions/models/v1/"):
         for blob in self.client.list_blobs(self.bucket, prefix=prefix):
@@ -110,7 +96,7 @@ class PredictionsEngine:
             shutil.rmtree(self.local_dir)
 
     @staticmethod
-    def _prepare_state_json(prediction: PredObj, refresh_rate: int | None = None):
+    def _prepare_state_json(prediction: PredObj, refresh_rate: str | None = None):
         timestamp = time.time_ns() // 1_000
         if prediction.is_available:
             state_json = PredictionRunningJSON(
@@ -139,7 +125,7 @@ class PredictionsEngine:
         except Exception as ex:
             logger.warning("Failed to send {}: {}", what, ex)
 
-    def send_prediction_state(self, prediction: PredObj, refresh_rate: int | None = None):
+    def send_prediction_state(self, prediction: PredObj, refresh_rate: str | None = None):
         endpoint = (
             TELEMETRY_RUNNING_PREDICTIONS_ENDPOINT
             if prediction.is_available
@@ -181,19 +167,20 @@ class PredictionsEngine:
 
     def handle_message(self, message, sensors: set[str], lap_detector: LapDetector):
         for pred in self.predictions:
-            if pred.pred_class.sensors.issubset(sensors):
-                if not pred.is_available:
-                    pred.is_available = True
-                    self.send_prediction_state(pred, refresh_rate=None)
-            else:
-                if pred.is_available:
-                    pred.is_available = False
-                    self.send_prediction_state(pred, refresh_rate=None)
+            available = pred.pred_class.sensors.issubset(sensors)
+            if available == pred.is_available and pred.state_announced:
+                continue
+            pred.is_available = available
+            pred.state_announced = True
+            self.send_prediction_state(
+                pred,
+                refresh_rate=pred.pred_class.refresh_rate if available else None,
+            )
 
         signals = self._get_signals(message, sensors)
-        gps_lat = signals.get("gps_lat")
-        gps_lon = signals.get("gps_lon")
-        speed = signals.get("speed")
+        gps_lat = signals.get("GPS_LAT_DEG")
+        gps_lon = signals.get("GPS_LON_DEG")
+        speed = signals.get("CAR_SPEED_KMH")
         # An empty window, a window without GPS
         if gps_lat is None or gps_lon is None or speed is None:
             logger.warning("Empty window, no GPS, or stopped car or there is no speed - skipping lap detection")
@@ -258,7 +245,7 @@ def main():
     logger.info("Predictions engine subscribed to sensor_pred on tcp://127.0.0.1:6767")
     logger.info("Predictions engine running")
 
-    lap_detector = LapDetector(gps_lat="gps_lat", gps_lon="gps_lon")
+    lap_detector = LapDetector(gps_lat="GPS_LAT_DEG", gps_lon="GPS_LON_DEG")
     while True:
         try:
             start = time.time_ns()
