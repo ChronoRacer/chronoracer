@@ -40,9 +40,11 @@ Race Terraform invokes `/chronoracer/entrypoint.sh` through VM startup metadata.
 
    Values are owned by [Terraform](../../docs/component-terraform.md). Processes read them from the environment,
    loaded by systemd `EnvironmentFile=`.
-4. The shared [Ops Agent helper](../../infra/packer/scripts/enable-ops-agent.sh) installs the baked agent
-   configuration and enables its unit. Host metrics are collected every 60 seconds; process metrics and the default
-   logging pipeline are disabled, matching Core's host-only setup.
+4. The shared [Ops Agent helper](../../infra/packer/scripts/enable-ops-agent.sh) installs the baked
+   [`ops-agent.yaml`](ops-agent.yaml) and enables its unit. Host metrics every 60s; process metrics omitted;
+   journald ships only the three Analysis units (Loguru→stderr→journal→Cloud Logging). Differs from Core/Kafka
+   empty logging receivers. Changing `ops-agent.yaml` needs a new Analysis image, or copy onto the VM and
+   `systemctl restart google-cloud-ops-agent`.
 
 5. `systemctl enable --now` starts three independent processes from the shared venv. Each unit has `UMask=0077`,
    `WorkingDirectory=/chronoracer`, `PYTHONPATH=/chronoracer`, `EnvironmentFile=/chronoracer/analysis.env`, and

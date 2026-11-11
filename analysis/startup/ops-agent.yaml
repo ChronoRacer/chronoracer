@@ -1,10 +1,22 @@
-# Whole-VM host metrics only. The process scraper walks /proc and is omitted.
-# CPU and memory panels read these host series.
+# Host metrics every 60s; process scraper omitted.
+# Journald ships only the three Analysis units (Loguru → stderr → journal → Cloud Logging).
 logging:
+  receivers:
+    systemd_journald:
+      type: systemd_journald
+  processors:
+    analysis_units_only:
+      type: exclude_logs
+      match_any:
+        - >-
+          NOT jsonPayload._SYSTEMD_UNIT = "chronoracer-analysis-stream.service"
+          AND NOT jsonPayload._SYSTEMD_UNIT = "chronoracer-analysis-rules.service"
+          AND NOT jsonPayload._SYSTEMD_UNIT = "chronoracer-analysis-predictions.service"
   service:
     pipelines:
       default_pipeline:
-        receivers: []
+        receivers: [systemd_journald]
+        processors: [analysis_units_only]
 metrics:
   receivers:
     hostmetrics:
