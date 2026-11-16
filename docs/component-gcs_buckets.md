@@ -76,6 +76,8 @@ Structure:
       |--- /influxdb-plugins
             |--- export_database.py
 /analysis/sensors.json
+/analysis/sensor_needed.json
+/analysis/sensor_config.json
 /analysis/rules/*.json
 /analysis/predictions/models/{version}/*.onnx
 /analysis/current.json
@@ -83,6 +85,8 @@ Structure:
       |--- /analysis
             |--- /shared, /data_stream, /rules, /predictions
 ```
+
+`sensor_needed.json` lists business keys Analysis requires. `sensor_config.json` maps those keys to car physical `sensor_id`s and is built by the Analysis `build_config` CLI. Runtime ingest remaps physical ids to business keys once; see [Analysis](component-analysis.md#runtime-and-inputs).
 
 Each publish script uploads a complete release first, then replaces its `current.json` as its final operation. The VM
 reads the pointer once during boot and fetches the payload from that immutable release. Old releases are retained;

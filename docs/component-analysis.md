@@ -6,7 +6,11 @@ Analysis consumes aggregated telemetry windows, evaluates alert rules, detects l
 
 The stream process in [`analysis/data_stream/pathway_stream_pub.py`](../analysis/data_stream/pathway_stream_pub.py) publishes separate local ZeroMQ topics for rules and predictions. The [rules engine](../analysis/rules/rules.py) consumes `sensor_agg`; the [predictions engine](../analysis/predictions/predictions.py) consumes `sensor_pred`.
 
-Rules and the signal catalog are loaded from `gs://chronoracer-artifacts/analysis/rules/*.json` and `analysis/sensors.json`. Artifact layout and ownership are documented in [GCS artifacts](component-gcs_buckets.md#artifacts-bucket). The rule JSON is the runtime source for signal selection, expressions, thresholds, persistence, and decision-table messages. Those values can change independently of this document, so they are not duplicated here.
+Core still emits car-specific physical `sensor_id`s. The gRPC connector remaps them once at ingest using `gs://chronoracer-artifacts/analysis/sensor_config.json` (`BUSINESS_KEY → physical_id`, inverted at runtime). Unmapped physical ids are dropped. From Pathway onward, rules and predictions see only business keys (`COOLANT_TEMP_C`, `CAR_SPEED_KMH`, …).
+
+The required business-key list is owned by `gs://chronoracer-artifacts/analysis/sensor_needed.json` (`RULES_REQUIRED_SENSOR_IDS`). Operators build the mapping with [`analysis/rules/build_config.py`](../analysis/rules/build_config.py) (`python -m analysis.rules.build_config`), which writes `analysis/sensor_config.json`.
+
+Rules are loaded from `gs://chronoracer-artifacts/analysis/rules/*.json`. The rule JSON is the runtime source for signal selection, expressions, thresholds, persistence, and decision-table messages. Those values can change independently of this document, so they are not duplicated here. Artifact layout and ownership are documented in [GCS artifacts](component-gcs_buckets.md#artifacts-bucket).
 
 ## Alert rules
 
@@ -58,7 +62,7 @@ The implementation in [`prediction_models.py`](../analysis/predictions/predictio
 
 ## Predictions
 
-The [prediction registry and output formatting](../analysis/predictions/predictions_files.py) define the prediction names and their required inputs. The engine marks a prediction available when its declared signal set is present. Availability does not guarantee that a result is ready: some predictions also require GPS/lap context or enough observations to train their online model. Results carry a numeric value, an instruction, and the contributing readings.
+The [prediction registry and output formatting](../analysis/predictions/predictions_files.py) define the prediction names and their required inputs as business keys (same contract as rules after ingest remap). The engine marks a prediction available when its declared signal set is present. Availability does not guarantee that a result is ready: some predictions also require GPS/lap context or enough observations to train their online model. Results carry a numeric value, an instruction, and the contributing readings.
 
 | Prediction ID | Meaning and current behavior |
 |---|---|
@@ -66,9 +70,10 @@ The [prediction registry and output formatting](../analysis/predictions/predicti
 | `lap_time_prediction` | Projects the full lap time near the quarter-, halfway-, and three-quarter-distance track splits. It learns from completed laps at each split. |
 | `tyre_wear_prediction` | Projects tyre grip retention at the end of the lap relative to a learned fresh-tyre baseline. It builds that baseline from early-lap cornering data. |
 | `brake_fade_prediction` | Projects brake performance at the end of the lap relative to a learned fresh-brake baseline, using selected straight-line braking samples. |
-| `car_fluids_prediction` | Predicts engine oil temperature over the configured forward horizon. Despite its ID and display name, the current implementation predicts oil temperature only. |
+| `car_fluids_prediction` | Forecasts engine oil temperature over the configured forward horizon (display name: oil temperature forecast). The prediction ID keeps the historical `car_fluids` label. |
 | `coolant_temp_prediction` | Forecasts coolant temperature 60 seconds ahead from recent coolant/oil temperatures and current driving conditions. |
+| `lap_compare_prediction` | After each finished lap (from the second lap onward), compares that lap with the previous and best lap and publishes a composite lap score plus a comparison summary (lap time deltas, average speed, hard braking, HV SoC use). |
 
-These six predictions are registered and active in the current engine. `SpeedOnTurnsPrediction` is implemented in code but its registration is commented out, so `speed_on_turns_prediction` is not currently published. The active prediction classes use in-process models; the engine's ONNX download helper is not called by these registered predictions.
+The table lists the predictions currently registered in the engine. `SpeedOnTurnsPrediction` is implemented in code but its registration is commented out, so `speed_on_turns_prediction` is not published. The active prediction classes use in-process models; the engine's ONNX download helper is not called by these registered predictions.
 
-The running/unavailable status reports whether each prediction's declared input set is present. A prediction can still skip output while it waits for a lap, GPS track context, or enough training data. Some models learn a baseline online during the race, so early results may be unavailable or provisional.
+The running/unavailable status reports whether each prediction's declared input set is present. On the first sensor window the engine announces every registered prediction (unavailable when inputs are missing, running when the set is complete); afterward it posts only on availability transitions. `refresh_rate` is a static English display string set on each prediction class: finish-cadence models use `every lap`; split models use labels such as `every 25/50/75% distance`; time-horizon forecasts (coolant/oil) use `every {fit_time_s} s` from the model fit interval; turn models use `at each turn`. When `refresh_rate` is null, Telemetry shows "nieregularne odświeżanie". A prediction can still skip output while it waits for a lap, GPS track context, or enough training data. Some models learn a baseline online during the race, so early results may be unavailable or provisional.
