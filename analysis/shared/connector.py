@@ -10,6 +10,10 @@ from analysis.shared.proto import telemetry_v1_pb2_grpc
 from analysis.shared.proto import  telemetry_v1_pb2
 
 
+def is_backward_timestamp(timestamp_nano: int, last_accepted_nano: int | None) -> bool:
+    return last_accepted_nano is not None and timestamp_nano < last_accepted_nano
+
+
 class GRPCSensorStream(pw.io.python.ConnectorSubject):
     def __init__(self, config: Config) -> None:
         super().__init__()
@@ -18,6 +22,7 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
         self.max_retry_delay_seconds = 5
         self.physical_to_business = load_physical_to_business()
         self._unmapped_warned: set[str] = set()
+        self._last_accepted_ns: dict[str, int] = {}
 
     def run(self):
         address_without_prefix = self.config.CORE_TELEMETRY_URL.removeprefix("http://")
@@ -68,6 +73,17 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
                                     )
                                     self._unmapped_warned.add(point.sensor_id)
                                 continue
+                            if is_backward_timestamp(
+                                point.timestamp_nanos,
+                                self._last_accepted_ns.get(business_id),
+                            ):
+                                logger.debug(
+                                    "Dropping backward point sensor_id={} ts={} last_accepted={}",
+                                    business_id,
+                                    point.timestamp_nanos,
+                                    self._last_accepted_ns[business_id],
+                                )
+                                continue
                             try:
                                 self.next(
                                     sensor_id=business_id,
@@ -75,6 +91,7 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
                                     value=point.value,
                                     driver_id=point.driver_id
                                 )
+                                self._last_accepted_ns[business_id] = point.timestamp_nanos
                             except Exception as ex:
                                 logger.error("Failed to forward point {} to Pathway: {}", business_id, ex)
                     elif event.HasField("gap"):

@@ -6,7 +6,7 @@ Analysis consumes aggregated telemetry windows, evaluates alert rules, detects l
 
 The stream process in [`analysis/data_stream/pathway_stream_pub.py`](../analysis/data_stream/pathway_stream_pub.py) publishes separate local ZeroMQ topics for rules and predictions. The [rules engine](../analysis/rules/rules.py) consumes `sensor_agg`; the [predictions engine](../analysis/predictions/predictions.py) consumes `sensor_pred`.
 
-Core still emits car-specific physical `sensor_id`s. The gRPC connector remaps them once at ingest using `gs://chronoracer-artifacts/analysis/sensor_config.json` (`BUSINESS_KEY → physical_id`, inverted at runtime). Unmapped physical ids are dropped. From Pathway onward, rules and predictions see only business keys (`COOLANT_TEMP_C`, `CAR_SPEED_KMH`, …).
+Core still emits car-specific physical `sensor_id`s. The gRPC connector remaps them once at ingest using `gs://chronoracer-artifacts/analysis/sensor_config.json` (`BUSINESS_KEY → physical_id`, inverted at runtime). Unmapped physical ids are dropped. For each business key the connector also drops a point whose `timestamp_nano` is earlier than the last timestamp already accepted for that key; arrival time does not matter. From Pathway onward, rules and predictions see only business keys (`COOLANT_TEMP_C`, `CAR_SPEED_KMH`, …). Tumbling windows for rules are one second of event time and for predictions half a second; they emit when event time reaches the window end.
 
 The required business-key list is owned by `gs://chronoracer-artifacts/analysis/sensor_needed.json` (`RULES_REQUIRED_SENSOR_IDS`). Operators build the mapping with [`analysis/rules/build_config.py`](../analysis/rules/build_config.py) (`python -m analysis.rules.build_config`), which writes `analysis/sensor_config.json`.
 

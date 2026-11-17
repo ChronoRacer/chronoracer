@@ -68,7 +68,8 @@ TOPIC_SENSOR_PRED = b"sensor_pred"
 
 FAST_CELL_NS =500_000_001
 SLOW_CELL_NS =1_000_000_001
-TOLERANCE_NS = 250_000_001
+# Window emits at window end. Late points are dropped at ingest, not waited for here.
+TOLERANCE_NS = 0
 def get_sensor_batch(table, duration: int):
     return (
         table.windowby(
