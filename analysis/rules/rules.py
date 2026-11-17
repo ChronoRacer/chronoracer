@@ -1,3 +1,4 @@
+import sys
 import time
 from collections import  defaultdict
 import zmq
@@ -9,7 +10,10 @@ from loguru import logger
 from pydantic import BaseModel
 from analysis.shared.config import load_config
 from analysis.shared.contract import NewAlertJSON, SensorValue
-from analysis.shared.kafka_producer import EventProducer
+
+GCS_RETRY_INITIAL_S = 1
+GCS_RETRY_MAX_S = 30
+RULES_PREFIX = "analysis/rules/"
 
 
 class RuleObj(BaseModel):
@@ -38,25 +42,50 @@ class GoRulesSchema(BaseModel):
 TELEMETRY_RULES_ENDPOINT = "/analysis/v1/alerts"
 TIME_CACHE_NS = 3 * 1_000_000_000
 
+
+def next_gcs_retry_delay(current_seconds: int) -> int:
+    return min(current_seconds * 2, GCS_RETRY_MAX_S)
+
+
+def load_rules_from_gcs(client: storage.Client) -> dict[str, RuleObj]:
+    bucket = client.bucket("chronoracer-artifacts")
+    rules: dict[str, RuleObj] = {}
+    for blob in client.list_blobs(bucket, prefix=RULES_PREFIX):
+        if not blob.name.endswith(".json"):
+            continue
+        rule_json = orjson.loads(blob.download_as_text())
+        name = str(blob.name).split("/")[-1].removesuffix(".json")
+        rules[name] = RuleObj(
+            rule_json=rule_json,
+            sensors=set(RulesEngine._get_mandatory_sensors(rule_json)),
+        )
+    if not rules:
+        raise RuntimeError(f"No rule JSON objects under gs://chronoracer-artifacts/{RULES_PREFIX}")
+    return rules
+
+
+def load_rules_with_retry(client_factory=storage.Client, sleep=time.sleep) -> dict[str, RuleObj]:
+    delay = GCS_RETRY_INITIAL_S
+    while True:
+        try:
+            rules = load_rules_from_gcs(client_factory("chronoracer"))
+            logger.info("Loaded {} rules: {}", len(rules), list(rules.keys()))
+            return rules
+        except Exception as ex:
+            logger.error(
+                "Failed to load rules from GCS: {} - retrying in {}s",
+                ex,
+                delay,
+            )
+            sleep(delay)
+            delay = next_gcs_retry_delay(delay)
+
+
 class RulesEngine:
     def __init__(self,config):
         self.config = config
-        self.client = storage.Client("chronoracer")
-        self.bucket = self.client.bucket("chronoracer-artifacts")
         self.engine = zen.ZenEngine({"loader": self.loader})
-        self.event_producer = EventProducer(config.KAFKA_PRIVATE_BOOTSTRAP)
-
-        self.rules : dict[str,RuleObj] = {}
-        for blob in self.client.list_blobs(self.bucket,prefix="analysis/rules/"):
-            if blob.name.endswith(".json"):
-                rule_json = orjson.loads(blob.download_as_text())
-                sensors = set(self._get_mandatory_sensors(rule_json))
-                rule = RuleObj(
-                    rule_json=rule_json,
-                    sensors=sensors
-                )
-                self.rules[str(blob.name).split("/")[-1].removesuffix(".json")] = rule
-        logger.info("Loaded {} rules: {}", len(self.rules), list(self.rules.keys()))
+        self.rules : dict[str,RuleObj] = load_rules_with_retry()
         self.time_cache : dict[str,int] = {} # (rule_id) ---> time in ns
 
 
@@ -108,25 +137,6 @@ class RulesEngine:
                 except Exception as ex:
                     pass # TODO
 
-            # Forward to the driver via the `event` topic — same data as Telemetry, no extra filter.
-            sensors_dict: dict[str, float] = {}
-            for dct in decision["result"].get("sensors", []):
-                for k, v in dct.items():
-                    sensors_dict[k] = float(v)
-
-            alert_value: float | dict[str, float] | None = None
-            if len(sensors_dict) == 1:
-                alert_value = next(iter(sensors_dict.values()))
-            elif len(sensors_dict) > 1:
-                alert_value = sensors_dict
-
-            self.event_producer.send(
-                key=alert_id.upper(),
-                name=alert_id,
-                value=alert_value,
-                state=decision["result"].get("state"),
-            )
-
     @staticmethod
     def _prepare_alert_json(alert_id,decision:dict):
         def _get_sensors_pair() -> list[SensorValue]:
@@ -160,7 +170,7 @@ def main():
     config = load_config()
     if config is None:
         logger.error("Missing config, exiting")
-        return
+        sys.exit(1)
     rules_engine = RulesEngine(config)
 
     context = zmq.Context()

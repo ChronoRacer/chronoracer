@@ -67,3 +67,31 @@ def test_prepare_alert_json_flattens_sensor_values(monkeypatch):
         "analysis_message": "Oil temperature is high",
         "analysis_reason": "Sustained high temperature",
     }
+
+
+def test_gcs_retry_delay_doubles_then_caps_at_max():
+    assert rules_module.next_gcs_retry_delay(1) == 2
+    assert rules_module.next_gcs_retry_delay(16) == 30
+    assert rules_module.next_gcs_retry_delay(30) == 30
+
+
+def test_load_rules_with_retry_retries_then_returns(monkeypatch):
+    attempts = {"n": 0}
+    sleeps = []
+
+    def fake_factory(_project):
+        return object()
+
+    def fake_load(_client):
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            raise ConnectionError("GCS unavailable")
+        return {"ENGINE_OIL_TEMPERATURE": object()}
+
+    monkeypatch.setattr(rules_module, "load_rules_from_gcs", fake_load)
+
+    rules = rules_module.load_rules_with_retry(client_factory=fake_factory, sleep=sleeps.append)
+
+    assert attempts["n"] == 3
+    assert sleeps == [1, 2]
+    assert "ENGINE_OIL_TEMPERATURE" in rules
