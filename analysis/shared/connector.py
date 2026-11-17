@@ -3,7 +3,7 @@ import time
 import pathway as pw
 import grpc
 from analysis.shared.config import Config
-from analysis.shared.sensor_map import load_physical_to_business, to_business_id
+from analysis.shared.sensor_map import load_physical_to_business_with_retry, to_business_id
 from loguru import logger
 
 from analysis.shared.proto import telemetry_v1_pb2_grpc
@@ -20,7 +20,7 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
         self.config = config
         self.retry_delay_seconds = 1
         self.max_retry_delay_seconds = 5
-        self.physical_to_business = load_physical_to_business()
+        self.physical_to_business = load_physical_to_business_with_retry()
         self._unmapped_warned: set[str] = set()
         self._last_accepted_ns: dict[str, int] = {}
 

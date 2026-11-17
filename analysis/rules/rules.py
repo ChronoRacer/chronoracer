@@ -10,9 +10,8 @@ from loguru import logger
 from pydantic import BaseModel
 from analysis.shared.config import load_config
 from analysis.shared.contract import NewAlertJSON, SensorValue
+from analysis.shared.gcs_retry import retry_gcs_call
 
-GCS_RETRY_INITIAL_S = 1
-GCS_RETRY_MAX_S = 30
 RULES_PREFIX = "analysis/rules/"
 
 
@@ -43,10 +42,6 @@ TELEMETRY_RULES_ENDPOINT = "/analysis/v1/alerts"
 TIME_CACHE_NS = 3 * 1_000_000_000
 
 
-def next_gcs_retry_delay(current_seconds: int) -> int:
-    return min(current_seconds * 2, GCS_RETRY_MAX_S)
-
-
 def load_rules_from_gcs(client: storage.Client) -> dict[str, RuleObj]:
     bucket = client.bucket("chronoracer-artifacts")
     rules: dict[str, RuleObj] = {}
@@ -65,20 +60,13 @@ def load_rules_from_gcs(client: storage.Client) -> dict[str, RuleObj]:
 
 
 def load_rules_with_retry(client_factory=storage.Client, sleep=time.sleep) -> dict[str, RuleObj]:
-    delay = GCS_RETRY_INITIAL_S
-    while True:
-        try:
-            rules = load_rules_from_gcs(client_factory("chronoracer"))
-            logger.info("Loaded {} rules: {}", len(rules), list(rules.keys()))
-            return rules
-        except Exception as ex:
-            logger.error(
-                "Failed to load rules from GCS: {} - retrying in {}s",
-                ex,
-                delay,
-            )
-            sleep(delay)
-            delay = next_gcs_retry_delay(delay)
+    rules = retry_gcs_call(
+        lambda: load_rules_from_gcs(client_factory("chronoracer")),
+        what="load rules from GCS",
+        sleep=sleep,
+    )
+    logger.info("Loaded {} rules: {}", len(rules), list(rules.keys()))
+    return rules
 
 
 class RulesEngine:

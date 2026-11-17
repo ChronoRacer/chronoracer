@@ -70,9 +70,11 @@ def test_prepare_alert_json_flattens_sensor_values(monkeypatch):
 
 
 def test_gcs_retry_delay_doubles_then_caps_at_max():
-    assert rules_module.next_gcs_retry_delay(1) == 2
-    assert rules_module.next_gcs_retry_delay(16) == 30
-    assert rules_module.next_gcs_retry_delay(30) == 30
+    from analysis.shared.gcs_retry import next_gcs_retry_delay
+
+    assert next_gcs_retry_delay(1) == 2
+    assert next_gcs_retry_delay(16) == 30
+    assert next_gcs_retry_delay(30) == 30
 
 
 def test_load_rules_with_retry_retries_then_returns(monkeypatch):

@@ -7,6 +7,7 @@ from analysis.rules.build_config import (
 )
 from analysis.shared.sensor_map import (
     invert_map,
+    load_physical_to_business_with_retry,
     load_sensor_config,
     to_business_id,
 )
@@ -61,6 +62,26 @@ def test_load_sensor_config_reports_missing_blob():
 
     with pytest.raises(FileNotFoundError, match="sensor_config.json"):
         load_sensor_config(client)
+
+
+def test_load_physical_to_business_retries_until_sensor_config_exists():
+    class DelayedBlob(FakeBlob):
+        def __init__(self):
+            super().__init__('{"CAR_SPEED_KMH": "SPEED_PHYSICAL"}', exists=False)
+            self.checks = 0
+
+        def exists(self):
+            self.checks += 1
+            return self.checks >= 3
+
+    sleeps: list[float] = []
+    mapping = load_physical_to_business_with_retry(
+        client=FakeClient(DelayedBlob()),
+        sleep=sleeps.append,
+    )
+
+    assert mapping == {"SPEED_PHYSICAL": "CAR_SPEED_KMH"}
+    assert sleeps == [1, 2]
 
 
 def test_invert_map_rejects_duplicate_physical_ids():

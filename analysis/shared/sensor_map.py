@@ -6,6 +6,8 @@ import orjson
 from google.cloud import storage
 from loguru import logger
 
+from analysis.shared.gcs_retry import retry_gcs_call
+
 BUCKET_NAME = "chronoracer-artifacts"
 SENSOR_CONFIG_BLOB = "analysis/sensor_config.json"
 
@@ -52,3 +54,15 @@ def to_business_id(physical_id: str, physical_to_business: dict[str, str]) -> st
 
 def load_physical_to_business(client: storage.Client | None = None) -> dict[str, str]:
     return invert_map(load_sensor_config(client))
+
+
+def load_physical_to_business_with_retry(
+    client: storage.Client | None = None,
+    sleep=None,
+) -> dict[str, str]:
+    kwargs = {} if sleep is None else {"sleep": sleep}
+    return retry_gcs_call(
+        lambda: load_physical_to_business(client),
+        what=f"load gs://{BUCKET_NAME}/{SENSOR_CONFIG_BLOB}",
+        **kwargs,
+    )
