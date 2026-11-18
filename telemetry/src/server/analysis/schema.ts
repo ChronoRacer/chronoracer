@@ -18,7 +18,7 @@ export const predictionRunning = z.object({
   timestamp: timestampUs,
   prediction_id: id,
   name: nonEmpty,
-  refresh_rate: z.number().int().min(1).nullable(),
+  refresh_rate: nonEmpty.nullable(),
 });
 
 export const predictionUnavailable = z.object({

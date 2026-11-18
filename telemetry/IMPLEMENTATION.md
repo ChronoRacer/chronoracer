@@ -336,7 +336,6 @@ alerts to `TELEMETRY_URL` (default `http://127.0.0.1:8080`), with `ANALYSIS_INGE
 ## Remaining work
 
 - Provision `ANALYSIS_INGEST_TOKEN`: Secret Manager secret, Telemetry and analysis access, Terraform `env`.
-- Define the unit of `refresh_rate` with analysis; then a card can go stale after a missed refresh.
 - CI `buf lint` / `buf breaking` against `core/proto` (generate already uses Buf).
 - GCP load test of the Event Loop and bucket memory; workers only if proven needed.
 

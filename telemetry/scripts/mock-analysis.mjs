@@ -23,9 +23,9 @@ async function post(path, body) {
 }
 
 const PREDICTIONS = [
-  { prediction_id: 'tyre-wear', name: 'Tyre wear (laps left)', refresh_rate: 2, sensors: ['wheel_fl', 'wheel_fr'] },
+  { prediction_id: 'tyre-wear', name: 'Tyre wear (laps left)', refresh_rate: 'every 2 laps', sensors: ['wheel_fl', 'wheel_fr'] },
   { prediction_id: 'pit-window', name: 'Pit window', refresh_rate: null, sensors: ['fuel_l'] },
-  { prediction_id: 'oil-trend', name: 'Oil temperature trend', refresh_rate: 2, sensors: ['oil_temp'] },
+  { prediction_id: 'oil-trend', name: 'Oil temperature trend', refresh_rate: 'every 2 laps', sensors: ['oil_temp'] },
 ];
 
 for (const p of PREDICTIONS) {

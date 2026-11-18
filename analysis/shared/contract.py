@@ -7,7 +7,7 @@ ID = Annotated[str, Field(min_length=1)] # THIS IS WHAT ANALYSIS SENDS TO DASHBO
 
 SensorId = Annotated[str,Field(min_length=1)]  # THIS IS WHAT I GET FROM CORE WHEN I AM CONNECTING BY GRPC - SENSOR ID
 
-RefreshRate = Annotated[int, Field(ge=1)] # PREDICTIONS REFRESH RATE
+RefreshRate = Annotated[str, Field(min_length=1)] # PREDICTIONS REFRESH RATE AS DISPLAY TEXT, E.G. "every 2 laps"
 
 
 # THIS IS SCHEMA FOR JSON DATA SENT FROM ANALYSIS TO DASHBOARD

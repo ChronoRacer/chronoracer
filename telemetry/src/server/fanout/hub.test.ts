@@ -126,7 +126,7 @@ describe("FanoutHub", () => {
 
   it("includes analysis state in the snapshot and pushes changes to every subscription", () => {
     const ts = 1_767_225_600_000_001;
-    analysis.running({ timestamp: ts, prediction_id: "p1", name: "Tyre wear", refresh_rate: 5 });
+    analysis.running({ timestamp: ts, prediction_id: "p1", name: "Tyre wear", refresh_rate: "every 5 laps" });
     const onlyA = connect();
     onlyA.subscribe({ type: "subscribe", sensors: ["a"] });
     tick();

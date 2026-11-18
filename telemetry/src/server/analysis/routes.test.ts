@@ -58,7 +58,7 @@ describe('analysis ingest', () => {
       return (await res.json()) as { issues?: { path: string }[] };
     };
     expect((await bad('/predictions/running', { ...running, timestamp: MIN_TIMESTAMP_US - 1 })).issues?.[0].path).toBe('timestamp');
-    expect((await bad('/predictions/running', { ...running, refresh_rate: 0 })).issues?.[0].path).toBe('refresh_rate');
+    expect((await bad('/predictions/running', { ...running, refresh_rate: '' })).issues?.[0].path).toBe('refresh_rate');
     expect((await bad('/predictions/running', { timestamp: ts, prediction_id: 'p1', name: 'x' })).issues?.[0].path).toBe('refresh_rate');
     expect((await bad('/predictions/running', { ...running, prediction_id: '' })).issues?.[0].path).toBe('prediction_id');
     expect((await bad('/predictions', { timestamp: ts, prediction_id: 'p', sensors_id: [''], instruction: null, value: null })).issues?.[0].path).toBe('sensors_id.0');

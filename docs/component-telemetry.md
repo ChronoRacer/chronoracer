@@ -116,7 +116,7 @@ Unknown keys are ignored.
 
 | Body                        | Fields                                                                                                    |
 |-----------------------------|-----------------------------------------------------------------------------------------------------------|
-| `PredictionRunningJSON`     | `timestamp`, `prediction_id`, `name` (display title), `refresh_rate` (integer ≥ 1, or `null` when irregular) |
+| `PredictionRunningJSON`     | `timestamp`, `prediction_id`, `name` (display title), `refresh_rate` (display text, e.g. `every 2 laps`, or `null` when irregular) |
 | `PredictionUnavailableJSON` | `timestamp`, `prediction_id`, `info` (reason shown to operators)                                          |
 | `NewPredictionJSON`         | `timestamp`, `prediction_id`, `sensors_id` (Core sensor ids, may be empty), `instruction` (string or `null`), `value` (finite number or `null`) |
 | `NewAlertJSON`              | `timestamp`, `alert_id` (one id per alert type), `sensors` (at least one `{sensor_id, value}`, finite value), `analysis_message` and `analysis_reason` (1–255 characters) |

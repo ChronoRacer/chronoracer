@@ -62,7 +62,7 @@ export type PredictionValue = {
 export type Prediction = {
   predictionId: string;
   name?: string;
-  refreshRate?: number | null;
+  refreshRate?: string | null;
   announcedAtUs?: number;
   unavailable?: { timestampUs: number; info: string };
   latest?: PredictionValue;
