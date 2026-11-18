@@ -16,7 +16,7 @@ monolith: one process with the HTTP + WebSocket UI and a single Core `Watch`.
 | UI build         | Vite + React, static assets served by the same process                 |
 | Charts           | uPlot                                                                  |
 | Live instruments | Motion (`motion/react`) tweens on sensor-shaped SVG/CSS widgets        |
-| Track map        | Leaflet over the [GUGiK orthophoto](https://www.geoportal.gov.pl/) WMTS (Web Mercator, open data, Poland only, no key) |
+| Track map        | Leaflet over [OpenStreetMap](https://www.openstreetmap.org/copyright) standard tiles (Web Mercator, worldwide, no key) |
 | Core client      | `@grpc/grpc-js` + nice-grpc (h2c only; the browser never talks to Core) |
 | Kafka producer   | `@platformatic/kafka`, pure TypeScript, no native addon; driver messages only |
 | Proto tooling    | Buf (`buf generate` → `src/server/gen`, plus `buf lint` / breaking)    |
@@ -93,7 +93,7 @@ telemetry/
         DrivingZone.tsx       # speed dial, pedals, steering, wheel speeds, g-force
         PowertrainZone.tsx    # rpm dial, EV/engine mode, throttle and load
         VehicleZone.tsx       # energy (HV SOC, fuel, 12 V) and temperatures
-        GpsTrack.tsx          # orthophoto map: car, heading, trail, follow
+        GpsTrack.tsx          # OpenStreetMap track map: car, heading, trail, follow
         ServiceZone.tsx       # CHARTS tab: temperatures, mixture, trims, MAF, ignition; generic sensor card
         instruments.tsx       # shared card, readout, bars, temperature bar
         PredictionsPanel.tsx  # ANALYSIS cards per prediction_id
@@ -167,11 +167,14 @@ language.
 | ANALYSIS     | prediction cards │ alert list                                                                              |
 | Alert toast  | corner popup only when a **new** alert arrives                                                             |
 
-- Track map: GUGiK orthophoto (zoom ≤ 19 native) with the car as a heading arrow and the trail driven since the page
-  opened, kept outside the component so a tab switch does not lose it. The map follows the car at zoom 17; zoom keeps
-  it centred, a drag stops following until *FOLLOW CAR*. A chip says *GPS 2D* or *NO GPS FIX · LAST POSITION* (fix
-  below 2D or position stale); a 3D fix shows nothing. Before the first position the map shows Poland and *WAITING FOR
-  GPS FIX*. Tiles load from `mapy.geoportal.gov.pl` in the browser; outside Poland the map has no imagery.
+- Track map: OpenStreetMap standard tiles (zoom ≤ 19 native) with the car as a heading arrow and the trail driven
+  since the page opened, kept outside the component so a tab switch does not lose it. The map follows the car at zoom
+  17; zoom keeps it centred, a drag stops following until *FOLLOW CAR*. A chip says *GPS 2D* or *NO GPS FIX · LAST
+  POSITION* (fix below 2D or position stale); a 3D fix shows nothing. Before the first position the map shows Poland
+  and *WAITING FOR GPS FIX*. Tiles load from `tile.openstreetmap.org` in the browser, under the
+  [OSMF tile usage policy](https://operations.osmfoundation.org/policies/tiles/): the browser sends the User-Agent and
+  the page origin as Referer (no `Referrer-Policy` is set), and the attribution links to the OpenStreetMap copyright
+  page.
 - LIVE instruments show the newest value only. Charts live on the CHARTS tab; `lambda`/`lambda_cmd`
   and `stft`/`ltft` share a chart when compared. All charts share that window and hover cursor.
 - Orientation follows the contract: `steer_angle` and `accel_lat` left = plus, so the wheel turns and the g-dot moves

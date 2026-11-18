@@ -10,18 +10,20 @@ import type { SeriesStore } from '../lib/series-store';
 import { trailOf } from '../lib/trail';
 import { cx, describe, liveClass } from './instruments';
 
-/** GUGiK orthophoto (open data, Poland only) on the Web Mercator tile grid. */
-const ORTHO_URL =
-  'https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMTS/StandardResolution?SERVICE=WMTS&REQUEST=GetTile' +
-  '&VERSION=1.0.0&LAYER=ORTOFOTOMAPA&TILEMATRIXSET=EPSG:3857&TILEMATRIX=EPSG:3857:{z}&TILEROW={y}&TILECOL={x}';
-const ORTHO_ATTRIBUTION = 'Orthophoto © <a href="https://www.geoportal.gov.pl/" target="_blank" rel="noreferrer">GUGiK</a>';
-const ORTHO_MAX_ZOOM = 19;
+/**
+ * OpenStreetMap standard tiles (worldwide, no key) on the Web Mercator tile grid, under the OSMF tile usage policy:
+ * https://operations.osmfoundation.org/policies/tiles/
+ */
+const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_ATTRIBUTION =
+  '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors';
+const TILE_MAX_ZOOM = 19;
 const POLAND: L.LatLngTuple = [52.1, 19.4];
 const FOLLOW_ZOOM = 17;
 
 type MapParts = { map: L.Map; trail: L.Polyline; car: L.Marker; arrow: HTMLElement };
 
-/** Orthophoto map: car position and heading, and the trail driven since the page opened. */
+/** Track map: car position and heading, and the trail driven since the page opened. */
 export function GpsTrack({ store }: { store: SeriesStore }) {
   const lat = useSensor(store, 'gps_lat');
   const lon = useSensor(store, 'gps_lon');
@@ -54,8 +56,8 @@ export function GpsTrack({ store }: { store: SeriesStore }) {
       touchZoom: 'center',
     });
     L.control.zoom({ position: 'topright' }).addTo(map);
-    L.control.attribution({ position: 'bottomright', prefix: false }).addAttribution(ORTHO_ATTRIBUTION).addTo(map);
-    L.tileLayer(ORTHO_URL, { maxNativeZoom: ORTHO_MAX_ZOOM, maxZoom: ORTHO_MAX_ZOOM + 1, minZoom: 6 }).addTo(map);
+    L.control.attribution({ position: 'bottomright', prefix: false }).addAttribution(TILE_ATTRIBUTION).addTo(map);
+    L.tileLayer(TILE_URL, { maxNativeZoom: TILE_MAX_ZOOM, maxZoom: TILE_MAX_ZOOM + 1, minZoom: 6 }).addTo(map);
     const trail = L.polyline([], { className: 'map-trail', interactive: false }).addTo(map);
     const arrow = document.createElement('div');
     arrow.className = 'car-arrow';
