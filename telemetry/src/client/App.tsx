@@ -60,7 +60,7 @@ export function App() {
           ) : null}
 
           <Drawer open={driverOpen} title="DRIVER RADIO" onClose={() => setDriverOpen(false)}>
-            <DriverPanel enabled={state.driverEnabled} messages={state.driverMessages} />
+            <DriverPanel enabled={state.driverEnabled} messages={state.driverMessages} active={state.driverActive} />
           </Drawer>
         </main>
 

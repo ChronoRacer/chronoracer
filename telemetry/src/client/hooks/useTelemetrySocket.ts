@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { Alert, DriverMessage, Gap, Hello, Prediction, ServerMessage } from '../../shared/protocol';
+import type { Alert, DriverActive, DriverMessage, Gap, Hello, Prediction, ServerMessage } from '../../shared/protocol';
 import { mergeDriverMessages } from '../lib/driver';
 import { DEFAULT_TICK_MS } from '../lib/fanout-tick';
 import { SeriesStore } from '../lib/series-store';
@@ -17,6 +17,7 @@ export type TelemetryState = {
   alerts: Alert[];
   driverEnabled: boolean;
   driverMessages: DriverMessage[];
+  driverActive: DriverActive[];
   tickMs: number;
   store: SeriesStore;
 };
@@ -35,6 +36,7 @@ export function useTelemetrySocket(): TelemetryState {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [driverEnabled, setDriverEnabled] = useState(false);
   const [driverMessages, setDriverMessages] = useState<DriverMessage[]>([]);
+  const [driverActive, setDriverActive] = useState<DriverActive[]>([]);
   const [tickMs, setTickMs] = useState(DEFAULT_TICK_MS);
 
   useEffect(() => {
@@ -85,6 +87,7 @@ export function useTelemetrySocket(): TelemetryState {
           setAlerts(msg.alerts);
           setDriverEnabled(msg.driverEnabled);
           setDriverMessages(msg.driverMessages);
+          setDriverActive(msg.driverActive);
           setTickMs(msg.tickMs);
           store.replace(msg.bucketMs, msg.buckets, msg.latest);
           return;
@@ -99,7 +102,12 @@ export function useTelemetrySocket(): TelemetryState {
           return;
         }
         if (msg.type === 'driver') {
-          setDriverMessages((prev) => mergeDriverMessages(prev, msg.messages, MAX_DRIVER_MESSAGES));
+          if (msg.messages.length > 0) {
+            setDriverMessages((prev) => mergeDriverMessages(prev, msg.messages, MAX_DRIVER_MESSAGES));
+          }
+          if (msg.active) {
+            setDriverActive(msg.active);
+          }
           return;
         }
         if (msg.type === 'buckets') {
@@ -142,6 +150,7 @@ export function useTelemetrySocket(): TelemetryState {
     alerts,
     driverEnabled,
     driverMessages,
+    driverActive,
     tickMs,
     store,
   };

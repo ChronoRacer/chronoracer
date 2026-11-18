@@ -17,6 +17,15 @@
   --yellow: #facc15;
   --orange: #fb923c;
   --red: #f43f5e;
+  /* Driver display backgrounds per type (contract: docs/component-kafka.md, driver display records). */
+  --dt-yellow: #facc15;
+  --dt-red: #ef4444;
+  --dt-green: #22c55e;
+  --dt-blue: #3b82f6;
+  --dt-safety: #fef08a;
+  --dt-box: #92400e;
+  --dt-pace: #1e3a8a;
+  --dt-msg: #1f2937;
   --glass: rgb(11 15 25 / 78%);
   --gap: 8px;
   --radius: 10px;
@@ -1521,6 +1530,7 @@ input:focus-visible {
 .driver-compose {
   display: grid;
   gap: 8px;
+  margin-bottom: var(--gap);
   padding: 10px 12px;
   background: var(--card);
   border: 1px solid var(--line);
@@ -1650,6 +1660,187 @@ input:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 10px;
+}
+
+.driver-form {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.driver-keys .card-unit {
+  align-self: center;
+  margin-inline-end: 2px;
+}
+
+.driver-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Type colours: one swatch per type, the colour the car fills its display with. */
+.dt-yellow { --dt: var(--dt-yellow); }
+.dt-red { --dt: var(--dt-red); }
+.dt-green { --dt: var(--dt-green); }
+.dt-blue { --dt: var(--dt-blue); }
+.dt-safety { --dt: var(--dt-safety); }
+.dt-box { --dt: var(--dt-box); }
+.dt-pace { --dt: var(--dt-pace); }
+.dt-msg { --dt: var(--dt-msg); }
+.dt-all { --dt: var(--muted); }
+
+.driver-swatch {
+  flex: none;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 3px;
+  background: var(--dt);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 25%);
+}
+
+.driver-swatch.dt-checkered,
+.driver-flag.dt-checkered.on {
+  background: repeating-conic-gradient(#f8fafc 0 25%, #0b0f19 0 50%) 0 0 / 0.4rem 0.4rem;
+}
+
+.driver-type {
+  color: var(--text);
+}
+
+.driver-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+/* Latching flag buttons: outlined when off, filled with the flag colour when on the display. */
+.driver-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text);
+  background: var(--track);
+  border: 1px solid color-mix(in srgb, var(--dt) 60%, var(--line-strong));
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.driver-flag:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--dt) 14%, var(--track));
+}
+
+.driver-flag.on {
+  color: #0b0f19;
+  background: var(--dt);
+  border-color: var(--dt);
+}
+
+.driver-flag.on .driver-swatch {
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 35%);
+}
+
+.driver-flag.dt-checkered.on {
+  color: #0b0f19;
+  text-shadow: 0 0 3px #f8fafc, 0 0 3px #f8fafc;
+}
+
+.driver-flag:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.driver-custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.driver-custom input {
+  width: 6rem;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--text);
+  background: var(--track);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+}
+
+.driver-custom input[aria-invalid="true"] {
+  border-color: var(--red);
+}
+
+.driver-active {
+  display: grid;
+  gap: 8px;
+  margin-bottom: var(--gap);
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.driver-active-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.driver-active-head .driver-clear {
+  margin-inline-start: auto;
+}
+
+.driver-active-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.driver-active-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 6px 8px;
+  background: var(--track);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--dt, var(--line-strong));
+  border-radius: 8px;
+}
+
+.driver-active-item .alert-message {
+  flex: 1;
+  min-width: 8rem;
+  overflow-wrap: anywhere;
+}
+
+.driver-clear {
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--red);
+  background: var(--track);
+  border: 1px solid color-mix(in srgb, var(--red) 45%, var(--line));
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.driver-clear:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 12%, var(--track));
+}
+
+.driver-clear:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ---------- responsive: one viewport down to small laptops; phones scroll ---------- */

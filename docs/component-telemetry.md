@@ -1,7 +1,7 @@
 # Deep dive - Telemetry
 
 Near-real-time, read-only preview of accepted race sensor values, and of the predictions and alerts the analysis
-module pushes to it. Operators also send messages to the driver from it ([Driver messages](#driver-messages)).
+module pushes to it. Operators also send flags and messages to the driver from it ([Driver messages](#driver-messages)).
 
 Where: race-scoped Cloud Run service `telemetry`, public HTTPS on its deterministic `run.app` URL. The service uses
 Direct VPC Egress through a dedicated Telemetry subnet to reach Core. It is created by race Terraform, remains present
@@ -23,7 +23,7 @@ may use it. Browser authentication is shared with the Dashboard: [Okta](componen
 - make stream gaps visible rather than imply a complete record
 - accept prediction and alert events from the analysis module and show them next to the sensor values
   ([Analysis ingest](#analysis-ingest))
-- send operator messages to the driver over Kafka ([Driver messages](#driver-messages))
+- send operator flags and messages to the driver over Kafka ([Driver messages](#driver-messages))
 
 Not its responsibility:
 
@@ -135,13 +135,20 @@ One `prediction_id` is one card in the UI:
 
 ## Driver messages
 
-Signed-in operators send short messages to the driver from the Telemetry UI. Telemetry produces each one to the Kafka
-`event` topic on the private listener. Keys and body follow the driver message convention owned by
-[Kafka](component-kafka.md#event). Relay's [operator event](component-relay.md#event-operator) still writes arbitrary
-bytes to the same topic.
+Signed-in operators show flags and short messages on the driver's display and clear them from the Telemetry UI.
+Telemetry produces each action to the Kafka `event` topic on the private listener as a
+[driver display record](component-kafka.md#driver-display-records), one at a time. Relay's
+[operator event](component-relay.md#event-operator) still writes arbitrary bytes to the same topic.
 
-- A message counts as sent when Kafka acknowledges the write. Telemetry cannot know whether the driver has read it.
-- Every operator sees the same recent history with sender and status. It is kept in memory and lost on restart.
+- An action is: show a type with its text and time, clear one type, or clear all. Time choices: 5 s (default), 10 s,
+  30 s, until cleared, or a custom value from 1 to 3600 s; the choice applies to the next send.
+- Each flag type has a latching control: it shows the flag while the flag is not active and clears it while it is.
+- An action counts as sent when Kafka acknowledges the write. Telemetry cannot know whether the driver has read it.
+- Every operator sees the same recent history with sender and status, and the same active set: one entry per type
+  that was shown, not cleared, and whose time has not run out, oldest first, each clearable, plus clear all. It is the
+  operators' view computed from what was sent: an action changes it only after the Kafka ack, and a timed entry runs
+  from that ack. Any operator may clear an entry another operator sent.
+- History and active set are kept in memory and lost on restart.
 - Without the Kafka variables in the [container contract](#container-contract), sending is disabled and the UI says
   so.
 - Unlike Relay, Telemetry does not check the race phase; it sends whenever Kafka accepts the write. During `stopping`
@@ -218,7 +225,7 @@ graph LR
 - Preview delivery is best-effort. Core reports known loss but never retains history for replay.
 - One warm Cloud Run instance costs for the race duration even with no browser connected.
 - Runtime memory disappears on Telemetry restart, including prediction announcements, alerts, and the driver
-  message history.
+  message history and active set.
 - Core and Telemetry stream throughput must be load-tested on GCP before production use. Preview overload must lose
   preview points, never slow Core ingestion.
 - Telemetry scaling issues with a single connection (CR locked to one instance) - needs load testing

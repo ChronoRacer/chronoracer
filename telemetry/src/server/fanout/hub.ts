@@ -148,8 +148,8 @@ export class FanoutHub {
       if (analysis.predictions.length > 0 || analysis.alerts.length > 0) {
         send(frame('analysis', () => encode({ type: 'analysis', ...analysis })));
       }
-      if (driver.length > 0) {
-        send(frame('driver', () => encode({ type: 'driver', messages: driver })));
+      if (driver.messages.length > 0 || driver.active !== undefined) {
+        send(frame('driver', () => encode({ type: 'driver', ...driver })));
       }
     }
   }

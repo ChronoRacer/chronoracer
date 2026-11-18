@@ -164,17 +164,73 @@ Unknown keys are ignored. Parse failures (missing key, missing `CHDRV` body, non
 
 ### `event`
 
-- Key: operator-supplied Kafka key (uppercase compact keys preferred, same as other topics)
-- Avro: no. Body is opaque bytes. Core does not read this topic.
+- Key: producer-supplied Kafka key (uppercase compact keys preferred, same as other topics). The
+  [driver display](#driver-display-records) keys are reserved.
+- Avro: no. Body is opaque bytes, except driver display records. Core does not read this topic.
 - Producers: Relay operator HTTP, any key and body (size and HTTP contract: [Relay](component-relay.md)); Telemetry
-  [driver messages](component-telemetry.md#driver-messages), only in the convention below.
+  [driver messages](component-telemetry.md#driver-messages), only driver display records.
 
-Driver messages: the key is one of the kinds below and the body is UTF-8 text for the driver's display, one line of
-at most 200 characters without control characters. The receiver should show an unknown key like `MSG`.
+#### Driver display records
 
-| Key    | Kind                                       |
-|--------|--------------------------------------------|
-| `MSG`  | general message                            |
-| `BOX`  | pit instruction, e.g. come in or stay out  |
-| `FLAG` | flag or track condition                    |
-| `PACE` | pace instruction, e.g. push or save fuel   |
+Operator flags and messages for the driver's display, one record per operator action. Consumer: the car display in
+the `chronoracer-dashboard` repository, whose `docs/specs/2026-11-16-flagi-i-komunikaty-operatora.md` owns what the
+display does with them. The car sends nothing back: no acknowledgement, no read receipt.
+
+| Part      | Value                                                                                    |
+|-----------|------------------------------------------------------------------------------------------|
+| Key       | Message type from the table below, or `ALL` (only with `"action": "clear"`).             |
+| Value     | UTF-8 JSON object, fields below.                                                         |
+| Timestamp | Producer `CreateTime` (the client default). The car uses it to drop late timed messages. |
+
+| Key         | Group   | `text`   | Car display background                         |
+|-------------|---------|----------|------------------------------------------------|
+| `YELLOW`    | flag    | optional | yellow                                         |
+| `RED`       | flag    | optional | red                                            |
+| `GREEN`     | flag    | optional | green                                          |
+| `BLUE`      | flag    | optional | blue                                           |
+| `SAFETY`    | flag    | optional | bright yellow; shows "SAFETY CAR" without text |
+| `CHECKERED` | flag    | optional | chequered                                      |
+| `BOX`       | message | required | brown                                          |
+| `PACE`      | message | required | navy                                           |
+| `MSG`       | message | required | dark                                           |
+
+A flag is identified by its colour on the display, so the car shows no flag name. With no `text` a flag is a plain
+colour field.
+
+| Field        | Type    | Required                                           | Meaning                                                                                                       |
+|--------------|---------|----------------------------------------------------|---------------------------------------------------------------------------------------------------------------|
+| `action`     | string  | yes                                                | `"show"` or `"clear"`.                                                                                        |
+| `text`       | string  | `show` of `BOX`, `PACE`, `MSG`; optional for flags | One line for the display: 1 to 200 characters, no control characters. Ignored on `clear`.                     |
+| `duration_s` | integer | no                                                 | Seconds on the driver's display: `1` to `3600`, or `-1` for "until cleared". Default `5`. Ignored on `clear`. |
+
+```
+key "YELLOW"   value {"action": "show", "text": "Wypadek w zakręcie 3", "duration_s": -1}
+key "RED"      value {"action": "show", "duration_s": 30}
+key "BOX"      value {"action": "show", "text": "BOX BOX — zjedź w tym okrążeniu"}
+key "YELLOW"   value {"action": "clear"}
+key "ALL"      value {"action": "clear"}
+```
+
+Rules:
+
+1. At most one message per type is active. A `show` for a type that is already active replaces it: new text, time
+   counted again.
+2. `clear` with a type key removes that type. `clear` with key `ALL` removes every active message. Clearing a type
+   that is not active does nothing.
+3. Order is the contract: a `clear` must reach the car after the `show` it cancels. `event` has one partition, and
+   Telemetry produces one record at a time from one producer.
+4. A receiver ignores unknown JSON fields. It skips a record with an unknown key, a value that is not a JSON object,
+   a missing or unknown `action`, a `duration_s` outside the range, or invalid `text`. A plain-text record in the
+   earlier `MSG | BOX | FLAG | PACE` convention is therefore skipped, not shown.
+5. The ten keys above are reserved on `event`. Other producers on this topic must not use them.
+6. Time runs from the moment the record reaches the car. A timed message that reaches the car more than 10 seconds
+   late is skipped. An "until cleared" message is shown however late it arrives.
+
+Open:
+
+- Rule 6 compares the record timestamp with the car's clock, which can be wrong after a start without network. The
+  car side decides how to measure it.
+- After the car application restarts its display is empty; earlier messages are not restored until the operator sends
+  again. Re-sending the active set periodically from Telemetry would close this gap.
+- 200 characters do not fit the 1280x400 car display at a readable size. A lower limit or a truncation rule is open.
+- Relay operator events accept any key, so an operator could send a reserved key by hand.

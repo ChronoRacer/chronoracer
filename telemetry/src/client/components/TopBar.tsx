@@ -53,7 +53,13 @@ export function TopBar({ state, tab, onTab, unseenAlerts, onDriver }: Props) {
       </nav>
       <ConnectionStatus connection={state.connection} coreConnected={state.coreConnected} hello={state.hello} />
       <GapMarkers gaps={state.gaps} />
-      <DriverPanel enabled={state.driverEnabled} messages={state.driverMessages} variant="strip" onExpand={onDriver} />
+      <DriverPanel
+        enabled={state.driverEnabled}
+        messages={state.driverMessages}
+        active={state.driverActive}
+        variant="strip"
+        onExpand={onDriver}
+      />
       <a className="logout" href="/auth/logout">
         LOG OUT
       </a>

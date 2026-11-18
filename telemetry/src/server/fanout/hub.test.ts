@@ -150,20 +150,30 @@ describe("FanoutHub", () => {
     expect(onlyA.take()).toEqual([]);
   });
 
-  it("includes driver messages in the snapshot and pushes status changes to every browser", () => {
-    const sent = driver.add({ key: "BOX", text: "BOX BOX" }, "op");
+  it("includes driver messages in the snapshot and pushes status and active set changes to every browser", () => {
+    const sent = driver.add({ action: "show", type: "BOX", text: "BOX BOX", durationS: -1 }, "op");
     const all = connect();
     const onlyA = connect();
     onlyA.subscribe({ type: "subscribe", sensors: ["a"] });
     tick();
-    expect(all.take()).toMatchObject([{ type: "snapshot", driverEnabled: true, driverMessages: [{ id: sent.id }] }]);
+    expect(all.take()).toMatchObject([
+      { type: "snapshot", driverEnabled: true, driverMessages: [{ id: sent.id }], driverActive: [] },
+    ]);
     onlyA.take();
 
     driver.settle(sent);
     tick();
-    const update = [{ type: "driver", messages: [{ id: sent.id, status: "delivered" }] }];
+    const update = [
+      {
+        type: "driver",
+        messages: [{ id: sent.id, status: "delivered" }],
+        active: [{ type: "BOX", text: "BOX BOX", expiresAtMs: null }],
+      },
+    ];
     expect(all.take()).toMatchObject(update);
     expect(onlyA.take()).toMatchObject(update);
+    tick();
+    expect(all.take()).toEqual([]);
   });
 
   it("ignores invalid client messages", () => {

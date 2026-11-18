@@ -1,26 +1,50 @@
-import type { DriverKey, DriverMessage, DriverMessageRequest } from '../../shared/protocol';
+import {
+  DRIVER_DURATION_DEFAULT_S,
+  DRIVER_UNTIL_CLEARED,
+  type DriverMessage,
+  type DriverRequest,
+  type DriverTarget,
+  type DriverType,
+} from '../../shared/protocol';
 
-export const DRIVER_KEY_LABEL: Record<DriverKey, string> = {
-  MSG: 'MESSAGE',
+export const DRIVER_LABEL: Record<DriverTarget, string> = {
+  YELLOW: 'YELLOW',
+  RED: 'RED',
+  GREEN: 'GREEN',
+  BLUE: 'BLUE',
+  SAFETY: 'SAFETY CAR',
+  CHECKERED: 'CHEQUERED',
   BOX: 'BOX',
-  FLAG: 'FLAG',
   PACE: 'PACE',
+  MSG: 'MESSAGE',
+  ALL: 'ALL',
 };
 
-/** One-click texts; UI copy for this team, not part of the Kafka contract. */
-export const DRIVER_PRESETS: readonly DriverMessageRequest[] = [
-  { key: 'BOX', text: 'BOX BOX — zjedź w tym okrążeniu' },
-  { key: 'BOX', text: 'Zostań na torze' },
-  { key: 'PACE', text: 'Atakuj' },
-  { key: 'PACE', text: 'Oszczędzaj paliwo' },
-  { key: 'PACE', text: 'Zwolnij, chłodź silnik' },
-  { key: 'FLAG', text: 'Żółta flaga — uważaj' },
-  { key: 'FLAG', text: 'Safety car — zwolnij' },
-  { key: 'FLAG', text: 'Czerwona flaga — zjedź do boksu' },
+/** Time choices for the next send, in seconds; the first is the contract default. */
+export const DRIVER_DURATIONS: readonly { value: number; label: string }[] = [
+  { value: DRIVER_DURATION_DEFAULT_S, label: '5 S' },
+  { value: 10, label: '10 S' },
+  { value: 30, label: '30 S' },
+  { value: DRIVER_UNTIL_CLEARED, label: 'UNTIL CLEARED' },
 ];
 
-/** Resolves once the server accepted the message; its delivery arrives later over the socket. */
-export async function sendDriverMessage(request: DriverMessageRequest): Promise<DriverMessage> {
+/** One-click texts; UI copy for this team, not part of the Kafka contract. Flags carry no flag name: the car shows the colour. */
+export const DRIVER_PRESETS: readonly { type: DriverType; text: string }[] = [
+  { type: 'BOX', text: 'BOX BOX — zjedź w tym okrążeniu' },
+  { type: 'BOX', text: 'Zostań na torze' },
+  { type: 'PACE', text: 'Atakuj' },
+  { type: 'PACE', text: 'Oszczędzaj paliwo' },
+  { type: 'PACE', text: 'Zwolnij, chłodź silnik' },
+  { type: 'YELLOW', text: 'Uważaj' },
+  { type: 'SAFETY', text: 'Zwolnij' },
+  { type: 'RED', text: 'Zjedź do boksu' },
+];
+
+export const formatDuration = (durationS: number) =>
+  durationS === DRIVER_UNTIL_CLEARED ? 'UNTIL CLEARED' : `${durationS} S`;
+
+/** Resolves once the server accepted the action; its delivery arrives later over the socket. */
+export async function sendDriver(request: DriverRequest): Promise<DriverMessage> {
   const res = await fetch('/api/driver/messages', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

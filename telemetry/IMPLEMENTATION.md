@@ -63,9 +63,9 @@ telemetry/
         AnalysisStore.ts      # per-prediction state, recent alerts, delta for the hub
         routes.ts             # /analysis/v1 POST routes: bearer token, body limit, validation
       driver/
-        schema.ts             # zod validation of a driver message request
-        DriverMessages.ts     # shared recent history with delivery status, changes for the hub
-        publisher.ts          # Kafka producer on the private listener
+        schema.ts             # zod validation of a show / clear request
+        DriverMessages.ts     # shared history with delivery status, active set from acks, changes for the hub
+        publisher.ts          # Kafka record (key, JSON value) and one-at-a-time producer on the private listener
         routes.ts             # POST /api/driver/messages: 202, then produce in the background
       fanout/
         hub.ts                # per-tick snapshot / delta push, backpressure
@@ -80,7 +80,7 @@ telemetry/
         series-store.ts       # per-sensor series, change notifications, chart window edge, sample pairing
         trail.ts              # map trail for the page's lifetime (survives tab switches)
         fanout-tick.ts        # server push interval from the snapshot, as React context
-        driver.ts             # driver message kinds' labels, presets, send, history merge
+        driver.ts             # driver type labels, time choices, presets, send, history merge
         format.ts  svg.ts     # readout formatting; gauge geometry
       hooks/
         useTelemetrySocket.ts # WebSocket → store; connection, gaps, sensor list
@@ -99,7 +99,7 @@ telemetry/
         PredictionsPanel.tsx  # ANALYSIS cards per prediction_id
         AlertsPanel.tsx       # ANALYSIS alert list
         AlertToast.tsx        # corner popup for a new alert
-        DriverPanel.tsx       # top-bar strip + composer and shared history in the drawer
+        DriverPanel.tsx       # top-bar strip; drawer: active list, flag toggles, time, composer, history
         Drawer.tsx            # stage overlay for driver radio (Escape closes)
         SensorChart.tsx       # one uPlot per card, one or more sensors: shared window and cursor
 ```
@@ -111,7 +111,7 @@ Tests sit next to the code as `*.test.ts` and are not part of the build output.
 ```text
 Core Watch ─────► core/watch.ts ───────► store ────────────┐
 analysis POST ──► analysis/routes.ts ──► analysis store ───┼─(drain every tick)──► fanout hub ──► browser WS
-browser POST ───► driver/routes.ts ────► driver history ───┘
+browser POST ───► driver/routes.ts ────► driver state ─────┘
                         └─(background)─► Kafka `event`, private listener
 ```
 
@@ -139,7 +139,7 @@ as decimal strings. Do not expose gRPC-web.
 | `/api/me`                                     | public                  | current session, 401 without one                                    |
 | `/api/sensors`                                | session                 | tracked sensor ids and ring stats                                   |
 | `/api/analysis`                               | session                 | current predictions and recent alerts (same shape as in the snapshot) |
-| `/api/driver/messages` (`POST`)               | session, same `Origin`  | send a driver message; `202` with it as `sending`, `503` without Kafka; the outcome arrives over `/ws` |
+| `/api/driver/messages` (`POST`)               | session, same `Origin`  | one action, `{action: "show", type, text?, durationS?}` or `{action: "clear", type}` (`type` may be `ALL`); `202` with it as `sending`, `503` without Kafka; the outcome and the active set arrive over `/ws` |
 | `/analysis/v1/*` (`POST`)                     | bearer token            | analysis ingest; contract in [Analysis ingest](../docs/component-telemetry.md#analysis-ingest) |
 | `/ws`                                         | session, same `Origin`  | live preview                                                        |
 | everything else                               | session                 | Vite build; `index.html` for client routes                          |
@@ -190,9 +190,13 @@ language.
   reason, and sensor values with contract units. Analysis text is shown as sent. New alerts also fire a corner toast
   (history is not replayed as toasts).
 - Sensors in `STATUS_LABELS` (today `gps_fix`) show a state label instead of a number.
-- Driver strip → drawer: a preset fills the composer; only Enter or *SEND* sends. Presets are UI copy in
-  [`src/client/lib/driver.ts`](src/client/lib/driver.ts). Status is *SENDING…*, *SENT* (Kafka ack, not a read receipt),
-  or *FAILED*. Without Kafka configuration the composer is disabled.
+- Driver strip → drawer. The strip shows a colour dot per active type and the latest action. The drawer has, top to
+  bottom: the active list (*ON DISPLAY*, seconds left or *UNTIL CLEARED*, *CLEAR* each, *CLEAR ALL*); one latching
+  button per flag, filled while the flag is active; the time for the next send; the composer (type, text, *SHOW*);
+  presets; the action history. A preset fills the composer; only Enter or *SHOW* sends. Presets are UI copy in
+  [`src/client/lib/driver.ts`](src/client/lib/driver.ts). A control waits while an action of its type is unacknowledged.
+  Status is *SENDING…*, *SENT* (Kafka ack, not a read receipt), or *FAILED*. Without Kafka configuration sending is
+  disabled. Type colours follow the car display backgrounds.
 - The browser subscribes to all sensors. Buckets and newest samples go to a per-sensor store, not React state, so an instrument
   re-renders only for its own sensors; each chart is created once and updated in place. Numeric readouts show the
   exact sample.
@@ -282,7 +286,9 @@ Driver messages go to Kafka's PRIVATE listener (plaintext, `KAFKA_PRIVATE_BOOTST
 Kafka firewall rule like Core and Relay; no TLS or SASL on this hop either. One long-lived producer, connected on the
 first send. Same guarantees as Relay's operator events: idempotent, `acks` from all in-sync replicas, 3 retries 250 ms
 apart, 5 s connect and request timeouts, so a dead broker fails a message within seconds instead of leaving it
-`sending`. History keeps the last 100 messages; a request body is at most 4 KiB.
+`sending`. Sends are queued and go out one at a time, so acks arrive in topic order and the active set applies them
+in that order; the hub expires timed entries on its tick. History keeps the last 100 actions; a request body is at
+most 4 KiB.
 
 ## Tuning and local variables
 
