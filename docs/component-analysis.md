@@ -1,16 +1,18 @@
 # Analysis
 
 Analysis consumes aggregated telemetry windows, evaluates alert rules, detects laps, and produces live predictions.
+It is consume-only on the vehicle path: it reads Core `Watch` and posts alerts and predictions to Telemetry for the
+engineer's panel. It does not write to Core, Kafka, or the car.
 
 ## Runtime and inputs
 
 The stream process in [`analysis/data_stream/pathway_stream_pub.py`](../analysis/data_stream/pathway_stream_pub.py) publishes separate local ZeroMQ topics for rules and predictions. The [rules engine](../analysis/rules/rules.py) consumes `sensor_agg`; the [predictions engine](../analysis/predictions/predictions.py) consumes `sensor_pred`.
 
-Core still emits car-specific physical `sensor_id`s. The gRPC connector remaps them once at ingest using `gs://chronoracer-artifacts/analysis/sensor_config.json` (`BUSINESS_KEY → physical_id`, inverted at runtime). Unmapped physical ids are dropped. For each business key the connector also drops a point whose `timestamp_nano` is earlier than the last timestamp already accepted for that key; arrival time does not matter. From Pathway onward, rules and predictions see only business keys (`COOLANT_TEMP_C`, `CAR_SPEED_KMH`, …). Tumbling windows for rules are one second of event time and for predictions half a second; they emit when event time reaches the window end.
+Core still emits car-specific physical `sensor_id`s. The gRPC connector remaps them once at ingest using `gs://chronoracer-artifacts/analysis/sensor_config.json` (`BUSINESS_KEY → physical_id`, inverted at runtime). A missing, empty, or invalid `sensor_config.json` is logged and retried in-process with the same backoff as rule download; Watch does not start until a usable mapping loads. Unmapped physical ids are dropped. For each business key the connector also drops a point whose `timestamp_nano` is earlier than the last timestamp already accepted for that key; arrival time does not matter. From Pathway onward, rules and predictions see only business keys (`COOLANT_TEMP_C`, `CAR_SPEED_KMH`, …). Tumbling windows for rules are one second of event time and for predictions half a second; they emit when event time reaches the window end.
 
 The required business-key list is owned by `gs://chronoracer-artifacts/analysis/sensor_needed.json` (`RULES_REQUIRED_SENSOR_IDS`). Operators build the mapping with [`analysis/rules/build_config.py`](../analysis/rules/build_config.py) (`python -m analysis.rules.build_config`), which writes `analysis/sensor_config.json`.
 
-Rules are loaded from `gs://chronoracer-artifacts/analysis/rules/*.json`. The rule JSON is the runtime source for signal selection, expressions, thresholds, persistence, and decision-table messages. Those values can change independently of this document, so they are not duplicated here. Artifact layout and ownership are documented in [GCS artifacts](component-gcs_buckets.md#artifacts-bucket).
+Rules are loaded from `gs://chronoracer-artifacts/analysis/rules/*.json`. The rule JSON is the runtime source for signal selection, expressions, thresholds, persistence, and decision-table messages. Those values can change independently of this document, so they are not duplicated here. Artifact layout and ownership are documented in [GCS artifacts](component-gcs_buckets.md#artifacts-bucket). A GCS or empty-prefix failure at process start is logged and retried in-process with exponential backoff (1s, doubling to 30s). The process stays up and does not subscribe to windows until at least one rule JSON loads.
 
 ## Alert rules
 
@@ -25,7 +27,7 @@ States have these meanings:
 - `SENSOR_ERROR`: a required reading is outside its configured physical range, or the rule configuration is invalid.
 - `NO_DATA`: required readings or paired history are missing or invalid. The decision table's blank/default row supplies this message.
 
-The engine sends alerts to Telemetry only for `YELLOW`, `RED`, and `BLACK`. `GREEN`, `SENSOR_ERROR`, and `NO_DATA` are rule results but are filtered before the alert request. Repeated alerts for one rule are rate-limited to one send per three seconds.
+The engine sends alerts to Telemetry for `YELLOW`, `RED`, `BLACK`, and `SENSOR_ERROR`. `GREEN` and `NO_DATA` are rule results but are filtered before the alert request. Repeated alerts for one rule are rate-limited to one send per three seconds. A failed alert request is logged as a warning and does not stop evaluation.
 
 | Rule object | What it detects | States in the decision table |
 |---|---|---|
@@ -54,7 +56,7 @@ The optional BLACK thresholds are not configured for `12V_BATTERY_VOLTAGE` or `I
 
 ## Lap detection
 
-The prediction process detects laps from GPS position, with vehicle speed required by the outer prediction handler. It records the first valid GPS timestamp, then sets the start point using a later GPS position once 1.5 seconds have elapsed. Elapsed time comes from GPS timestamps, not from a presumed sample rate.
+The prediction process detects laps from GPS position. A window without GPS lat/lon skips only the lap-detector update; it does not stop predictions. Predictions marked as lap-based (`needs_lap` in the registry) run only after the lap start is set; the others (oil and coolant forecasts) run on every window whose declared inputs are present. A missing input such as `CAR_SPEED_KMH` skips only the predictions that declare it. It records the first valid GPS timestamp, then sets the start point using a later GPS position once 1.5 seconds have elapsed. Elapsed time comes from GPS timestamps, not from a presumed sample rate.
 
 A lap is armed after the car moves 20 m from the start. It completes when the segment between consecutive GPS points comes within 8 m of the start, which prevents a sparse GPS stream from skipping the start between samples.
 
@@ -67,7 +69,7 @@ The [prediction registry and output formatting](../analysis/predictions/predicti
 | Prediction ID | Meaning and current behavior |
 |---|---|
 | `fuel_prediction` | Projects fuel remaining at the end of the current lap and, once enough lap observations exist, estimates laps to empty and fuel use per lap. It learns from completed laps and their average speed. |
-| `lap_time_prediction` | Projects the full lap time near the quarter-, halfway-, and three-quarter-distance track splits. It learns from completed laps at each split. |
+| `lap_time_prediction` | Projects the full lap time near the quarter-, halfway-, and three-quarter-distance track splits. The detector records the track until `track_ready_lap` (default 2). The model publishes nothing at a split until `min_split_laps` (default 2) finished laps have been recorded there. |
 | `tyre_wear_prediction` | Projects tyre grip retention at the end of the lap relative to a learned fresh-tyre baseline. It builds that baseline from early-lap cornering data. |
 | `brake_fade_prediction` | Projects brake performance at the end of the lap relative to a learned fresh-brake baseline, using selected straight-line braking samples. |
 | `car_fluids_prediction` | Forecasts engine oil temperature over the configured forward horizon (display name: oil temperature forecast). The prediction ID keeps the historical `car_fluids` label. |

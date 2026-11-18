@@ -28,7 +28,6 @@ from analysis.shared.contract import (
     PredictionUnavailableJSON,
 )
 import requests
-from analysis.shared.kafka_producer import EventProducer
 
 
 class Sensor(BaseModel):
@@ -77,7 +76,6 @@ class PredictionsEngine:
             #PredObj(pred_id="speed_on_turns_prediction", is_available=False, pred_class=SpeedOnTurnsPrediction()),
         ]
         self.config = config
-        self.event_producer = EventProducer(config.KAFKA_PRIVATE_BOOTSTRAP)
 
     def import_model(self, model_file: str, prefix: str = "analysis/predictions/models/v1/"):
         for blob in self.client.list_blobs(self.bucket, prefix=prefix):
@@ -180,54 +178,47 @@ class PredictionsEngine:
         signals = self._get_signals(message, sensors)
         gps_lat = signals.get("GPS_LAT_DEG")
         gps_lon = signals.get("GPS_LON_DEG")
-        speed = signals.get("CAR_SPEED_KMH")
-        # An empty window, a window without GPS
-        if gps_lat is None or gps_lon is None or speed is None:
-            logger.warning("Empty window, no GPS, or stopped car or there is no speed - skipping lap detection")
-            return
-
-        lap_detector.add_track_point(gps_lon.val, gps_lat.val)
-        track, p25, p50, p75 = lap_detector.find_track_data()
-
-        if not lap_detector.is_start_set():
-            if lap_detector.sensors.issubset(sensors):
+        point = None
+        if gps_lat is None or gps_lon is None:
+            logger.warning("No GPS in window - skipping lap detection")
+        else:
+            lap_detector.add_track_point(gps_lon.val, gps_lat.val)
+            if not lap_detector.is_start_set():
                 lap_detector.determine_start_on_track(
                     gps_lat.val,
                     gps_lon.val,
                     gps_lat.ts_ns,
                 )
-        else:
-            test_point = MPoint(lat=gps_lat.val, lon=gps_lon.val)
-            point = lap_detector.find_next_lap(test_point, gps_lat.ts_ns)
-            if point is not None:
-                logger.info("Lap detected at point: {}", point)
+            else:
+                test_point = MPoint(lat=gps_lat.val, lon=gps_lon.val)
+                point = lap_detector.find_next_lap(test_point, gps_lat.ts_ns)
+                if point is not None:
+                    logger.info("Lap detected at point: {}", point)
 
-            lap_ctx = {
-                "is_finish_line_crossed": point is not None,
-                "curr_lap": lap_detector.curr_lap_num,
-                "lap_time": lap_detector.lap_time,
-                "start_point": lap_detector.get_start_point(),
-                "track": track,
-                "track_meters": lap_detector.track_meters,
-                "project_to_meters" : lap_detector._project_to_meters,
-                "p25": p25,
-                "p50": p50,
-                "p75": p75,
-                "turns_lst": lap_detector.turns_lst,
-            }
+        lap_ready = lap_detector.is_start_set()
+        track, p25, p50, p75 = lap_detector.find_track_data()
+        lap_ctx = {
+            "is_finish_line_crossed": point is not None,
+            "curr_lap": lap_detector.curr_lap_num,
+            "lap_time": lap_detector.lap_time,
+            "start_point": lap_detector.get_start_point(),
+            "track": track,
+            "track_meters": lap_detector.track_meters,
+            "project_to_meters" : lap_detector._project_to_meters,
+            "p25": p25,
+            "p50": p50,
+            "p75": p75,
+            "turns_lst": lap_detector.turns_lst,
+        }
 
-            for pred in self.predictions:
-                if not pred.is_available:
-                    continue
-                run_result = pred.pred_class.run(signals, lap_ctx)
-                if run_result is not None:
-                    self.send_prediction(pred, value=run_result.value, instruction=run_result.instruction)
-                    # Forward to the driver via the `event` topic — same data as Telemetry, no extra filter.
-                    self.event_producer.send(
-                        key=pred.pred_id.upper(),
-                        name=pred.pred_class.name,
-                        value=float(run_result.value) if run_result.value is not None else None,
-                    )
+        for pred in self.predictions:
+            if not pred.is_available:
+                continue
+            if pred.pred_class.needs_lap and not lap_ready:
+                continue
+            run_result = pred.pred_class.run(signals, lap_ctx)
+            if run_result is not None:
+                self.send_prediction(pred, value=run_result.value, instruction=run_result.instruction)
 
 
 def main():

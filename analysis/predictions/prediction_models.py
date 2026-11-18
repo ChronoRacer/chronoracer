@@ -43,7 +43,8 @@ class LapDetector:
                  turn_tolerance: float = 2.0,
                  sharp_turn_deg : float = 10.0,
                  turn_radius : float = 120.0,
-                 distance_from_turns : float = 70.0
+                 distance_from_turns : float = 70.0,
+                 track_ready_lap: int = 2,
                  ):
         self.sensors: set[str] = {gps_lat, gps_lon}
         self.lat_start: float | None = None
@@ -66,6 +67,7 @@ class LapDetector:
         self.curr_lap_num = 0
         self.lap_start_ts_ns: int | None = None
         self.lap_time : float = 0.0
+        self.track_ready_lap = track_ready_lap
 
 
     def is_start_set(self) -> bool:
@@ -156,11 +158,11 @@ class LapDetector:
         return None
 
     def add_track_point(self,gps_lon: float, gps_lat : float):
-        if self.curr_lap_num < 2:
+        if self.curr_lap_num < self.track_ready_lap:
             self.track_lon_lat.append((gps_lon, gps_lat))
 
     def find_track_data(self):
-        if self.track_lon_lat is None or len(self.track_lon_lat) < 2 or self.curr_lap_num < 2:
+        if self.track_lon_lat is None or len(self.track_lon_lat) < 2 or self.curr_lap_num < self.track_ready_lap:
             return None,None,None,None
 
         if self.track is not None:
@@ -326,24 +328,7 @@ class LapDetector:
                     )
                 )
 
-        xs, ys = self.track.xy
-        """
-        
-        plt.figure()
-        plt.plot(xs, ys)  # linia toru
-        # zakręty (mogą być puste gdy żaden kąt nie przekracza sharp_turn_deg):
-        if self.turns_lst:
-            for i, turn in enumerate(self.turns_lst):
-                plt.scatter(turn.middle.lon, turn.middle.lat, c="red", zorder=3)
-                plt.annotate(f"Turn {i+1}\nR={turn.radius_m:.0f}m", (turn.middle.lon, turn.middle.lat), textcoords="offset points", xytext=(0,10), ha='center', fontsize=8)
-        plt.scatter(self.lon_start,self.lat_start, c="green", zorder=3)
-        plt.xlabel("lon")
-        plt.ylabel("lat")
-        plt.axis("equal")
-        plt.savefig("track_with_turns2.png", dpi=300)
-        plt.close()
-        
-        """
+
 class LackOfFuelPred:
     def __init__(self, initial_laps: int = 2):
         self.features: np.ndarray = np.empty((0, 2))
@@ -431,7 +416,7 @@ class LackOfFuelPred:
 class LapTimePred:
     SPLITS = (25, 50, 75)
 
-    def __init__(self):
+    def __init__(self, min_split_laps: int = 2):
         self.track: LineString | None = None
         self.point25: MPoint | None = None
         self.point50: MPoint | None = None
@@ -440,6 +425,7 @@ class LapTimePred:
         self.features_this_lap: dict[int, np.ndarray] = {}
         self.taken_this_lap: set[int] = set()
         self.pending_split: int | None = None
+        self.min_split_laps = min_split_laps
         self.X: dict[int, np.ndarray] = {s: np.empty((0, 4)) for s in self.SPLITS}
         self.y: dict[int, np.ndarray] = {s: np.array([]) for s in self.SPLITS}
         self.pipelines = {
@@ -490,19 +476,16 @@ class LapTimePred:
         feat = self.features_this_lap.get(split)
         if feat is None:
             return None
-        n = len(self.y[split])
-        if n >= 2:
-            return float(self.pipelines[split].predict(feat.reshape(1, -1))[0])
-        if n == 1:
-            return float(self.y[split][-1])
-        return None
+        if len(self.y[split]) < self.min_split_laps:
+            return None
+        return float(self.pipelines[split].predict(feat.reshape(1, -1))[0])
 
     def process_data(self, is_finish_line_crossed: bool, lap_time: float):
         if is_finish_line_crossed:
             for split, feat in self.features_this_lap.items():
                 self.X[split] = np.vstack([self.X[split], feat.reshape(1, -1)])
                 self.y[split] = np.append(self.y[split], lap_time)
-                if len(self.y[split]) >= 2:
+                if len(self.y[split]) >= self.min_split_laps:
                     self.pipelines[split].fit(self.X[split], self.y[split])
             self.features_this_lap.clear()
             self.taken_this_lap.clear()
@@ -601,7 +584,7 @@ class TyreWearPred:
 
         self.retention_history.append((self.lap_num,retention_finished))
         window = self.retention_history[-self.trend_window:]
-        if len(window) < 3:
+        if len(window) < self.trend_window:
             return float(np.clip(retention_finished,0.0,100.0))
 
         x, y = zip(*window)
@@ -613,7 +596,7 @@ class TyreWearPred:
 class BrakeFadePred:
     def __init__(
         self,
-        good_brakes_laps: int = 2,
+        good_brakes_laps: int = 3,
         steer_angle: float = 20.0,
         speed: float = 50.0,
         brake_prs: float = 20.0,
@@ -1071,8 +1054,10 @@ LapCompareResult = namedtuple(
 
 class LapComparePred:
 
-    def __init__(self, hard_brake_thres: float = 50.0):
+    def __init__(self, hard_brake_thres: float = 50.0, min_finished_laps: int = 1):
         self.hard_brake_thres = hard_brake_thres
+        self.min_finished_laps = min_finished_laps
+        self._stored_laps = 0
 
         self.last_lap_time: float | None = None
         self.last_lap_num: int | None = None
@@ -1163,7 +1148,7 @@ class LapComparePred:
         # LapDetector increments curr_lap on crossing; card is for the lap just finished.
         finished_lap_num = max(1, lap_num - 1)
 
-        if self.last_lap_time is None:
+        if self._stored_laps < self.min_finished_laps:
             self.last_lap_time = lap_time
             self.last_lap_num = finished_lap_num
             self.last_lap_speed = avg_speed
@@ -1172,6 +1157,7 @@ class LapComparePred:
             self.best_lap_time = lap_time
             self.best_lap_num = finished_lap_num
             self.best_lap_speed = avg_speed
+            self._stored_laps += 1
             self._reset_lap_accumulators(hv_soc)
             return None
 

@@ -26,9 +26,12 @@ class PredictionClass:
         name: str,
         sensors: set[str],
         refresh_rate: str | None = None,
+        needs_lap: bool = False,
     ):
         self.name = name
         self.sensors = sensors
+        # True: runs only after the lap detector has a start point.
+        self.needs_lap = needs_lap
         # Display label for Telemetry; None → UI "nieregularne odświeżanie".
         self.refresh_rate = refresh_rate
         self.is_prepared = False
@@ -49,6 +52,7 @@ class FuelPrediction(PredictionClass):
             name="CURRENT LAP - PROJECTED FUEL LEVEL AND LAPS TO EMPTY",
             sensors={"FUEL_TANK_L", "CAR_SPEED_KMH"},
             refresh_rate="every lap",
+            needs_lap=True,
         )
         self.model = LackOfFuelPred()
 
@@ -111,6 +115,7 @@ class LapTimePrediction(PredictionClass):
             name="CURRENT LAP - FULL LAP TIME PROJECTED AT 25/50/75% DISTANCE",
             sensors={"CAR_SPEED_KMH", "STATE_OF_CHARGE_PERC", "RPM", "GPS_LON_DEG", "GPS_LAT_DEG"},
             refresh_rate="every 25/50/75% distance",
+            needs_lap=True,
         )
         self.model = LapTimePred()
 
@@ -177,6 +182,7 @@ class TyreWearPrediction(PredictionClass):
                 "THROTTLE_PERC",
             },
             refresh_rate="every lap",
+            needs_lap=True,
         )
         self.model = TyreWearPred()
 
@@ -187,7 +193,14 @@ class TyreWearPrediction(PredictionClass):
         throttle = signals.get("THROTTLE_PERC")
         accel_lat = signals.get("ACCEL_LAT_MS2")
         speed = signals.get("CAR_SPEED_KMH")
-        if steer_angle is None or accel_long is None or brake_prs is None or throttle is None or accel_lat is None:
+        if (
+            steer_angle is None
+            or accel_long is None
+            or brake_prs is None
+            or throttle is None
+            or accel_lat is None
+            or speed is None
+        ):
             logger.warning("Tyre wear signals missing, skipping tyre wear prediction")
             return None
 
@@ -202,16 +215,12 @@ class TyreWearPrediction(PredictionClass):
         if result is None:
             return None
 
-        predicted_for_lap = lap_ctx["curr_lap"]
-        logger.info(
-            "Tyre grip: {:.1f}% retention projected at end of lap {}",
-            float(result),
-            predicted_for_lap,
-        )
-        instruction = (
-            f"Projected tyre grip at end of lap {predicted_for_lap}: "
-            f"{float(result):.1f}% of baseline"
-        )
+        curr_lap = lap_ctx["curr_lap"]
+        if len(self.model.retention_history) >= self.model.trend_window:
+            instruction = f"Projected tyre grip on lap {curr_lap}: {float(result):.1f}% of fresh"
+        else:
+            instruction = f"Tyre grip on lap {curr_lap - 1}: {float(result):.1f}% of fresh (measured)"
+        logger.info("Tyre grip: {}", instruction)
         return RunResult(value=float(result), instruction=instruction)
 
 
@@ -228,6 +237,7 @@ class BrakeFadePrediction(PredictionClass):
                 "AMBIENT_TEMP_C",
             },
             refresh_rate="every lap",
+            needs_lap=True,
         )
         self.model = BrakeFadePred()
 
@@ -260,16 +270,12 @@ class BrakeFadePrediction(PredictionClass):
         if result is None:
             return None
 
-        predicted_for_lap = lap_ctx["curr_lap"]
-        logger.info(
-            "Brake fade: {:.1f}% performance projected at end of lap {}",
-            float(result),
-            predicted_for_lap,
-        )
-        instruction = (
-            f"Projected brake performance at end of lap {predicted_for_lap}: "
-            f"{float(result):.1f}% of baseline"
-        )
+        curr_lap = lap_ctx["curr_lap"]
+        if len(self.model.brake_fade_history) >= self.model.trend_window:
+            instruction = f"Projected brake performance on lap {curr_lap}: {float(result):.1f}% of fresh"
+        else:
+            instruction = f"Brake performance on lap {curr_lap - 1}: {float(result):.1f}% of fresh (measured)"
+        logger.info("Brake fade: {}", instruction)
         return RunResult(value=float(result), instruction=instruction)
 
 
@@ -341,7 +347,13 @@ class CarFluidsPrediction(PredictionClass):
         engine_load = signals.get("ENGINE_LOAD_PERC")
         ambient_temp = signals.get("AMBIENT_TEMP_C")
         speed = signals.get("CAR_SPEED_KMH")
-        if oil_temp is None or rpm is None or engine_load is None or ambient_temp is None:
+        if (
+            oil_temp is None
+            or rpm is None
+            or engine_load is None
+            or ambient_temp is None
+            or speed is None
+        ):
             logger.warning("Car fluids sensors missing, skipping car fluids prediction")
             return None
 
@@ -390,6 +402,7 @@ class SpeedOnTurnsPrediction(PredictionClass):
                 "GPS_LAT_DEG",
             },
             refresh_rate="at each turn",
+            needs_lap=True,
         )
         self.model = SpeedOnTurnsPred()
 
@@ -442,6 +455,7 @@ class LapComparePrediction(PredictionClass):
             name="LAP COMPARISON - FINISHED LAP VS PREVIOUS ONE",
             sensors={"CAR_SPEED_KMH", "BRAKE_PRESSURE_PERC", "STATE_OF_CHARGE_PERC"},
             refresh_rate="every lap",
+            needs_lap=True,
         )
         self.model = LapComparePred()
 
