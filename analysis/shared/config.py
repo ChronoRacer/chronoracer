@@ -20,7 +20,6 @@ class Config(BaseModel):
     CORE_TELEMETRY_URL: str
     TELEMETRY_URL : str
     CLIENT_ID : str
-    KAFKA_PRIVATE_BOOTSTRAP: str  # host:port of the private Kafka listener (e.g. kafka.zone.c.project.internal:9092)
     ANALYSIS_INGEST_TOKEN: str = "TOKEN"
 
 def load_config() -> Config | None:
@@ -39,6 +38,5 @@ def load_config() -> Config | None:
         CORE_TELEMETRY_URL=os.environ["CORE_TELEMETRY_URL"],
         CLIENT_ID="analysis_",
         TELEMETRY_URL=telemetry_url,
-        KAFKA_PRIVATE_BOOTSTRAP=os.environ.get("KAFKA_PRIVATE_BOOTSTRAP", "127.0.0.1:9092"),
         ANALYSIS_INGEST_TOKEN=os.environ.get("ANALYSIS_INGEST_TOKEN", "TOKEN"),
     )

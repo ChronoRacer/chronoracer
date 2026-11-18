@@ -119,11 +119,11 @@ class RulesEngine:
                 s.headers.update({"Authorization": f"Bearer {self.config.ANALYSIS_INGEST_TOKEN}"})
                 payload = self._prepare_alert_json(alert_id,decision)
                 logger.info("Alert {} state {}: {}", alert_id, decision["result"]["state"], payload)
-                req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RULES_ENDPOINT,json=payload,timeout=2)
                 try:
+                    req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RULES_ENDPOINT,json=payload,timeout=2)
                     req.raise_for_status()
                 except Exception as ex:
-                    pass # TODO
+                    logger.warning("Failed to send alert {}: {}", alert_id, ex)
 
     @staticmethod
     def _prepare_alert_json(alert_id,decision:dict):

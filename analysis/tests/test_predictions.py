@@ -4,6 +4,40 @@ from analysis.predictions.predictions_files import PredictionClass
 
 class FakeLapDetector:
     sensors = set()
+    curr_lap_num = 0
+    lap_time = 0.0
+    track_meters = None
+    _project_to_meters = None
+    turns_lst = None
+
+    def __init__(self, start_set=False):
+        self.start_set = start_set
+
+    def is_start_set(self):
+        return self.start_set
+
+    def find_track_data(self):
+        return None, None, None, None
+
+    def get_start_point(self):
+        return None
+
+
+class RecordingPrediction(PredictionClass):
+    def __init__(self, sensors, needs_lap):
+        super().__init__(name="recording", sensors=sensors, needs_lap=needs_lap)
+        self.calls = 0
+
+    def run(self, signals, lap_ctx):
+        self.calls += 1
+        return None
+
+
+def _engine_with(predictions):
+    engine = object.__new__(PredictionsEngine)
+    engine.predictions = predictions
+    engine.send_prediction_state = lambda pred, refresh_rate=None: None
+    return engine
 
 
 def test_get_signals_keeps_latest_sample_for_each_requested_sensor():
@@ -40,3 +74,25 @@ def test_prediction_state_is_announced_once_per_availability_transition():
     engine.handle_message([], {"CAR_SPEED_KMH"}, detector)
 
     assert announcements == [(False, None), (True, "every lap")]
+
+
+def test_window_without_gps_still_runs_predictions_that_do_not_need_a_lap():
+    oil = RecordingPrediction({"OIL_TEMP_C"}, needs_lap=False)
+    fuel = RecordingPrediction({"OIL_TEMP_C"}, needs_lap=True)
+    engine = _engine_with([PredObj("oil", False, oil), PredObj("fuel", False, fuel)])
+    message = [{"sensor_id": "OIL_TEMP_C", "ts": 10, "median": 95.0}]
+
+    engine.handle_message(message, {"OIL_TEMP_C"}, FakeLapDetector(start_set=False))
+
+    assert oil.calls == 1
+    assert fuel.calls == 0
+
+
+def test_lap_predictions_run_without_gps_once_the_lap_start_is_known():
+    fuel = RecordingPrediction({"OIL_TEMP_C"}, needs_lap=True)
+    engine = _engine_with([PredObj("fuel", False, fuel)])
+    message = [{"sensor_id": "OIL_TEMP_C", "ts": 10, "median": 95.0}]
+
+    engine.handle_message(message, {"OIL_TEMP_C"}, FakeLapDetector(start_set=True))
+
+    assert fuel.calls == 1

@@ -66,15 +66,3 @@ class NewPredictionJSON(BaseModel):
     instruction : str  | None
 
     value:        float | None
-
-
-# MESSAGE WRITTEN TO THE `event` KAFKA TOPIC (PRIVATE LISTENER, kafka_event_topic in platform.json).
-# Key  = alert_id or prediction_id, uppercase compact (same convention as all other topics).
-# Body = this model serialised as UTF-8 JSON.
-class DriverEventMessage(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    # Rule name or prediction id — the car computer uses this as a display label.
-    value: float | dict[str, float] | None = None
-    # Numeric reading/prediction, or mapping {sensor_id: value} when multiple sensors participate in an alert.
-    state: str | None = None
-    # Alert severity: BLACK, RED, YELLOW, SENSOR_ERROR. None for prediction messages.

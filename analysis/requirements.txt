@@ -2,7 +2,6 @@
 # Pinned versions are copied from analysis/requirements.txt.
 # Unpinned names are imported, but that file has no version for them.
 
-confluent-kafka==2.16.0
 fastavro==1.13.1
 geopy==2.5.0
 google-cloud-storage==3.17.0

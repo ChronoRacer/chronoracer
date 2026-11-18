@@ -2,7 +2,6 @@ import pytest
 from pydantic import ValidationError
 
 from analysis.shared.contract import (
-    DriverEventMessage,
     NewAlertJSON,
     NewPredictionJSON,
     PredictionRunningJSON,
@@ -70,12 +69,3 @@ def test_timestamp_contract_rejects_values_before_2026_utc():
             prediction_id="fuel_prediction",
             info="Missing required sensors",
         )
-
-
-def test_driver_event_accepts_scalar_and_sensor_map_values():
-    assert DriverEventMessage(name="fuel_prediction", value=12.5).value == 12.5
-    assert DriverEventMessage(
-        name="BRAKE_PRESSURE_DIFF",
-        value={"BRAKE_FRONT": 42.0, "BRAKE_REAR": 37.0},
-        state="YELLOW",
-    ).state == "YELLOW"
