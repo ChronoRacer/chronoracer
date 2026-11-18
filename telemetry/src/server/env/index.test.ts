@@ -32,6 +32,11 @@ describe("loadEnv", () => {
     expect(withEnv({ TELEMETRY_AUTH_DISABLED: "1", TELEMETRY_SENSORS: "a, b,a" }).sensors).toEqual(["a", "b"]);
     expect(() => withEnv({ TELEMETRY_AUTH_DISABLED: "1", TELEMETRY_SENSORS: " , " })).toThrow(/TELEMETRY_SENSORS/);
     expect(() => withEnv({ TELEMETRY_AUTH_DISABLED: "1", TELEMETRY_SENSORS: "x".repeat(25) })).toThrow(/24 bytes/);
+    expect(withEnv({ TELEMETRY_AUTH_DISABLED: "1", TELEMETRY_SENSORS: "ż".repeat(12) }).sensors).toEqual(["ż".repeat(12)]);
+    expect(() => withEnv({ TELEMETRY_AUTH_DISABLED: "1", TELEMETRY_SENSORS: "ż".repeat(13) })).toThrow(/24 bytes/);
+    const ids = (count: number) => Array.from({ length: count }, (_, i) => `s${i}`).join(",");
+    expect(withEnv({ TELEMETRY_AUTH_DISABLED: "1", TELEMETRY_SENSORS: ids(100) }).sensors).toHaveLength(100);
+    expect(() => withEnv({ TELEMETRY_AUTH_DISABLED: "1", TELEMETRY_SENSORS: ids(101) })).toThrow(/TELEMETRY_SENSORS/);
   });
 
   it("names the invalid variable", () => {

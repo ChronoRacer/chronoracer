@@ -178,7 +178,8 @@ Fixed browser OAuth paths on this service: login `/auth/login`, callback `/auth/
 provisioned: no Secret Manager secret or Terraform wiring exists, so the deployed ingest answers `503` until it is.
 
 `TELEMETRY_SENSORS` is the exception: the image sets it (`*`, all sensors) and Terraform does not inject it. It
-is unset or `*` for all sensors, otherwise a comma-separated sensor id list.
+is unset or `*` for all sensors, otherwise a comma-separated sensor id list. A list outside Core's
+[selection limits](component-core.md#clients-and-sensor-selection) stops Telemetry at startup.
 
 Optional tuning variables and the local-only auth switch:
 [Telemetry implementation](../telemetry/IMPLEMENTATION.md#tuning-and-local-variables).
