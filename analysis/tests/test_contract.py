@@ -42,6 +42,19 @@ def test_new_prediction_contract_keeps_nullable_result_fields():
     assert prediction.model_dump(mode="json")["instruction"] is None
 
 
+def test_new_prediction_contract_rounds_value_to_three_decimal_places():
+    prediction = NewPredictionJSON(
+        timestamp=MIN_TIMESTAMP_US,
+        prediction_id="lap_time_prediction",
+        sensors_id=["CAR_SPEED_KMH"],
+        instruction="Projected lap time",
+        value=85.1234567,
+    )
+
+    assert prediction.value == 85.123
+    assert prediction.model_dump(mode="json")["value"] == 85.123
+
+
 def test_alert_contract_rejects_empty_sensor_list_and_non_finite_readings():
     with pytest.raises(ValidationError):
         NewAlertJSON(

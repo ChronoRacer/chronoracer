@@ -1102,7 +1102,7 @@ class LapComparePred:
         else:
             score -= (w_trend * 0.5) * result.delta_lap_time
 
-        return round(min(100.0, max(0.0, score)), 2)
+        return round(min(100.0, max(0.0, score)), 3)
     def process_data(
         self,
         is_finish_line_crossed: bool,

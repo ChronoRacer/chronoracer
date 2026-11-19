@@ -142,7 +142,7 @@ class PredictionsEngine:
             prediction_id=prediction.pred_id,
             sensors_id=sorted(prediction.pred_class.sensors),
             instruction=instruction,
-            value=None if value is None else float(value),
+            value=None if value is None else round(float(value), 3),
         ).model_dump(mode="json")
         self._post(TELEMETRY_PREDICTIONS_ENDPOINT, payload, prediction.pred_id)
 

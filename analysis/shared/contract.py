@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Annotated
 
 TimestampUs = Annotated[int, Field(ge=1767225600000000)]  # TIMESTAMP IN MICROSECONDS (LOWER BOUND = 01.01.2026 UTC)
@@ -65,4 +65,11 @@ class NewPredictionJSON(BaseModel):
 
     instruction : str  | None
 
-    value:        float | None
+    value:        float | None = None
+
+    @field_validator("value")
+    @classmethod
+    def round_value(cls, v: float | None) -> float | None:
+        if v is not None:
+            return round(float(v), 3)
+        return None
