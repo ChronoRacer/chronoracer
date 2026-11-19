@@ -57,13 +57,15 @@ Structure (Terraform GCS backend layout):
 
 - Name: chronoracer-artifacts
 - Lifespan: always-on
-- Written to: when an operator publishes a Core payload (Packer publish script)
-- Writers: Operators (user credentials). Not Core. Not Relay. Not the controller.
-- Read from: Core VM boot (`core/current.json` and the pointed immutable release only in practice)
-- Readers: Core SA (`roles/storage.objectViewer` on the whole bucket)
+- Written to: when an operator publishes a Core or Analysis payload (Packer publish scripts)
+- Writers: Operators (user credentials). Not Core. Not Analysis. Not Relay. Not the controller.
+- Read from: Core VM boot (`core/current.json` and the pointed immutable release only in practice); Analysis VM boot
+  (`analysis/current.json` and the pointed release) and Analysis processes (rules, `sensors.json`, prediction models)
+- Readers: Core SA and Analysis SA (`roles/storage.objectViewer` on the whole bucket)
 - Storage class: `STANDARD`
 - Access: private. No secrets. Not race data.
-- Purpose: floating Core binary so the Core image family does not rebuild on every rust change
+- Purpose: floating Core binary + InfluxDB plugins and Analysis module code, so neither image family rebuilds on every
+  code change
 
 Structure:
 
@@ -71,10 +73,23 @@ Structure:
 /core/current.json
 /core/releases/{release}
       |--- core (binary)
+      |--- /influxdb-plugins
+            |--- export_database.py
+/analysis/sensors.json
+/analysis/sensor_needed.json
+/analysis/sensor_config.json
+/analysis/rules/*.json
+/analysis/predictions/models/{version}/*.onnx
+/analysis/current.json
+/analysis/releases/{release}
+      |--- /analysis
+            |--- /shared, /data_stream, /rules, /predictions
 ```
 
-The publish script uploads a complete release first, then replaces `core/current.json` as its final operation. Core reads
-the pointer once during boot and fetches the binary from that immutable release. Old releases are retained;
+`sensor_needed.json` lists business keys Analysis requires. `sensor_config.json` maps those keys to car physical `sensor_id`s and is built by the Analysis `build_config` CLI. Runtime ingest remaps physical ids to business keys once; see [Analysis](component-analysis.md#runtime-and-inputs).
+
+Each publish script uploads a complete release first, then replaces its `current.json` as its final operation. The VM
+reads the pointer once during boot and fetches the payload from that immutable release. Old releases are retained;
 the image family retention policy is separate and is owned by [Compute images](component-images.md).
 
 Do not put this payload on `chronoracer-race` (Core YAML IAM stays `endsWith("/core-config.yaml")`).

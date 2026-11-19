@@ -14,7 +14,7 @@ source "googlecompute" "analysis" {
   image_name              = "${local.names.analysis_family}-{{timestamp}}"
   image_family            = local.names.analysis_family
   image_storage_locations = [local.image_storage_location]
-  image_description       = "Chronoracer Analysis. Debian 13, Ops Agent, baked Python venv and module code, startup overlay."
+  image_description       = "Chronoracer Analysis. Debian 13, Ops Agent, baked Python venv, startup overlay. Module code is fetched at boot."
   tags                    = ["packer"]
 }
 
@@ -38,14 +38,8 @@ build {
   }
 
   provisioner "file" {
-    sources = [
-      "../../analysis/requirements.txt",
-      "../../analysis/shared",
-      "../../analysis/data_stream",
-      "../../analysis/rules",
-      "../../analysis/predictions",
-    ]
-    destination = "/tmp/analysis-src/"
+    source      = "../../analysis/requirements.txt"
+    destination = "/tmp/analysis-src/requirements.txt"
   }
 
   # The race VM has no NAT, so every Python package is installed here.
@@ -57,6 +51,7 @@ build {
   provisioner "file" {
     sources = [
       "../../analysis/startup/entrypoint.sh",
+      "../../analysis/startup/fetch-payload.sh",
       "../../analysis/startup/render-env.sh",
       "../../analysis/startup/chronoracer-analysis-stream.service",
       "../../analysis/startup/chronoracer-analysis-rules.service",
@@ -89,15 +84,13 @@ build {
       "command -v jq",
       "command -v curl",
       "test -x /chronoracer/entrypoint.sh",
+      "test -x /chronoracer/fetch-payload.sh",
       "test -x /chronoracer/render-env.sh",
       "test -f /chronoracer/chronoracer-analysis-stream.service",
       "test -f /chronoracer/chronoracer-analysis-rules.service",
       "test -f /chronoracer/chronoracer-analysis-predictions.service",
       "test -x /chronoracer/analysis-venv/bin/python",
-      "test -d /chronoracer/analysis/shared",
-      "test -d /chronoracer/analysis/data_stream",
-      "test -d /chronoracer/analysis/rules",
-      "test -d /chronoracer/analysis/predictions",
+      "test ! -e /chronoracer/analysis",
       "test ! -e /tmp/analysis-src",
       "test -f /chronoracer/gce-metadata.sh",
       "test -f /chronoracer/ops-agent.yaml",

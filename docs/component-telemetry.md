@@ -18,8 +18,8 @@ may use it. Browser authentication is shared with the Dashboard: [Okta](componen
 
 - connect to Core's private gRPC `Watch` stream for the whole race
 - retain and shape the received preview data for browser use
-- present accepted sensor values with near-real-time target latency of two to five seconds
-- expose browser HTTPS and WebSocket surfaces, read-only except for driver messages
+- present accepted sensor values with near-real-time target latency under one second
+- expose read-only browser HTTPS and WebSocket surfaces
 - make stream gaps visible rather than imply a complete record
 - accept prediction and alert events from the analysis module and show them next to the sensor values
   ([Analysis ingest](#analysis-ingest))

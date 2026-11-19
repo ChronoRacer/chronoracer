@@ -10,6 +10,8 @@ locals {
   kafka_private_bootstrap = "${local.names.kafka_vm}.${var.zone}.c.${var.project_id}.internal:${local.platform.kafka_private_port}"
   telemetry_root_url      = "https://${local.names.telemetry_service}-${data.google_project.this.number}.${var.region}.run.app"
 
+  analysis_ingest_secret_id = "r-analysis-ingest-${var.race_id}"
+
   # Inline so the controller image (copied *.tf only) does not need extra files at apply.
   overlay_startup = <<-EOT
 #!/bin/bash

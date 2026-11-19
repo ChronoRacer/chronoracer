@@ -100,7 +100,7 @@ flowchart LR
     Kafka -->|private, data, control events| CoreDB
     Telemetry -->|private, gRPC| CoreDB
     Analysis -->|private, gRPC| CoreDB
-    Analysis -->|private, TODO - not specified yet| Telemetry
+    Analysis -->|private, alerts and predictions| Telemetry
     Kafka -->|private, heartbeat| Relay
     CoreDB -->|private, exports| GcsRace
     GcsArt -->|private, Core payload| CoreDB

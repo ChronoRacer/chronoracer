@@ -129,16 +129,22 @@ resource "google_compute_instance" "analysis" {
   }
 
   metadata = {
-    race-id            = var.race_id
-    core-telemetry-url = local.core_telemetry_url
-    telemetry-url      = local.telemetry_root_url
-    startup-script     = local.overlay_startup
+    race-id                   = var.race_id
+    core-telemetry-url        = local.core_telemetry_url
+    telemetry-url             = local.telemetry_root_url
+    analysis-ingest-secret-id = local.analysis_ingest_secret_id
+    startup-script            = local.overlay_startup
   }
 
   service_account {
     email  = data.google_service_account.analysis.email
     scopes = ["cloud-platform"]
   }
+
+  depends_on = [
+    google_secret_manager_secret_version.analysis_ingest,
+    google_secret_manager_secret_iam_member.analysis_ingest_analysis,
+  ]
 
   scheduling {
     preemptible = false

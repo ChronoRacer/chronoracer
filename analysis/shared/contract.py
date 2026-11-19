@@ -7,7 +7,7 @@ ID = Annotated[str, Field(min_length=1)] # THIS IS WHAT ANALYSIS SENDS TO DASHBO
 
 SensorId = Annotated[str,Field(min_length=1)]  # THIS IS WHAT I GET FROM CORE WHEN I AM CONNECTING BY GRPC - SENSOR ID
 
-RefreshRate = Annotated[str, Field(min_length=1)] # PREDICTIONS REFRESH RATE AS DISPLAY TEXT, E.G. "every 2 laps"
+RefreshRate = Annotated[str, Field(min_length=1)]  # Human-readable refresh cadence label for the dashboard.
 
 
 # THIS IS SCHEMA FOR JSON DATA SENT FROM ANALYSIS TO DASHBOARD
@@ -18,7 +18,7 @@ class PredictionRunningJSON(BaseModel):
     timestamp: TimestampUs # timestamp in microseconds
     prediction_id : ID # THIS IS ONE ID FOR ONE TYPE OF PREDICTION
     name : str = Field(...,min_length=1) # "XYZ PREDICTION" - dashboard can use it as a title (especially prediction title)
-    refresh_rate: RefreshRate | None  # THIS CAN BE NONE BECAUSE THERE ARE PREDICTION WHERE YOU CAN'T DETERMINE REFRESH RATE.
+    refresh_rate: RefreshRate | None  # None when cadence cannot be determined; otherwise a display string (not a numeric Hz).
     # WHERE WE CAN SAY EXACTLY TIME THERE THIS TIME WILL BE SEND
 
 # THIS IS NEEDED WHEN PREDICTION CANT BE MADE BECAUSE OF
@@ -66,33 +66,3 @@ class NewPredictionJSON(BaseModel):
     instruction : str  | None
 
     value:        float | None
-
-
-"""
-# THIS IS SCHEMA FOR JSON DATA SENT FROM ANALYSIS TO DASHBOARD
-class NewAnalysisJSON(BaseModel):
-    timestamp: int = Field(...,ge=1767225600000000) # timestamp in microseconds
-
-    alert_pred_id: int = Field(...,ge=1)
-
-    sensor_list: list[str]
-    # list of sensors to identify sensors between modules, these id are from core module
-    # i believe i get these list when i am connecting to core module
-
-    analysis_kind : int  = Field(...,min_length=1,pattern="^[a-zA-Z0-9_-]+$") # ALERT, PREDICTION,
-
-    analysis_message: str | None = Field(None,min_length=1,max_length=127,pattern="^[a-zA-Z0-9_-]+$")
-    # this is a message with id of sensor so you can map it to their name?
-    # but this message is only  with alerts, because predictions there is no reason there
-    # because reason are sending periodically
-
-    analysis_reason: str
-    # this is a description with flag and definition of the flag
-    # (this is constant i mean this is from definitions,
-    # this is not changing between records i mean, definitions are the same
-    # e.g RED-FLAG BECAUSE VALUE WAS HIGHER THAN BY ON WINDOW Z
-
-    value: float | None # additional value for prediction or alert, maybe value that break the rule??
-
-"""
-
