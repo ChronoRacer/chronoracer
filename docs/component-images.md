@@ -10,11 +10,11 @@ For target VMs used, see [ADR - VM types](adr-vm-types.md).
 
 ## Split
 
-All VMs have Google Cloud Ops Agent with whole-VM host metrics (no process scraper) and log sink installed on them.
-
-**Analysis:** full bake. Debian 13 with the shared packages, Google Cloud Ops Agent, contract JSON, the module's Python
-venv and code, and its startup overlay. Rebuild the family when Analysis code, `requirements.txt`, overlay scripts,
-units, agent config, or contract JSON change.
+**Analysis:** hybrid. Packer bakes Debian 13 with the shared packages, Google Cloud Ops Agent, contract JSON, the
+module's Python venv, and its startup overlay. It does **not** bake module code. Rebuild the family when
+`requirements.txt`, overlay scripts, units, agent config, or contract JSON change. Publish code with
+[`infra/packer/publish-analysis-payload.sh`](../infra/packer/publish-analysis-payload.sh). Fetch at boot:
+[Analysis startup](../analysis/startup/README.md#payload).
 
 **Kafka:** full bake. Overlay + Apache Kafka at `/opt/kafka`. Rebuild the family when Kafka, Java, agent config, overlay scripts, or contract JSON change.
 
@@ -26,9 +26,9 @@ Publish the binary with
 [`infra/packer/publish-core-payload.sh`](../infra/packer/publish-core-payload.sh) to the artifacts prefix in
 [GCS](component-gcs_buckets.md). Fetch at boot: [Core startup](../core/startup/README.md).
 
-The payload is published under an immutable `core/releases/.../` prefix. The single GCS object `core/current.json` is
-the release pointer; the next race reads that pointer without a new image. Publishing the pointer is the final step, so
-a VM never reads a release whose upload is incomplete.
+Both hybrid payloads are published under an immutable `{module}/releases/.../` prefix. The single GCS object
+`{module}/current.json` is the release pointer; the next race reads that pointer without a new image. Publishing the
+pointer is the final step, so a VM cannot combine files from two releases.
 
 Do not download vendor packages from the public internet on the private race VMs (no Cloud NAT). Packer builders use the
 **default VPC** and an ephemeral public IP so apt and tarball fetches work. Do not build on the race VPC.
@@ -55,18 +55,21 @@ export PKR_VAR_project_id="$(gcloud config get-value project)"
 ./infra/packer/build-core-vm-image.sh
 ./infra/packer/build-analysis-vm-image.sh
 
-# Build and download Core binary on a native CPU builder
-./infra/packer/build-core-binary.sh
+# Build and download Core binary on a native CPU builder (release ID = core/version.txt)
+./infra/packer/build-core-binary.sh <release-id>
 
-# Publish the Core VM release (Core binary)
-./infra/packer/publish-core-payload.sh /path/to/chronoracer-core
+# Publish the Core VM release (Core binary from ./build/core-<release-id>, InfluxDB plugins)
+./infra/packer/publish-core-payload.sh <release-id>
+
+# Publish the Analysis VM release (module code)
+./infra/packer/publish-analysis-payload.sh <release-id>
 ```
 
 Version pins: [`infra/packer/versions.pkr.hcl`](../infra/packer/versions.pkr.hcl). Apply always-on once so bucket
-`chronoracer-artifacts` exists before the first payload publish. Apply always-on before the first Core race that fetches
-payload. Publish a new payload before that race; a missing `core/current.json` fails Core boot closed.
+`chronoracer-artifacts` exists before the first payload publish. Publish a payload before the first race that fetches
+it; a missing `core/current.json` or `analysis/current.json` fails that VM's boot closed.
 
-Always-on IAM for Core to read artifacts: [Terraform](component-terraform.md).
+Always-on IAM for Core and Analysis to read artifacts: [Terraform](component-terraform.md).
 
 ## Bake contents
 
@@ -97,8 +100,8 @@ schema is compile-time only in the repo ([`core/avro/sensor_data.avsc`](../core/
 read it at runtime ([Core](component-core.md#data-pipeline-batch-contract)).
 
 **Analysis** `/chronoracer/`: overlay from [`analysis/startup`](../analysis/startup) (scripts, three systemd units, Ops
-Agent configuration), `gce-metadata.sh`, `enable-ops-agent.sh`, contract JSON, the build-time
-`/chronoracer/analysis-venv`, and module code at `/chronoracer/analysis`. Venv and code layout:
+Agent configuration, `fetch-payload.sh`), `gce-metadata.sh`, `enable-ops-agent.sh`, contract JSON, and the build-time
+`/chronoracer/analysis-venv`. Module code arrives at boot as `/chronoracer/analysis`. Venv and code layout:
 [Analysis startup](../analysis/startup/README.md#image-bake).
 
 Boot order on the VM: [Kafka startup](../kafka/startup/README.md), [Core startup](../core/startup/README.md),

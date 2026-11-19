@@ -16,6 +16,24 @@ resource "google_project_iam_member" "controller_dns" {
   member  = "serviceAccount:${google_service_account.controller.email}"
 }
 
+resource "google_project_iam_member" "controller_secret_admin" {
+  project = var.project_id
+  role    = "roles/secretmanager.admin"
+  member  = "serviceAccount:${google_service_account.controller.email}"
+}
+
+resource "google_project_iam_member" "controller_version_adder" {
+  project = var.project_id
+  role    = "roles/secretmanager.secretVersionAdder"
+  member  = "serviceAccount:${google_service_account.controller.email}"
+
+  condition {
+    title       = "restrict_to_analysis_token_secret"
+    description = "Allows adding secret versions only to secrets matching r-analysis-ingest-*"
+    expression  = "resource.name.startsWith(\"projects/${var.project_id}/secrets/r-analysis-ingest-\")"
+  }
+}
+
 resource "google_project_iam_member" "controller_firestore" {
   project = var.project_id
   role    = "roles/datastore.user"
@@ -94,6 +112,12 @@ resource "google_project_iam_member" "controller_run" {
   #   description = "Canonical race Telemetry Cloud Run service."
   #   expression  = "resource.name == \"projects/${var.project_id}/locations/${var.region}/services/${local.names.telemetry_service}\""
   # }
+}
+
+resource "google_project_iam_member" "controller_race_secrets" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.controller_race_secrets.id
+  member  = "serviceAccount:${google_service_account.controller.email}"
 }
 
 resource "google_service_account_iam_member" "controller_self" {
@@ -278,6 +302,18 @@ resource "google_storage_bucket_iam_member" "core_artifacts_list" {
   bucket = google_storage_bucket.artifacts.name
   role   = "roles/storage.legacyBucketReader"
   member = "serviceAccount:${google_service_account.core.email}"
+}
+
+resource "google_storage_bucket_iam_member" "analysis_artifacts_read" {
+  bucket = google_storage_bucket.artifacts.name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.analysis.email}"
+}
+
+resource "google_storage_bucket_iam_member" "analysis_artifacts_list" {
+  bucket = google_storage_bucket.artifacts.name
+  role   = "roles/storage.legacyBucketReader"
+  member = "serviceAccount:${google_service_account.analysis.email}"
 }
 
 resource "google_storage_bucket_iam_member" "core_export_write" {

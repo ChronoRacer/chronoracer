@@ -125,3 +125,23 @@ resource "google_project_iam_custom_role" "controller_run" {
     "run.services.update",
   ]
 }
+
+resource "google_project_iam_custom_role" "controller_race_secrets" {
+  project     = var.project_id
+  role_id     = "chronoracerControllerRaceSecrets"
+  title       = "Chronoracer controller per-race secrets"
+  description = "Create and delete race-scoped Secret Manager resources during race apply and destroy."
+
+  permissions = [
+    "secretmanager.secrets.create",
+    "secretmanager.secrets.delete",
+    "secretmanager.secrets.get",
+    "secretmanager.secrets.list",
+    "secretmanager.secrets.setIamPolicy",
+    "secretmanager.secrets.update",
+    "secretmanager.versions.add",
+    "secretmanager.versions.destroy",
+    "secretmanager.versions.get",
+    "secretmanager.versions.list",
+  ]
+}

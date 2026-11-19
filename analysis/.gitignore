@@ -20,6 +20,9 @@ dist/
 .env.*
 !.env.example
 
+# Local ingest sink for alert and prediction posts
+dev/ingest_sink.py
+
 # Local rules and model data
 rules/rules_files/
 models/
@@ -30,3 +33,13 @@ analysis/TODO.txt
 TODOo.txt
 corolla_channels-2.json
 ml/data
+ml/ml.ipynb
+rules/test/files
+/rules/test/files/
+/rules/test/rule_testcases.json
+/dev/closed_track.csv
+/dev/closed_track_feed.py
+/dev/test.sh
+/dev/f1_tracks.py
+/dev/tracks/
+/dev/

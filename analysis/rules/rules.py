@@ -1,3 +1,4 @@
+import sys
 import time
 from collections import  defaultdict
 import zmq
@@ -9,6 +10,9 @@ from loguru import logger
 from pydantic import BaseModel
 from analysis.shared.config import load_config
 from analysis.shared.contract import NewAlertJSON, SensorValue
+from analysis.shared.gcs_retry import retry_gcs_call
+
+RULES_PREFIX = "analysis/rules/"
 
 
 class RuleObj(BaseModel):
@@ -32,43 +36,46 @@ class Signal(BaseModel):
 
 class GoRulesSchema(BaseModel):
     eval_ts_ms : int
-    signals : dict[str,Signal] # sensor_id - Signal
+    signals : dict[str,Signal]
 
-TELEMETRY_RULES_ENDPOINT = "/alerts/"
+TELEMETRY_RULES_ENDPOINT = "/analysis/v1/alerts"
 TIME_CACHE_NS = 3 * 1_000_000_000
+
+
+def load_rules_from_gcs(client: storage.Client) -> dict[str, RuleObj]:
+    bucket = client.bucket("chronoracer-artifacts")
+    rules: dict[str, RuleObj] = {}
+    for blob in client.list_blobs(bucket, prefix=RULES_PREFIX):
+        if not blob.name.endswith(".json"):
+            continue
+        rule_json = orjson.loads(blob.download_as_text())
+        name = str(blob.name).split("/")[-1].removesuffix(".json")
+        rules[name] = RuleObj(
+            rule_json=rule_json,
+            sensors=set(RulesEngine._get_mandatory_sensors(rule_json)),
+        )
+    if not rules:
+        raise RuntimeError(f"No rule JSON objects under gs://chronoracer-artifacts/{RULES_PREFIX}")
+    return rules
+
+
+def load_rules_with_retry(client_factory=storage.Client, sleep=time.sleep) -> dict[str, RuleObj]:
+    rules = retry_gcs_call(
+        lambda: load_rules_from_gcs(client_factory("chronoracer")),
+        what="load rules from GCS",
+        sleep=sleep,
+    )
+    logger.info("Loaded {} rules: {}", len(rules), list(rules.keys()))
+    return rules
+
+
 class RulesEngine:
     def __init__(self,config):
         self.config = config
-        self.client = storage.Client("chronoracer")
-        self.bucket = self.client.bucket("chronoracer-artifacts")
         self.engine = zen.ZenEngine({"loader": self.loader})
+        self.rules : dict[str,RuleObj] = load_rules_with_retry()
+        self.time_cache : dict[str,int] = {}
 
-        self.rules : dict[str,RuleObj] = {}
-        for blob in self.client.list_blobs(self.bucket,prefix="analysis/rules/"):
-            if blob.name.endswith(".json"):
-                rule_json = orjson.loads(blob.download_as_text())
-                sensors = set(self._get_mandatory_sensors(rule_json))
-                rule = RuleObj(
-                    rule_json=rule_json,
-                    sensors=sensors
-                )
-                self.rules[str(blob.name).split("/")[-1]] = rule
-        self.sensors : dict[str,Sensor] = self.fetch_sensor()
-        self.time_cache : dict[str,int] = {} # (rule_id) ---> time in ns
-        # maybe cache made by tuple alert_id, state
-    def fetch_sensor(self):
-        sensors = {}
-        blob = self.bucket.blob("analysis/sensors.json")
-        data_str = blob.download_as_text()
-        json_data = orjson.loads(data_str)
-        for obj in json_data["sensors"]:
-            sensors[obj["name"]] = Sensor(
-                id=obj["name"],
-                min=obj["min"],
-                max=obj["max"],
-                desc=obj["description"]
-            )
-        return sensors
 
     @staticmethod
     def _get_mandatory_sensors(rule_obj: dict) -> list[str]:
@@ -79,8 +86,6 @@ class RulesEngine:
     def loader(self,key:str):
         return self.rules[key].rule_json
 
-    # TODO CHECK IF ZEROMQ QUEUE IS NOT BLOCKED BY MY FOR LOOP
-    # AND IF WE  LOOSE MESSAGES BECAUSE OF ITERATING CONSTANT THROUGH RULES MAP
     def handle_message(self,message: dict, sensors: set[str]):
         for rule_name in self.rules.keys():
             rule_obj = self.rules[rule_name]
@@ -93,7 +98,7 @@ class RulesEngine:
                 self.send_decision(rule_name,decision)
 
     def send_decision(self,alert_id:str,decision:dict):
-        if decision["result"]["state"] not in ("YELLOW","RED","BLACK"):
+        if decision["result"]["state"] not in ("YELLOW","RED","BLACK", "SENSOR_ERROR"):
             return
         send_decision = False
         time_now = time.time_ns()
@@ -109,14 +114,14 @@ class RulesEngine:
 
         if send_decision:
             with requests.Session() as s:
-                s.headers.update({"Authorization": "Bearer TOKEN"})
+                s.headers.update({"Authorization": f"Bearer {self.config.ANALYSIS_INGEST_TOKEN}"})
                 payload = self._prepare_alert_json(alert_id,decision)
-                print(payload)
-                #req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RULES_ENDPOINT,json=payload,timeout=2)
-                #try:
-                #    req.raise_for_status()
-                #except Exception as ex:
-                #    pass # TODO
+                logger.info("Alert {} state {}: {}", alert_id, decision["result"]["state"], payload)
+                try:
+                    req = s.post(self.config.TELEMETRY_URL + TELEMETRY_RULES_ENDPOINT,json=payload,timeout=2)
+                    req.raise_for_status()
+                except Exception as ex:
+                    logger.warning("Failed to send alert {}: {}", alert_id, ex)
 
     @staticmethod
     def _prepare_alert_json(alert_id,decision:dict):
@@ -130,7 +135,6 @@ class RulesEngine:
             timestamp=time.time_ns() // 1000,
             alert_id=alert_id,
             sensors=_get_sensors_pair(),
-            # TODO MOZNA DODAĆ CZAS WYSTĄPIENIA JAKO W JS CZAS PRÓBKI (CURRENTVAL - X) W SENSIE POCZĄTEK CIĄGU
             analysis_message=decision["result"]["analysis_message"],
             analysis_reason=decision["result"]["analysis_reason"]
         )
@@ -148,29 +152,30 @@ class RulesEngine:
         return signals
 
 def main():
+    logger.info("Rules engine starting")
     config = load_config()
     if config is None:
         logger.error("Missing config, exiting")
-        return
+        sys.exit(1)
     rules_engine = RulesEngine(config)
 
     context = zmq.Context()
     sub_socket = context.socket(zmq.SUB)
     sub_socket.setsockopt(zmq.SUBSCRIBE, b"sensor_agg")
-
     sub_socket.connect("tcp://127.0.0.1:6767")
+    logger.info("Rules engine subscribed to sensor_agg on tcp://127.0.0.1:6767")
+    logger.info("Rules engine running")
 
     while True:
-        topic, raw_payload = sub_socket.recv_multipart()
-        data = orjson.loads(raw_payload.decode("utf-8"))
-        if topic == b"sensor_agg":
-            available_sensors = set([msg["sensor_id"] for msg in data])
-            rules_engine.handle_message(message=data,sensors=available_sensors)
-
+        try:
+            topic, raw_payload = sub_socket.recv_multipart()
+            data = orjson.loads(raw_payload.decode("utf-8"))
+            if topic == b"sensor_agg":
+                available_sensors = set([msg["sensor_id"] for msg in data])
+                rules_engine.handle_message(message=data,sensors=available_sensors)
+        except Exception:
+            logger.warning("Rules engine timeout waiting for messages, retrying...")
 if __name__ == "__main__":
     main()
 
-# TODO retries - when server is not up yet, we should retry to connect to it.
-# TODO - NO DATA TO CHANGE STATE == OLD STATE
 
-# TODO co jeśl dostane paiety z przeszłości bo byly byforowane ???

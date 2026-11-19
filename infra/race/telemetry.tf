@@ -1,3 +1,47 @@
+resource "random_password" "analysis_ingest" {
+  length  = 64
+  special = false
+}
+
+resource "google_secret_manager_secret" "analysis_ingest" {
+  secret_id = local.analysis_ingest_secret_id
+  project   = var.project_id
+
+  replication {
+    user_managed {
+      replicas {
+        location = var.region
+      }
+    }
+  }
+}
+
+resource "google_secret_manager_secret_version" "analysis_ingest" {
+  secret      = google_secret_manager_secret.analysis_ingest.id
+  secret_data = random_password.analysis_ingest.result
+}
+
+resource "google_secret_manager_secret_iam_member" "analysis_ingest_analysis" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.analysis_ingest.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${data.google_service_account.analysis.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "analysis_ingest_telemetry" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.analysis_ingest.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${data.google_service_account.telemetry.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "analysis_ingest_run_agent" {
+  project   = var.project_id
+  secret_id = google_secret_manager_secret.analysis_ingest.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:service-${data.google_project.this.number}@serverless-robot-prod.iam.gserviceaccount.com"
+}
+
 resource "google_cloud_run_v2_service" "telemetry" {
   name                = local.names.telemetry_service
   project             = var.project_id
@@ -48,7 +92,6 @@ resource "google_cloud_run_v2_service" "telemetry" {
         timeout_seconds   = 1
       }
 
-      # TODO: [IMPORTANT!] This should be bumped after testing
       resources {
         limits = {
           cpu    = "1"
@@ -92,8 +135,24 @@ resource "google_cloud_run_v2_service" "telemetry" {
           }
         }
       }
+
+      env {
+        name = "ANALYSIS_INGEST_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.analysis_ingest.secret_id
+            version = "latest"
+          }
+        }
+      }
     }
   }
+
+  depends_on = [
+    google_secret_manager_secret_version.analysis_ingest,
+    google_secret_manager_secret_iam_member.analysis_ingest_telemetry,
+    google_secret_manager_secret_iam_member.analysis_ingest_run_agent,
+  ]
 
   lifecycle {
     ignore_changes = all

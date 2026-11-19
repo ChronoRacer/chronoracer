@@ -3,24 +3,34 @@ import time
 import pathway as pw
 import grpc
 from analysis.shared.config import Config
+from analysis.shared.sensor_map import load_physical_to_business_with_retry, to_business_id
 from loguru import logger
 
 from analysis.shared.proto import telemetry_v1_pb2_grpc
 from analysis.shared.proto import  telemetry_v1_pb2
 
 
+def is_backward_timestamp(timestamp_nano: int, last_accepted_nano: int | None) -> bool:
+    return last_accepted_nano is not None and timestamp_nano < last_accepted_nano
+
+
 class GRPCSensorStream(pw.io.python.ConnectorSubject):
-    def __init__(self,config: Config) -> None:
+    def __init__(self, config: Config) -> None:
         super().__init__()
         self.config = config
-        self.max_retries  =  5
         self.retry_delay_seconds = 1
+        self.max_retry_delay_seconds = 5
+        self.physical_to_business = load_physical_to_business_with_retry()
+        self._unmapped_warned: set[str] = set()
+        self._last_accepted_ns: dict[str, int] = {}
+
     def run(self):
-        while self.max_retries >= 0:
-            address_without_prefix = self.config.CORE_TELEMETRY_URL.removeprefix("http://")
+        address_without_prefix = self.config.CORE_TELEMETRY_URL.removeprefix("http://")
+
+        while True:
             channel = grpc.insecure_channel(address_without_prefix)
-            stub = telemetry_v1_pb2_grpc.TelemetryStub(channel)
             try:
+                stub = telemetry_v1_pb2_grpc.TelemetryServiceStub(channel)
                 req = telemetry_v1_pb2.WatchRequest(
                     client_id=self.config.CLIENT_ID,
                     all=telemetry_v1_pb2.AllSensors()
@@ -28,28 +38,83 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
                 call = stub.Watch(req)
                 for event in call:
                     if event.HasField("hello"):
-                        logger.info("Connected {}",event.hello.stream_id)
+                        logger.info("Connected to Core: stream_id={}", event.hello.stream_id)
+                        self.retry_delay_seconds = 1
                     elif event.HasField("point_batch"):
-                        for point in event.point_batch.points:
-                            self.next(
-                                sensor_id=point.sensor_id,
-                                timestamp_nano=point.timestamp_nanos,
-                                value=point.value,
-                                driver_id=point.driver_id
-                            )
+                        points = event.point_batch.points
+                        if points:
+                            now_ns = time.time_ns()
+                            latencies_ms = [
+                                (now_ns - p.timestamp_nanos) / 1_000_000
+                                for p in points
+                                if p.timestamp_nanos > 0
+                            ]
+                            if latencies_ms:
+                                avg_latency = sum(latencies_ms) / len(latencies_ms)
+                                max_latency = max(latencies_ms)
+                                min_latency = min(latencies_ms)
+                                if avg_latency > 1500.0:
+                                    logger.warning(
+                                        "High ingestion latency from Core: avg={:.1f}ms, max={:.1f}ms, min={:.1f}ms ({} points)",
+                                        avg_latency, max_latency, min_latency, len(points),
+                                    )
+                                else:
+                                    logger.debug(
+                                        "Ingested point_batch ({} points) from Core, latency: avg={:.1f}ms, max={:.1f}ms",
+                                        len(points), avg_latency, max_latency,
+                                    )
+                        for point in points:
+                            business_id = to_business_id(point.sensor_id, self.physical_to_business)
+                            if business_id is None:
+                                if point.sensor_id not in self._unmapped_warned:
+                                    logger.warning(
+                                        "Dropping unmapped physical sensor_id={!r}; add it to analysis/sensor_config.json",
+                                        point.sensor_id,
+                                    )
+                                    self._unmapped_warned.add(point.sensor_id)
+                                continue
+                            if is_backward_timestamp(
+                                point.timestamp_nanos,
+                                self._last_accepted_ns.get(business_id),
+                            ):
+                                logger.debug(
+                                    "Dropping backward point sensor_id={} ts={} last_accepted={}",
+                                    business_id,
+                                    point.timestamp_nanos,
+                                    self._last_accepted_ns[business_id],
+                                )
+                                continue
+                            try:
+                                self.next(
+                                    sensor_id=business_id,
+                                    timestamp_nano=point.timestamp_nanos,
+                                    value=point.value,
+                                    driver_id=point.driver_id
+                                )
+                                self._last_accepted_ns[business_id] = point.timestamp_nanos
+                            except Exception as ex:
+                                logger.error("Failed to forward point {} to Pathway: {}", business_id, ex)
                     elif event.HasField("gap"):
-                        pass
-                logger.info("GRPC CORE HAS ENDED STREAMING DATA")
-                break
+                        logger.warning("gRPC stream gap detected from Core")
+                logger.warning("gRPC stream from Core finished. Reconnecting...")
             except grpc.RpcError as ex:
-                logger.error("Error with GRPC connection to Core {}. Try to reconnect - left {} tries",ex,self.max_retries)
-                self.max_retries -= 1
-                self.retry_delay_seconds *= 2
-                time.sleep(self.retry_delay_seconds)
+                logger.error(
+                    "gRPC error from Core (code={}) - retrying in {}s... Details: {}",
+                    ex.code() if hasattr(ex, "code") else "UNKNOWN",
+                    self.retry_delay_seconds,
+                    ex,
+                )
+            except Exception as ex:
+                logger.error(
+                    "Unexpected error in gRPC stream: {} - retrying in {}s...",
+                    ex,
+                    self.retry_delay_seconds,
+                )
+            finally:
+                channel.close()
 
-        logger.info("CLOSING PATHWAY CONNECTOR")
+            time.sleep(self.retry_delay_seconds)
+            self.retry_delay_seconds = min(self.retry_delay_seconds * 2, self.max_retry_delay_seconds)
+
     def on_stop(self):
-        # WHEN I USE TEMP FILES I CAN DELETE IT HERE BECAUSE
-        # ON STOP SIGNALS WHEN PATHWAY HAS ENDED JOB SO WE DONT NEED TO KEEP THESE VALUES ANYMORE
         pass
-

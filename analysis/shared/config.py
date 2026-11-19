@@ -7,19 +7,15 @@ from pydantic import  BaseModel
 
 REQUIRED_ENV = (
     "CORE_TELEMETRY_URL",
-    #CLIENT_ID
-    "TELEMETRY_URL"
+    "TELEMETRY_URL",
 )
 
 
-
-# This is config for analysis module, it is loaded from env variables
-# this is not only for env but for all the configuration needs of the analysis module
-# this is not place to define default value for rules config !!!
 class Config(BaseModel):
     CORE_TELEMETRY_URL: str
     TELEMETRY_URL : str
     CLIENT_ID : str
+    ANALYSIS_INGEST_TOKEN: str = "TOKEN"
 
 def load_config() -> Config | None:
     load_dotenv(find_dotenv())
@@ -30,8 +26,12 @@ def load_config() -> Config | None:
 
     logger.info("Analysis config loaded")
 
+    telemetry_url = os.environ["TELEMETRY_URL"]
+    if "://" not in telemetry_url and "https://" not in telemetry_url:
+        telemetry_url = "http://" + telemetry_url
     return Config(
         CORE_TELEMETRY_URL=os.environ["CORE_TELEMETRY_URL"],
-        CLIENT_ID="analysis_" + uuid.uuid7().hex,
-        TELEMETRY_URL=os.environ["TELEMETRY_URL"]
+        CLIENT_ID="analysis_",
+        TELEMETRY_URL=telemetry_url,
+        ANALYSIS_INGEST_TOKEN=os.environ.get("ANALYSIS_INGEST_TOKEN", "TOKEN"),
     )

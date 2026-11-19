@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish the Analysis image family (venv, module code, startup overlay).
+# Publish the Analysis image family (venv, startup overlay).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
