@@ -1,5 +1,4 @@
 import math
-import threading
 
 import numpy as np
 import pyproj
@@ -194,11 +193,7 @@ class LapDetector:
         self.p50 = MPoint(lat=p50_wgs84.y, lon=p50_wgs84.x)
         self.p75 = MPoint(lat=p75_wgs84.y, lon=p75_wgs84.x)
 
-        now = time.time_ns()
-        #thread = threading.Thread(target=self._determine_turns,args=(track_meters,project_to_wgs84))
-        #thread.start()
         self._determine_turns(track_meters,project_to_wgs84)
-        print("LICZBA ZAKRETÓW:", len(self.turns_lst) if self.turns_lst is not None else 0)
         return self.track, self.p25, self.p50, self.p75
 
     def _get_turn_radius(self,ptA,ptB,ptC) -> float:
@@ -236,8 +231,8 @@ class LapDetector:
                 bgm_rad = BayesianGaussianMixture(n_components=2, random_state=42, max_iter=200)
                 bgm_rad.fit(X_rad)
                 rad_means = bgm_rad.means_.flatten()
-                turn_rad_idx = int(np.argmin(rad_means))      # smaller radius = corners
-                straight_rad_idx = int(np.argmax(rad_means))  # larger radius = straights
+                turn_rad_idx = int(np.argmin(rad_means))
+                straight_rad_idx = int(np.argmax(rad_means))
                 rad_thresh = float((rad_means[turn_rad_idx] + rad_means[straight_rad_idx]) / 2.0)
             else:
                 rad_thresh = self.turn_radius
@@ -253,7 +248,6 @@ class LapDetector:
         clean_track = track_meters.simplify(tolerance=self.turn_tolerance)
         points = list(clean_track.coords)
 
-        # Pre-pass: collect all vertex geometric features across the track
         vertex_stats = []
         all_angles = []
         all_radii = []
@@ -280,10 +274,8 @@ class LapDetector:
             if radius != float('inf'):
                 all_radii.append(radius)
 
-        # Estimate dynamic thresholds via 2-component Bayesian Gaussian Mixture (BGM)
         bgm_sharp_deg, bgm_turn_radius = self._estimate_thresholds_bgm(all_angles, all_radii)
 
-        # 1. Collect candidates matching the BGM-calibrated thresholds
         candidates = []
         for point_B, angle_deg, radius in vertex_stats:
             if abs(angle_deg) >= bgm_sharp_deg and radius <= bgm_turn_radius:
@@ -296,15 +288,12 @@ class LapDetector:
                     "angle_deg": angle_deg,
                 })
 
-        # 2. Cluster candidates closer than distance_from_turns and pick true Apex (min radius)
         if candidates:
-            # Sort along track distance
             candidates.sort(key=lambda c: c["s_dist"])
             clusters = []
             curr_cluster = [candidates[0]]
 
             for cand in candidates[1:]:
-                # If within distance threshold of the cluster, belong to the same corner complex
                 if (cand["s_dist"] - curr_cluster[-1]["s_dist"]) <= self.distance_from_turns:
                     curr_cluster.append(cand)
                 else:
@@ -315,16 +304,15 @@ class LapDetector:
 
             self.turns_lst = []
             for cluster in clusters:
-                # Motorsport Apex: the point with minimum radius (tightest apex, slowest speed)
                 apex = min(cluster, key=lambda c: c["radius"])
                 p_wgs84 = shapely_transform(apex["point"], meters_to_wgs84.transform, interleaved=False)
-                k = math.cos(math.radians(p_wgs84.y))  # skala 3857 -> prawdziwe metry
+                k = math.cos(math.radians(p_wgs84.y))
                 self.turns_lst.append(
                     MTurn(
                         middle=MPoint(lat=p_wgs84.y, lon=p_wgs84.x),
                         radius_m=apex["radius"] * k,
                         is_left_turn=apex["angle_deg"] > 0,
-                        s_m=float(apex["s_dist"]) * k,  # przybliżenie, wystarczy dla toru o rozmiarze kilku km
+                        s_m=float(apex["s_dist"]) * k,
                     )
                 )
 
@@ -337,7 +325,7 @@ class LackOfFuelPred:
         self.last_mean_speed: float | None = None
         self.initial_laps: int = initial_laps
         self.initial_laps_const = initial_laps
-        self.start_point: MPoint | None = None  # Point(Lat,Lon) on the track
+        self.start_point: MPoint | None = None
         self.huber_reg = HuberRegressor(max_iter=100)
 
     def set_start_point(self, point: MPoint):
@@ -508,12 +496,8 @@ class TyreWearPred:
         self.steer_angle: float = steer_angle
         self.min_fit_sample : int = min_fit_sample
         self.trend_window : int = trend_window
-        # MEASURES ON FIRST X LAPS WHEN TYRES ARE IN THE BEST CONDITION
         self.good_features : list[list[float]] = []
         self.good_results : list[float] =  []
-
-
-        # CURRENT LAP MEASURES
         self.current_lap_features : list[list[float]] = []
         self.current_lap_actual_grip : list[float] = []
 
@@ -609,8 +593,6 @@ class BrakeFadePred:
         self.brake_prs = brake_prs
         self.min_fit_sample = min_fit_sample
         self.trend_window = trend_window
-
-        # First X laps: baseline while brakes are still fresh.
         self.good_features: list[list[float]] = []
         self.good_results: list[float] = []
 
@@ -642,7 +624,6 @@ class BrakeFadePred:
         hv_soc: float,
         ambient_temp: float,
     ):
-        # Keep only mostly straight, meaningful braking samples.
         if abs(steer_angle) > self.steer_angle or speed_kmh < self.speed or brake_prs < self.brake_prs:
             return
 
@@ -694,7 +675,6 @@ class BrakeFadePred:
         self.brake_fade_history.append((self.lap_num, brake_fade_finished))
         window = self.brake_fade_history[-self.trend_window:]
         if len(window) < self.trend_window:
-            # Not enough trend yet: report the just-finished lap as a guess for the next.
             return float(np.clip(brake_fade_finished, 0.0, 100.0))
         x, y = zip(*window)
         slope, intercept = np.polyfit(x, y, 1)
@@ -727,8 +707,6 @@ class CarFluidsPred:
         return max(1, self.window_length_s // self.check_time_s)
 
     def fill(self, oil_temp : float, rpm : float, engine_load : float, speed_kmh : float, ambient_temp : float ):
-        # Bucket by check_time_s so each interval contributes one averaged row
-        # (modulo-on-elapsed fired on every message during that second).
         sample_bucket = self._elapsed_s() // self.check_time_s
         delta = oil_temp - self.window[-1].oil_temp if self.window else 0.0
         row = _feature_row_tuple(
@@ -760,7 +738,6 @@ class CarFluidsPred:
 
     def process_data(self,oil_temp : float, rpm : float, engine_load : float, speed_kmh : float, ambient_temp : float ):
         horizon_steps = self._horizon_steps()
-        # Need one full horizon of input rows and their future-temperature labels.
         if len(self.window) < 2 * horizon_steps:
             return None
         fit_bucket = self._elapsed_s() // self.fit_time_s
@@ -1135,7 +1112,6 @@ class LapComparePred:
         hv_soc: float,
         brake_prs: float,
     ) -> LapCompareResult | None:
-        # Accumulate every tick; emit a card only when the finish line is crossed.
         if not is_finish_line_crossed:
             self._note_sample(speed_kmh, brake_prs, hv_soc)
             return None

@@ -5,7 +5,6 @@ from grpc_tools import protoc
 from loguru import logger
 
 
-# Ustalenie katalogu głównego repozytorium (szukanie katalogu z .git lub markerem projektu)
 def find_repo_root(current_path: Path) -> Path:
     for parent in [current_path] + list(current_path.parents):
         if (parent / ".git").exists() or (parent / "analysis").exists():
@@ -26,7 +25,6 @@ def build_protos() -> None:
 
     PROTO_DEST.mkdir(parents=True, exist_ok=True)
 
-    # Zapewnienie istnienia pakietu pythonowego
     init_file = PROTO_DEST / "__init__.py"
     if not init_file.exists():
         init_file.touch()
@@ -36,7 +34,6 @@ def build_protos() -> None:
         logger.warning("No .proto files found in source directory: {}", PROTO_SRC)
         return
 
-    # Dolaczenie wbudowanych definicji proto z biblioteki grpc_tools
     grpc_include = Path(grpc_tools.__file__).parent / "_proto"
 
     command = [

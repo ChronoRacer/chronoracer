@@ -36,7 +36,7 @@ class Signal(BaseModel):
 
 class GoRulesSchema(BaseModel):
     eval_ts_ms : int
-    signals : dict[str,Signal] # sensor_id - Signal
+    signals : dict[str,Signal]
 
 TELEMETRY_RULES_ENDPOINT = "/analysis/v1/alerts"
 TIME_CACHE_NS = 3 * 1_000_000_000
@@ -74,7 +74,7 @@ class RulesEngine:
         self.config = config
         self.engine = zen.ZenEngine({"loader": self.loader})
         self.rules : dict[str,RuleObj] = load_rules_with_retry()
-        self.time_cache : dict[str,int] = {} # (rule_id) ---> time in ns
+        self.time_cache : dict[str,int] = {}
 
 
     @staticmethod
@@ -86,8 +86,6 @@ class RulesEngine:
     def loader(self,key:str):
         return self.rules[key].rule_json
 
-    # TODO CHECK IF ZEROMQ QUEUE IS NOT BLOCKED BY MY FOR LOOP
-    # AND IF WE  LOOSE MESSAGES BECAUSE OF ITERATING CONSTANT THROUGH RULES MAP
     def handle_message(self,message: dict, sensors: set[str]):
         for rule_name in self.rules.keys():
             rule_obj = self.rules[rule_name]

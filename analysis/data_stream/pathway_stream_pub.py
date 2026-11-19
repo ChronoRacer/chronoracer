@@ -60,15 +60,11 @@ pub_socket.setsockopt(zmq.SNDHWM,10_000)
 pub_socket.bind("tcp://127.0.0.1:6767")
 logger.info("ZMQ PUB bound on tcp://127.0.0.1:6767")
 
-# MOVE IT TO CONSTANTS
 TOPIC_SENSOR_AGG = b"sensor_agg"
 TOPIC_SENSOR_PRED = b"sensor_pred"
 
-
-
 FAST_CELL_NS =500_000_001
 SLOW_CELL_NS =1_000_000_001
-# Window emits at window end. Late points are dropped at ingest, not waited for here.
 TOLERANCE_NS = 0
 def get_sensor_batch(table, duration: int):
     return (
@@ -89,10 +85,6 @@ def get_sensor_batch(table, duration: int):
             ),
             window_min_val=pw.reducers.min(pw.this.value),
             window_max_val=pw.reducers.max(pw.this.value),
-            # MIN AND MAX ARE TO CHECK IF WE HAVE TO SCAN WINDOW-VALUES
-            # BECAUSE WHEN WE COMPARE MIN/MAX AND THERE WILL BE NO RULES VIOLATION
-            # THERE OTHER VALUES BETWEEN ALSO WONT VIOLATE IT
-
             window_min_ts_ns=pw.reducers.min(pw.this.timestamp_nano),
             window_max_ts_ns=pw.reducers.max(pw.this.timestamp_nano),
             sample_count=pw.reducers.count()
@@ -134,14 +126,6 @@ def main():
         GRPCSensorStream(config),schema=GRPCSchema,autocommit_duration_ms=100
     )
     logger.info("STARTING PATHWAY STREAMING JOB")
-    # i can make other windows for predictions separate from these below
-
-
-    # finally i have to get knowledge about slow and fast sensors
-    # so map with sensors and kind ??
-    #fast_sensor = get_sensor_batch(slow=False)
-
-
 
     slow_sensor = get_sensor_batch(table,SLOW_CELL_NS)
     pred_sensor = get_stream_batched_pred(table,FAST_CELL_NS)
@@ -154,7 +138,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-#GRPC ---> PATHWAY ZBIERA ODSZUMIONY SYGNAŁ W PACZKI PO X NS ----> PACZKA IDZIE DO GORULES ---> WYKRYWANIE UTRZYAMNIA WARTOSC DLA PROGU PRZEZ DT
-# napewno też min samples w oknie
 

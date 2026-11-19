@@ -30,18 +30,13 @@ class PredictionClass:
     ):
         self.name = name
         self.sensors = sensors
-        # True: runs only after the lap detector has a start point.
         self.needs_lap = needs_lap
-        # Display label for Telemetry; None → UI "nieregularne odświeżanie".
         self.refresh_rate = refresh_rate
         self.is_prepared = False
 
     def need_prepare(self) -> bool:
         return not self.is_prepared
 
-    # Subclasses override this with prediction-specific logic.
-    # ``signals`` maps sensor_id -> Value(ts_ns, val).
-    # ``lap_ctx`` carries lap detector state shared by every prediction.
     def run(self, signals: dict, lap_ctx: dict) -> RunResult | None:
         return None
 
@@ -386,7 +381,6 @@ class CarFluidsPrediction(PredictionClass):
         return RunResult(value=float(result), instruction=instruction)
 
 
-# NEW
 class SpeedOnTurnsPrediction(PredictionClass):
     def __init__(self):
         super().__init__(
@@ -448,7 +442,6 @@ class SpeedOnTurnsPrediction(PredictionClass):
         return RunResult(value=float(max_safe_kmh), instruction=instruction)
 
 
-# lap time, avg speed, hard brakes, HV SoC — each finished lap vs previous / best
 class LapComparePrediction(PredictionClass):
     def __init__(self):
         super().__init__(
