@@ -8,6 +8,7 @@ Each concept has one owner. Other docs link it. Do not copy or rephrase the same
 | GCP region decision                                                                    | [ADR - Region](adr-region.md)                                     |
 | Resource names                                                                         | [`infra/contract/names.json`](../infra/contract/names.json)       |
 | Ports, Kafka/Cloud Build/export topics, Kafka OAuth JWKS/issuer/audience               | [`infra/contract/platform.json`](../infra/contract/platform.json) |
+| Race car sensor ids, units, ranges                                                     | [`infra/contract/sensors.json`](../infra/contract/sensors.json)   |
 | Terraform stacks, backends, IAM, always-on vs race resources, `ingest_open`, image pin | [Terraform](component-terraform.md)                               |
 | Controller process (env, bind, YAML HEAD, CLI, apply Firestore writes, exits)          | [Controller](component-controller.md)                             |
 | Relay HTTP and Pub/Sub API                                                             | [Relay](component-relay.md)                                       |

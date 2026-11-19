@@ -7,11 +7,11 @@ export const predictionStatus = (p: Prediction): PredictionStatus =>
 
 /** Analysis timestamps are Unix microseconds. */
 export const formatTimeUs = (timestampUs: number): string =>
-  new Date(timestampUs / 1000).toLocaleTimeString('pl-PL');
+  new Date(timestampUs / 1000).toLocaleTimeString('en-GB');
 
-export function formatRefreshRate(refreshRate: number | null | undefined): string {
+export function formatRefreshRate(refreshRate: string | null | undefined): string {
   if (refreshRate === undefined) {
-    return 'nie ogłoszono';
+    return 'NOT ANNOUNCED';
   }
-  return refreshRate === null ? 'nieregularne odświeżanie' : `częstotliwość ${refreshRate}`;
+  return refreshRate === null ? 'IRREGULAR REFRESH' : refreshRate.toUpperCase();
 }

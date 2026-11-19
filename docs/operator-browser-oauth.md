@@ -54,8 +54,8 @@ terraform output dashboard_uri
 https://telemetry-{project number}.{region}.run.app
 ```
 
-4. Register both callback URLs as **Allowed Callback URLs** and both service roots as **Allowed Logout URLs**. The
-   Telemetry callback path is part of its container contract and must be fixed before registration.
+4. Register both callback URLs as **Allowed Callback URLs** and both service roots as **Allowed Logout URLs**.
+   Telemetry's callback path and logout return URL: [container contract](component-telemetry.md#container-contract).
 
 Dashboard uses its mapped hostname. A failing `dashboard_root_url` Terraform check means its registration must be
 updated. Telemetry uses no domain mapping; Relay returns the actual Terraform service URI.

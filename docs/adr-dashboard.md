@@ -94,4 +94,5 @@ This removes:
 - Core's telemetry endpoint has no public route and no application credential; firewall source range is its
   authorization boundary.
 - Dashboard or Telemetry failure never blocks Kafka, Core, Influx, shutdown, or export.
-- No component here provides alerts or write actions.
+- Neither component evaluates alerts or offers browser write actions. Telemetry only displays the predictions and
+  alerts analysis pushes to its token-authorized [analysis ingest](component-telemetry.md#analysis-ingest).

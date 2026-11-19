@@ -8,9 +8,9 @@
 export type SensorSelection = string[] | undefined;
 
 export type RingLimits = {
-  maxPointsPerSensor: number;
+  bucketMs: number;
   maxAgeMs: number;
-  maxTotalPoints: number;
+  maxTotalBuckets: number;
 };
 
 export type FanoutConfig = {
@@ -28,6 +28,9 @@ export type OAuthConfig = {
 
 export type AuthConfig = { enabled: false } | ({ enabled: true } & OAuthConfig);
 
+/** Kafka private listener for driver messages; undefined disables sending. */
+export type DriverKafkaConfig = { bootstrap: string; topic: string } | undefined;
+
 export type TelemetryEnv = {
   port: number;
   coreTelemetryUrl: string;
@@ -37,5 +40,6 @@ export type TelemetryEnv = {
   fanout: FanoutConfig;
   auth: AuthConfig;
   analysisIngestToken: string | undefined;
+  driverKafka: DriverKafkaConfig;
   clientDir: string | undefined;
 };

@@ -8,9 +8,17 @@
 
 import { createEnv } from '@t3-oss/env-core';
 import { serverEnvShape, type RawEnv } from './schema.js';
-import type { AuthConfig, TelemetryEnv } from './types.js';
+import type { AuthConfig, DriverKafkaConfig, TelemetryEnv } from './types.js';
 
-export type { AuthConfig, FanoutConfig, OAuthConfig, RingLimits, SensorSelection, TelemetryEnv } from './types.js';
+export type {
+  AuthConfig,
+  DriverKafkaConfig,
+  FanoutConfig,
+  OAuthConfig,
+  RingLimits,
+  SensorSelection,
+  TelemetryEnv,
+} from './types.js';
 
 export function loadEnv(): TelemetryEnv {
   const raw = createEnv({
@@ -32,9 +40,9 @@ function toTelemetryEnv(raw: RawEnv): TelemetryEnv {
     raceId: raw.RACE_ID || undefined,
     sensors: raw.TELEMETRY_SENSORS,
     ring: {
-      maxPointsPerSensor: raw.TELEMETRY_MAX_POINTS_PER_SENSOR,
+      bucketMs: raw.TELEMETRY_BUCKET_MS,
       maxAgeMs: raw.TELEMETRY_RETENTION_MS,
-      maxTotalPoints: raw.TELEMETRY_MAX_POINTS,
+      maxTotalBuckets: raw.TELEMETRY_MAX_BUCKETS,
     },
     fanout: {
       tickMs: raw.TELEMETRY_FANOUT_TICK_MS,
@@ -43,7 +51,18 @@ function toTelemetryEnv(raw: RawEnv): TelemetryEnv {
     clientDir: raw.TELEMETRY_CLIENT_DIR || undefined,
     auth: toAuthConfig(raw),
     analysisIngestToken: raw.ANALYSIS_INGEST_TOKEN || undefined,
+    driverKafka: toDriverKafka(raw),
   };
+}
+
+function toDriverKafka({ KAFKA_PRIVATE_BOOTSTRAP: bootstrap, KAFKA_EVENT_TOPIC: topic }: RawEnv): DriverKafkaConfig {
+  if (!bootstrap && !topic) {
+    return undefined;
+  }
+  if (!bootstrap || !topic) {
+    throw new Error('Driver messages need both KAFKA_PRIVATE_BOOTSTRAP and KAFKA_EVENT_TOPIC, or neither');
+  }
+  return { bootstrap, topic };
 }
 
 function toAuthConfig(raw: RawEnv): AuthConfig {

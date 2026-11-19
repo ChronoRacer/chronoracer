@@ -62,7 +62,7 @@ Out of Okta:
 | Caller                    | Token                                                       | Surface                                                       |
 |---------------------------|-------------------------------------------------------------|---------------------------------------------------------------|
 | Operator                  | Auth0 access token, audience `https://api.chronoracer.com`  | Relay start / event / status / history / stop / force-destroy |
-| Operator (browser)        | Auth0 user login, authorization code                        | Dashboard and Telemetry, read-only                            |
+| Operator (browser)        | Auth0 user login, authorization code                        | Dashboard and Telemetry, read-only except Telemetry [driver messages](component-telemetry.md#driver-messages) |
 | Track device              | Auth0 client credentials (client id + secret on the device) | Kafka PUBLIC listener only                                    |
 | Cloud Build / export-done | Google OIDC                                                 | Relay push paths; not Okta                                    |
 

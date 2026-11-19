@@ -11,6 +11,7 @@
 
 import WebSocket from 'ws';
 import type { AnalysisStore } from '../analysis/index.js';
+import type { DriverMessages } from '../driver/index.js';
 import type { FanoutConfig } from '../env/index.js';
 import { log } from '../log.js';
 import type { PreviewStore, StoreStatus } from '../store/index.js';
@@ -33,6 +34,7 @@ export class FanoutHub {
   constructor(
     private readonly store: PreviewStore,
     private readonly analysis: AnalysisStore,
+    private readonly driver: DriverMessages,
     private readonly config: FanoutConfig,
   ) {}
 
@@ -57,8 +59,14 @@ export class FanoutHub {
       if (message === undefined) {
         return;
       }
-      client.sensors = 'sensors' in message ? new Set(message.sensors) : undefined;
-      client.key = client.sensors ? [...client.sensors].sort().join(',') : '*';
+      const sensors = 'sensors' in message ? new Set(message.sensors) : undefined;
+      const key = sensors ? [...sensors].sort().join(',') : '*';
+      // The same selection is already covered by the snapshot sent or queued for it.
+      if (key === client.key) {
+        return;
+      }
+      client.sensors = sensors;
+      client.key = key;
       client.needsSnapshot = true;
     });
   }
@@ -72,6 +80,7 @@ export class FanoutHub {
   private flush(): void {
     const delta = this.store.drain();
     const analysis = this.analysis.drain();
+    const driver = this.driver.drain();
     const status = this.store.status();
     const statusChanged = status.connected !== this.sentStatus?.connected || status.hello !== this.sentStatus?.hello;
     this.sentStatus = status;
@@ -110,7 +119,13 @@ export class FanoutHub {
         client.needsSnapshot = false;
         send(
           frame(`snapshot:${key}`, () =>
-            encode({ type: 'snapshot', ...this.store.snapshot(sensors), ...this.analysis.snapshot() }),
+            encode({
+              type: 'snapshot',
+              tickMs: this.config.tickMs,
+              ...this.store.snapshot(sensors),
+              ...this.analysis.snapshot(),
+              ...this.driver.snapshot(),
+            }),
           ),
         );
         continue;
@@ -120,9 +135,11 @@ export class FanoutHub {
         send(frame('status', () => encode({ type: 'status', ...status })));
       }
       send(
-        frame(`points:${key}`, () => {
-          const points = sensors ? delta.points.filter((p) => sensors.has(p.sensorId)) : delta.points;
-          return points.length > 0 ? encode({ type: 'points', points }) : undefined;
+        frame(`buckets:${key}`, () => {
+          const buckets = only(delta.buckets, sensors);
+          const latest = only(delta.latest, sensors);
+          const changed = Object.keys(buckets).length > 0 || Object.keys(latest).length > 0;
+          return changed ? encode({ type: 'buckets', buckets, latest }) : undefined;
         }),
       );
       if (delta.gaps.length > 0) {
@@ -131,6 +148,16 @@ export class FanoutHub {
       if (analysis.predictions.length > 0 || analysis.alerts.length > 0) {
         send(frame('analysis', () => encode({ type: 'analysis', ...analysis })));
       }
+      if (driver.messages.length > 0 || driver.active !== undefined) {
+        send(frame('driver', () => encode({ type: 'driver', ...driver })));
+      }
     }
   }
+}
+
+function only<T>(bySensor: Record<string, T>, sensors: ReadonlySet<string> | undefined): Record<string, T> {
+  if (sensors === undefined) {
+    return bySensor;
+  }
+  return Object.fromEntries(Object.entries(bySensor).filter(([sensorId]) => sensors.has(sensorId)));
 }

@@ -18,6 +18,7 @@ import { Hono } from 'hono';
 import type WebSocket from 'ws';
 import { analysisRoutes, type AnalysisIngestAuth, type AnalysisStore } from './analysis/index.js';
 import { authRoutes, oidcConfig, readSession, requireSameOrigin, requireSession } from './auth/index.js';
+import { driverRoutes, type DriverMessages, type DriverPublisher } from './driver/index.js';
 import type { AuthConfig } from './env/index.js';
 import type { FanoutHub } from './fanout/hub.js';
 import { log, logError } from './log.js';
@@ -32,6 +33,8 @@ export type HttpDeps = {
   analysisIngestToken: string | undefined;
   store: PreviewStore;
   analysis: AnalysisStore;
+  driver: DriverMessages;
+  driverPublisher: DriverPublisher | undefined;
   hub: FanoutHub;
 };
 
@@ -42,6 +45,8 @@ export function startHttpServer({
   clientDir,
   store,
   analysis,
+  driver,
+  driverPublisher,
   hub,
 }: HttpDeps): Server {
   const root = path.resolve(clientDir ?? BUILT_CLIENT_DIR);
@@ -64,6 +69,8 @@ export function startHttpServer({
   app.route('/analysis/v1', analysisRoutes(analysis, ingestAuth(auth, analysisIngestToken)));
   app.get('/api/sensors', signedIn, (c) => c.json({ sensorIds: store.sensorIds(), stats: store.stats() }));
   app.get('/api/analysis', signedIn, (c) => c.json(analysis.snapshot()));
+  app.use('/api/driver/*', requireSameOrigin(auth), signedIn);
+  app.route('/api/driver', driverRoutes(driver, driverPublisher, auth));
   app.get(
     '/ws',
     requireSameOrigin(auth),
@@ -78,7 +85,10 @@ export function startHttpServer({
   const server = createServer(getRequestListener(app.fetch));
   injectWebSocket(server);
   const analysisIngest = ingestAuth(auth, analysisIngestToken).mode;
-  server.listen(port, () => log('telemetry_listening', { port, ui: root, auth: auth.enabled, analysisIngest }));
+  const driverMessages = driverPublisher ? 'kafka' : 'disabled';
+  server.listen(port, () =>
+    log('telemetry_listening', { port, ui: root, auth: auth.enabled, analysisIngest, driverMessages }),
+  );
   return server;
 }
 

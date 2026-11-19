@@ -1,29 +1,61 @@
 /**
- * @fileoverview In-Memory Ring Buffer Store for Live Telemetry
+ * @fileoverview In-Memory Bucket Store for Live Telemetry
  *
- * High-performance, time-series ring buffer using double-ended queues (`Denque`).
- * Handles point ingestion, stream gap detection, memory eviction rules (TTL + capacity limits),
- * and incremental delta accumulation for downstream websockets.
+ * Folds every point into its sensor's bucket of `bucketMs` source time, on a grid shared by all sensors, keeping the
+ * bucket's minimum and maximum. The browser draws about one bucket per pixel, so its work stays bounded at any input
+ * rate and peaks are not lost. Handles stream gap detection, retention (arrival age + caps), and collects what
+ * changed since the last drain for downstream websockets.
  */
 
 import Denque from 'denque';
 import type { CoreGap, Hello, Point } from '../core/types.js';
 import type { RingLimits } from '../env/index.js';
-import { BYTES_PER_POINT_ESTIMATE, MAX_GAPS_COUNT } from './constants.js';
-import type { Delta, GapEvent, RingStats, StoreSnapshot, StoreStatus } from './types.js';
+import { BYTES_PER_BUCKET_ESTIMATE, MAX_GAPS_COUNT } from './constants.js';
+import type { Buckets, Delta, GapEvent, Latest, RingStats, StoreSnapshot, StoreStatus } from './types.js';
 
-type Entry = { point: Point; receivedAtMs: number };
+type Bucket = {
+  index: number;
+  /** Over finite samples. */
+  min: number;
+  max: number;
+  /** Source time of `min` and `max` (ns as a float), only to order them. */
+  minAt: number;
+  maxAt: number;
+  /** Held a non-finite sample: sent as a hole. */
+  hole: boolean;
+  /** Changed since the last drain. */
+  dirty: boolean;
+  /** Arrival of its first sample, for retention. */
+  receivedAtMs: number;
+};
+
+type Sensor = {
+  /** By bucket index. Iteration order is the arrival order of each bucket's first sample. */
+  buckets: Map<number, Bucket>;
+  /** Newest sample by source time, for instruments. */
+  lastAt: number;
+  lastValue: number;
+  lastDirty: boolean;
+};
 
 export class PreviewStore {
-  private readonly series = new Map<string, Denque<Entry>>();
+  private readonly sensors = new Map<string, Sensor>();
   private readonly gaps = new Denque<GapEvent>();
-  private delta: Delta = { points: [], gaps: [] };
+  private readonly bucketNanos: number;
+  /** A sensor with a sane clock fills at most one bucket per `bucketMs` within the retention age. */
+  private readonly maxBucketsPerSensor: number;
+  private changedBuckets: [string, Bucket][] = [];
+  private changedLatest: string[] = [];
+  private newGaps: GapEvent[] = [];
   private hello: Hello | undefined;
   private connected = false;
-  private pointCount = 0;
-  private evictedPoints = 0;
+  private bucketCount = 0;
+  private evictedBuckets = 0;
 
-  constructor(private readonly limits: RingLimits) {}
+  constructor(private readonly limits: RingLimits) {
+    this.bucketNanos = limits.bucketMs * 1_000_000;
+    this.maxBucketsPerSensor = Math.ceil(limits.maxAgeMs / limits.bucketMs);
+  }
 
   connect(hello: Hello): void {
     if (this.hello && this.hello.streamId !== hello.streamId) {
@@ -43,10 +75,19 @@ export class PreviewStore {
 
   ingest(points: Point[]): void {
     const now = Date.now();
-    for (const point of points) {
-      this.seriesFor(point.sensorId).push({ point, receivedAtMs: now });
-      this.pointCount += 1;
-      this.delta.points.push(point);
+    for (const { sensorId, timestampNanos, value } of points) {
+      // A float loses sub-microsecond precision at today's epoch, which cannot move a sample across a bucket.
+      const at = Number(timestampNanos);
+      const sensor = this.sensorFor(sensorId);
+      fold(this.bucketFor(sensorId, sensor, Math.floor(at / this.bucketNanos), now), at, value);
+      if (at >= sensor.lastAt) {
+        sensor.lastAt = at;
+        sensor.lastValue = value;
+        if (!sensor.lastDirty) {
+          sensor.lastDirty = true;
+          this.changedLatest.push(sensorId);
+        }
+      }
     }
     this.evict(now);
   }
@@ -60,39 +101,68 @@ export class PreviewStore {
   }
 
   sensorIds(): string[] {
-    return [...this.series.keys()].sort();
+    return [...this.sensors.keys()].sort();
   }
 
   stats(): RingStats {
     return {
-      pointsInStore: this.pointCount,
-      sensorCount: this.series.size,
-      approxBytes: this.pointCount * BYTES_PER_POINT_ESTIMATE,
-      evictedPoints: this.evictedPoints,
+      bucketsInStore: this.bucketCount,
+      sensorCount: this.sensors.size,
+      approxBytes: this.bucketCount * BYTES_PER_BUCKET_ESTIMATE,
+      evictedBuckets: this.evictedBuckets,
     };
   }
 
   snapshot(sensors?: ReadonlySet<string>): StoreSnapshot {
-    const pointsBySensor: StoreSnapshot['pointsBySensor'] = {};
-    for (const [sensorId, series] of this.series) {
+    const buckets: Record<string, Buckets> = {};
+    const latest: Latest = {};
+    for (const [sensorId, sensor] of this.sensors) {
       if (sensors === undefined || sensors.has(sensorId)) {
-        pointsBySensor[sensorId] = series
-          .toArray()
-          .map(({ point: { timestampNanos, value, driverId } }) => ({ timestampNanos, value, driverId }));
+        buckets[sensorId] = encode([...sensor.buckets.values()]);
+        latest[sensorId] = sensor.lastValue;
       }
     }
     return {
       ...this.status(),
       sensorIds: this.sensorIds(),
-      pointsBySensor,
+      bucketMs: this.limits.bucketMs,
+      buckets,
+      latest,
       gaps: this.gaps.toArray(),
       stats: this.stats(),
     };
   }
 
+  /** Buckets and newest samples changed since the previous drain, and new gaps. */
   drain(): Delta {
-    const delta = this.delta;
-    this.delta = { points: [], gaps: [] };
+    const changed = new Map<string, Bucket[]>();
+    for (const [sensorId, bucket] of this.changedBuckets) {
+      bucket.dirty = false;
+      if (this.sensors.get(sensorId)?.buckets.get(bucket.index) === bucket) {
+        const list = changed.get(sensorId);
+        if (list) {
+          list.push(bucket);
+        } else {
+          changed.set(sensorId, [bucket]);
+        }
+      }
+    }
+    const buckets: Record<string, Buckets> = {};
+    for (const [sensorId, list] of changed) {
+      buckets[sensorId] = encode(list);
+    }
+    const latest: Latest = {};
+    for (const sensorId of this.changedLatest) {
+      const sensor = this.sensors.get(sensorId);
+      if (sensor) {
+        sensor.lastDirty = false;
+        latest[sensorId] = sensor.lastValue;
+      }
+    }
+    const delta = { buckets, latest, gaps: this.newGaps };
+    this.changedBuckets = [];
+    this.changedLatest = [];
+    this.newGaps = [];
     return delta;
   }
 
@@ -101,46 +171,103 @@ export class PreviewStore {
     if (this.gaps.length > MAX_GAPS_COUNT) {
       this.gaps.shift();
     }
-    this.delta.gaps.push(gap);
+    this.newGaps.push(gap);
   }
 
-  private seriesFor(sensorId: string): Denque<Entry> {
-    const existing = this.series.get(sensorId);
+  private sensorFor(sensorId: string): Sensor {
+    const existing = this.sensors.get(sensorId);
     if (existing) {
       return existing;
     }
-    const series = new Denque<Entry>();
-    this.series.set(sensorId, series);
-    return series;
+    const sensor: Sensor = { buckets: new Map(), lastAt: -Infinity, lastValue: Number.NaN, lastDirty: false };
+    this.sensors.set(sensorId, sensor);
+    return sensor;
+  }
+
+  private bucketFor(sensorId: string, sensor: Sensor, index: number, nowMs: number): Bucket {
+    let bucket = sensor.buckets.get(index);
+    if (bucket === undefined) {
+      bucket = {
+        index,
+        min: Infinity,
+        max: -Infinity,
+        minAt: 0,
+        maxAt: 0,
+        hole: false,
+        dirty: false,
+        receivedAtMs: nowMs,
+      };
+      sensor.buckets.set(index, bucket);
+      this.bucketCount += 1;
+    }
+    if (!bucket.dirty) {
+      bucket.dirty = true;
+      this.changedBuckets.push([sensorId, bucket]);
+    }
+    return bucket;
   }
 
   private evict(nowMs: number): void {
-    const { maxAgeMs, maxPointsPerSensor, maxTotalPoints } = this.limits;
-    const cutoffMs = nowMs - maxAgeMs;
-    const tooOld = (series: Denque<Entry>) => (series.peekFront()?.receivedAtMs ?? Infinity) < cutoffMs;
-
-    for (const series of this.series.values()) {
-      while (series.length > maxPointsPerSensor || tooOld(series)) {
-        this.evictOldest(series);
+    const cutoffMs = nowMs - this.limits.maxAgeMs;
+    for (const [sensorId, sensor] of this.sensors) {
+      for (const bucket of sensor.buckets.values()) {
+        if (sensor.buckets.size <= this.maxBucketsPerSensor && bucket.receivedAtMs >= cutoffMs) {
+          break;
+        }
+        this.evictBucket(sensorId, sensor, bucket);
       }
     }
-    while (this.pointCount > maxTotalPoints) {
-      for (const series of this.series.values()) {
-        if (this.pointCount > maxTotalPoints && !series.isEmpty()) {
-          this.evictOldest(series);
+    while (this.bucketCount > this.limits.maxTotalBuckets) {
+      let oldest: [string, Sensor, Bucket] | undefined;
+      for (const [sensorId, sensor] of this.sensors) {
+        const first = sensor.buckets.values().next().value;
+        if (first && (oldest === undefined || first.receivedAtMs < oldest[2].receivedAtMs)) {
+          oldest = [sensorId, sensor, first];
         }
       }
-    }
-    for (const [sensorId, series] of this.series) {
-      if (series.isEmpty()) {
-        this.series.delete(sensorId);
+      if (oldest === undefined) {
+        return;
       }
+      this.evictBucket(...oldest);
     }
   }
 
-  private evictOldest(series: Denque<Entry>): void {
-    series.shift();
-    this.pointCount -= 1;
-    this.evictedPoints += 1;
+  private evictBucket(sensorId: string, sensor: Sensor, bucket: Bucket): void {
+    sensor.buckets.delete(bucket.index);
+    this.bucketCount -= 1;
+    this.evictedBuckets += 1;
+    if (sensor.buckets.size === 0) {
+      this.sensors.delete(sensorId);
+    }
   }
+}
+
+function fold(bucket: Bucket, at: number, value: number): void {
+  if (!Number.isFinite(value)) {
+    bucket.hole = true;
+    return;
+  }
+  if (value < bucket.min) {
+    bucket.min = value;
+    bucket.minAt = at;
+  }
+  if (value > bucket.max) {
+    bucket.max = value;
+    bucket.maxAt = at;
+  }
+}
+
+/** Wire form of `Buckets`: ascending by index, extremes in the order they occurred. */
+function encode(buckets: Bucket[]): Buckets {
+  const out: Buckets = [];
+  for (const { index, min, max, minAt, maxAt, hole } of buckets.sort((a, b) => a.index - b.index)) {
+    if (hole) {
+      out.push(index, null, null);
+    } else if (minAt <= maxAt) {
+      out.push(index, min, max);
+    } else {
+      out.push(index, max, min);
+    }
+  }
+  return out;
 }

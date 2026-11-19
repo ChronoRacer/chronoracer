@@ -1,5 +1,5 @@
-import type { ConnectionKind } from "../hooks/useTelemetrySocket";
-import type { Hello } from "../../shared/protocol";
+import type { Hello } from '../../shared/protocol';
+import type { ConnectionKind } from '../hooks/useTelemetrySocket';
 
 type Props = {
   connection: ConnectionKind;
@@ -7,33 +7,32 @@ type Props = {
   hello: Hello | undefined;
 };
 
-export function ConnectionStatus({ connection, coreConnected, hello }: Props) {
-  let label = "Łączenie…";
-  let dot: "ok" | "warn" | "bad" | "" = "warn";
+type Status = { label: string; detail: string; dot: 'ok' | 'warn' | 'bad' };
 
-  if (connection === "closed") {
-    label = "WebSocket rozłączony — ponawianie";
-    dot = "bad";
-  } else if (connection === "overloaded") {
-    label = "Klient przeciążony — podgląd na tej przeglądarce gubi dane";
-    dot = "warn";
-  } else if (connection === "open" && coreConnected) {
-    label = "Na żywo";
-    dot = "ok";
-  } else if (connection === "open") {
-    label = "UI połączone — oczekiwanie na Core Watch";
-    dot = "warn";
+function status({ connection, coreConnected }: Props): Status {
+  if (connection === 'closed') {
+    return { label: 'OFFLINE', detail: 'WebSocket closed; reconnecting', dot: 'bad' };
   }
+  if (connection === 'overloaded') {
+    return { label: 'OVERLOADED', detail: 'This browser falls behind; updates are skipped until a resync', dot: 'warn' };
+  }
+  if (connection === 'open' && coreConnected) {
+    return { label: 'LIVE', detail: 'Receiving from Core', dot: 'ok' };
+  }
+  if (connection === 'open') {
+    return { label: 'WAITING FOR CORE', detail: 'Connected to Telemetry; Core watch not connected', dot: 'warn' };
+  }
+  return { label: 'CONNECTING…', detail: 'Opening WebSocket', dot: 'warn' };
+}
 
+export function ConnectionStatus(props: Props) {
+  const { label, detail, dot } = status(props);
+  const { hello } = props;
   return (
-    <div className="status" title={hello ? `stream ${hello.streamId}` : undefined}>
+    <div className={`conn conn-${dot}`} title={hello ? `${detail}\nrace ${hello.raceId} · stream ${hello.streamId}` : detail}>
       <span className={`dot ${dot}`} />
-      <span>{label}</span>
-      {hello ? (
-        <span>
-          · wyścig {hello.raceId} · stream {hello.streamId.slice(0, 8)}…
-        </span>
-      ) : null}
+      <span className="conn-label">{label}</span>
+      {hello ? <span className="conn-race">{hello.raceId}</span> : null}
     </div>
   );
 }

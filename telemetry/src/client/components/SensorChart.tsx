@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useContext, useEffect, useRef } from 'react';
 import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
+import { FanoutTick } from '../lib/fanout-tick';
 import { WINDOW_SEC, type SeriesStore } from '../lib/series-store';
 
 export type ChartSeries = { id: string; color: string; dash?: number[] };
@@ -10,6 +11,7 @@ type Props = {
   series: readonly ChartSeries[];
   min: number | null;
   max: number | null;
+  /** Fixed height in px; omitted, the chart fills its parent's height. */
   height?: number;
 };
 
@@ -39,9 +41,13 @@ const yRange =
     return hasData ? [Math.min(min, lo), Math.max(max, hi)] : [min, max];
   };
 
-// Created once per card; each store frame updates the data and slides the shared time window.
-export function SensorChart({ store, series, min, max, height = 96 }: Props) {
+// Skip only tiny scrolls; too high a threshold makes the window crawl in visible steps.
+const MIN_SCROLL_PX = 0.15;
+
+// Created once per card; each animation frame slides the shared time window, and new points replace the data.
+export function SensorChart({ store, series, min, max, height }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const tickMs = useContext(FanoutTick);
   const key = series.map((s) => `${s.id}:${s.color}:${s.dash?.join(',') ?? ''}`).join('|');
 
   useEffect(() => {
@@ -49,10 +55,10 @@ export function SensorChart({ store, series, min, max, height = 96 }: Props) {
     if (!el) {
       return;
     }
+    const size = () => ({ width: el.clientWidth || 300, height: height ?? Math.max(el.clientHeight, 80) });
     const plot = new uPlot(
       {
-        width: el.clientWidth || 300,
-        height,
+        ...size(),
         legend: { show: false },
         cursor: { sync: { key: 'sensors' } },
         scales: { x: { time: true }, y: { range: yRange(min, max) } },
@@ -64,30 +70,38 @@ export function SensorChart({ store, series, min, max, height = 96 }: Props) {
     );
 
     let drawnVersion = '';
-    const draw = () => {
+    let drawnEnd = Number.NaN;
+    let frame = 0;
+    const draw = (nowMs: number) => {
+      frame = requestAnimationFrame(draw);
       const version = series.map((s) => store.version(s.id)).join(',');
+      const end = store.viewEnd(nowMs, tickMs);
+      const scrollPx = (Math.abs(end - drawnEnd) * plot.bbox.width) / uPlot.pxRatio / WINDOW_SEC;
+      if (version === drawnVersion && scrollPx < MIN_SCROLL_PX) {
+        return;
+      }
       plot.batch(() => {
         if (version !== drawnVersion) {
           drawnVersion = version;
           plot.setData(alignedData(store, series), false);
         }
-        plot.setScale('x', { min: store.latest - WINDOW_SEC, max: store.latest });
+        drawnEnd = end;
+        plot.setScale('x', { min: end - WINDOW_SEC, max: end });
       });
     };
-    draw();
-    const stopFrames = store.onFrame(draw);
-    const resize = new ResizeObserver(() => plot.setSize({ width: el.clientWidth, height }));
+    draw(performance.now());
+    const resize = new ResizeObserver(() => plot.setSize(size()));
     resize.observe(el);
 
     return () => {
-      stopFrames();
+      cancelAnimationFrame(frame);
       resize.disconnect();
       plot.destroy();
     };
     // `key` stands for `series`, which callers usually pass as a fresh literal.
-  }, [store, key, min, max, height]);
+  }, [store, key, min, max, height, tickMs]);
 
-  return <div className="chart" ref={rootRef} />;
+  return <div className={height === undefined ? 'chart fill' : 'chart'} ref={rootRef} />;
 }
 
 // Series sampled at different instants share one x axis; uPlot spans the alignment holes but keeps NaN gaps.

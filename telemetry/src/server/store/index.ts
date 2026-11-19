@@ -3,4 +3,4 @@
  */
 
 export { PreviewStore } from './PreviewStore.js';
-export type { Delta, GapEvent, RingStats, StoreSnapshot, StoreStatus } from './types.js';
+export type { Buckets, Delta, GapEvent, Latest, RingStats, StoreSnapshot, StoreStatus } from './types.js';
