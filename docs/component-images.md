@@ -16,16 +16,13 @@ module's Python venv, and its startup overlay. It does **not** bake module code.
 [`infra/packer/publish-analysis-payload.sh`](../infra/packer/publish-analysis-payload.sh). Fetch at boot:
 [Analysis startup](../analysis/startup/README.md#payload).
 
-**Kafka:** full bake. Overlay + Apache Kafka at `/opt/kafka` + Google Cloud Ops Agent with whole-VM host metrics (no process scraper).
-Rebuild the family when Kafka, Java, agent config, overlay scripts, or contract JSON change.
+**Kafka:** full bake. Overlay + Apache Kafka at `/opt/kafka`. Rebuild the family when Kafka, Java, agent config, overlay scripts, or contract JSON change.
 
-**Core:** hybrid. Packer bakes Debian, InfluxDB 3 Core, Google Cloud Ops Agent with whole-VM host metrics (no process
-scraper), `rpk` and its pinned Redpanda Connect package (do not install manually with sudo or it will fail), `yq`,
-Google Cloud CLI, overlay scripts,
-`default-config.yaml`, Redpanda templates, contract JSON, and the build-time InfluxDB plugin environment. It does
-**not** bake the Core rust binary or InfluxDB plugin source files.
+**Core:** hybrid. Packer bakes Debian, InfluxDB 3 Core, `rpk` and its pinned Redpanda Connect package (do not install manually with sudo or it will fail), `yq`,
+Google Cloud CLI, overlay scripts, `default-config.yaml`, Redpanda templates, and contract JSON. It does
+**not** bake the Core rust binary.
 
-Publish the binary and plugins with
+Publish the binary with
 [`infra/packer/publish-core-payload.sh`](../infra/packer/publish-core-payload.sh) to the artifacts prefix in
 [GCS](component-gcs_buckets.md). Fetch at boot: [Core startup](../core/startup/README.md).
 
@@ -84,17 +81,18 @@ overlays as `/chronoracer/gce-metadata.sh`. Boot scripts source it and read proj
 the GCE metadata server. They do not call the Compute API. Race VM service accounts do not need
 `compute.instances.get`.
 
+**Time sync (Core and Kafka):** [`configure-timesync.sh`](../infra/packer/scripts/configure-timesync.sh) bakes a
+`systemd-timesyncd` drop-in (`NTP=metadata.google.internal`, poll 16-32 s). Core latency metrics depend on
+cross-VM clock offset.
+
 **Kafka** `/chronoracer/`: overlay from [`kafka/startup`](../kafka/startup) (scripts, `kafka.service`, Ops Agent
 configuration),
-`gce-metadata.sh`, `enable-ops-agent.sh`, plus `names.json` and `platform.json`. No Core dirs (`influxdb-plugins`, `redpanda`). Broker bits at
+`gce-metadata.sh`, `enable-ops-agent.sh`, plus `names.json` and `platform.json`. No Core dirs (`redpanda`). Broker bits at
 `/opt/kafka`. `need()`: `gcloud`, `openssl`, `jq`, `python3`, `curl`, plus `java`.
 
 **Core** `/chronoracer/`: overlay from [`core/startup`](../core/startup) including `fetch-influx-token.sh`,
 `fetch-payload.sh`, systemd units,
-Ops Agent template plus renderer, `gce-metadata.sh`, `enable-ops-agent.sh`, `default-config.yaml`, `redpanda/*.yaml`, contract JSON, empty
-`influxdb-plugins/`, and the
-build-time `/chronoracer/influxdb-plugin-venv`
-(see [InfluxDB plugin environment](component-influxdb.md#plugin-python-environment)). Packer installs Debian
+Ops Agent template plus renderer, `gce-metadata.sh`, `enable-ops-agent.sh`, `default-config.yaml`, `redpanda/*.yaml`, and contract JSON. Packer installs Debian
 `python3-yaml` (for `merge_config.py`). `need()` after payload: `influxdb3`, `python3` + PyYAML,
 `jq`, `yq`, `gcloud`, `rpk`, the pinned Redpanda Connect package, and `curl`. The package is installed during the image
 build so `rpk connect run` does not download on the race VM. Binary arrives as `/chronoracer/core`. The Avro sensor

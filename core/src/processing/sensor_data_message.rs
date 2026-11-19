@@ -26,6 +26,8 @@ pub struct UnwoundSensorDataMessage {
     pub readings: Box<[AbsoluteSensorReading]>,
     /// The Kafka message these readings came from: the offset that settles once they are written.
     pub source: SourceOffset,
+    /// Kafka record timestamp of that message, for the persist latency metric.
+    pub created_ms: Option<i64>,
 }
 
 /// Shares one `Arc<str>` per distinct sensor id. Not `Sync`: keep one per decoding thread.
@@ -56,6 +58,7 @@ impl UnwoundSensorDataMessage {
     pub fn decode(
         payload: Option<&[u8]>,
         source: SourceOffset,
+        created_ms: Option<i64>,
         sensor_ids: &mut SensorIdInterner,
     ) -> Result<Self, DecodeError> {
         let mut reader = AvroReader::new(payload.ok_or(DecodeError::MissingPayload)?);
@@ -111,6 +114,7 @@ impl UnwoundSensorDataMessage {
             sensor_id,
             readings: readings.into_boxed_slice(),
             source,
+            created_ms,
         })
     }
 }
@@ -151,6 +155,7 @@ mod tests {
         UnwoundSensorDataMessage::decode(
             Some(bytes),
             SourceOffset::default(),
+            None,
             &mut SensorIdInterner::default(),
         )
         .map(|message| plain(&message))
@@ -220,6 +225,7 @@ mod tests {
             .expect("Failed to serialize to raw datum")
     }
 
+    #[allow(clippy::cast_possible_truncation)]
     fn put_long(out: &mut Vec<u8>, value: i64) {
         #[allow(clippy::cast_sign_loss)]
         let mut zigzag = ((value << 1) ^ (value >> 63)) as u64;
@@ -297,6 +303,7 @@ mod tests {
             }
         }
 
+        #[allow(clippy::cast_precision_loss)]
         fn reading(&mut self) -> (i32, f64) {
             let delta = match self.below(4) {
                 0 => self.pick(&[0, 1, 63, 64, 8191, 8192, i32::MAX]),
@@ -354,6 +361,7 @@ mod tests {
         let message = UnwoundSensorDataMessage::decode(
             Some(&bytes),
             SourceOffset::default(),
+            None,
             &mut SensorIdInterner::default(),
         )
         .expect("valid sensor data should decode");
@@ -381,6 +389,7 @@ mod tests {
         let message = UnwoundSensorDataMessage::decode(
             Some(&bytes),
             SourceOffset::default(),
+            None,
             &mut SensorIdInterner::default(),
         )
         .unwrap();
@@ -400,6 +409,7 @@ mod tests {
         let message = UnwoundSensorDataMessage::decode(
             Some(&bytes),
             SourceOffset::default(),
+            None,
             &mut SensorIdInterner::default(),
         )
         .unwrap();
@@ -416,6 +426,7 @@ mod tests {
         let error = UnwoundSensorDataMessage::decode(
             None,
             SourceOffset::default(),
+            None,
             &mut SensorIdInterner::default(),
         )
         .expect_err("missing payload should fail");
@@ -427,6 +438,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn rejects_malformed_payloads() {
         let schema = sensor_data_schema();
         let valid = apache_avro_encode(&schema, "s", 10, &[(1, 1.0)]);
@@ -604,7 +616,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_carries_the_source_offset_into_the_message() {
+    fn decode_carries_the_source_offset_and_timestamp_into_the_message() {
         use crate::messaging::partial_message::MessageOrigin;
         let source = SourceOffset {
             origin: MessageOrigin::SensorData,
@@ -616,11 +628,13 @@ mod tests {
         let message = UnwoundSensorDataMessage::decode(
             Some(&bytes),
             source,
+            Some(1_700_000_000_000),
             &mut SensorIdInterner::default(),
         )
         .unwrap();
 
         assert_eq!(message.source, source);
+        assert_eq!(message.created_ms, Some(1_700_000_000_000));
     }
 
     #[test]

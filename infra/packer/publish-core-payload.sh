@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Upload a built Core binary and InfluxDB plugins as one immutable release,
+# Upload a built Core binary as one immutable release,
 # then atomically publish its manifest at gs://{artifacts}/core/current.json.
 #
 # Usage: publish-core-payload.sh release-id
@@ -46,10 +46,9 @@ MANIFEST="${WORKDIR}/current.json"
 echo "Publishing Core payload to ${DEST}"
 
 gcloud storage cp "${BIN}" "${DEST}/core"
-"${SCRIPT_DIR}/publish-core-influxdb-plugins.sh" "$RELEASE_ID"
 
 jq -n --arg prefix "${RELEASE}" '{prefix: $prefix}' >"${MANIFEST}"
 gcloud storage cp "${MANIFEST}" "gs://${BUCKET}/core/current.json"
 
-echo "Published ${DEST}/core and InfluxDB plugins"
+echo "Published ${DEST}/core"
 echo "Published release pointer gs://${BUCKET}/core/current.json"

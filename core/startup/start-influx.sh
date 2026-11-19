@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start InfluxDB 3 and ensure the configured database + export trigger.
+# Start InfluxDB 3 and ensure the configured database.
 set -euo pipefail
 umask 077
 
@@ -8,7 +8,6 @@ umask 077
 TOKEN_FILE="${CHRONORACER_DIR}/admin-token.json"
 CONFIG="${CHRONORACER_DIR}/core-config.yaml"
 PLATFORM_JSON="${CHRONORACER_DIR}/platform.json"
-PLUGIN_DIR="${CHRONORACER_DIR}/influxdb-plugins"
 INFLUX_ENV="${CHRONORACER_DIR}/influxdb3.env"
 DATA_DIR="/var/lib/influxdb3"
 TRIES="${CHRONORACER_INFLUX_TRIES:-60}"
@@ -32,10 +31,6 @@ need yq
   echo "admin token file missing: ${TOKEN_FILE}" >&2
   exit 1
 }
-[[ -d "${PLUGIN_DIR}" ]] || {
-  echo "plugin dir not found: ${PLUGIN_DIR}" >&2
-  exit 1
-}
 [[ -f "${PLATFORM_JSON}" ]] || {
   echo "contract file missing: ${PLATFORM_JSON}" >&2
   exit 1
@@ -47,8 +42,14 @@ PORT="$(jq -er '.influx_http_port' "${PLATFORM_JSON}")" || {
 }
 HOST="http://127.0.0.1:${PORT}"
 
+CPUS="$(nproc)"
+SNAPSHOT_CONCURRENCY=$((CPUS > 1 ? CPUS - 1 : 1))
+
 # Localhost only
-printf 'INFLUX_HTTP_BIND=127.0.0.1:%s\n' "${PORT}" >"${INFLUX_ENV}"
+{
+  printf 'INFLUX_HTTP_BIND=127.0.0.1:%s\n' "${PORT}"
+  printf 'INFLUX_SNAPSHOT_CONCURRENCY_LIMIT=%s\n' "${SNAPSHOT_CONCURRENCY}"
+} >"${INFLUX_ENV}"
 chmod 644 "${INFLUX_ENV}"
 
 install -d -m 700 "${DATA_DIR}"
@@ -95,19 +96,5 @@ if db_exists; then
 else
   influxdb3 create database "${DB_NAME}" --host "${HOST}" --token "${TOKEN}"
 fi
-
-if influxdb3 show database-triggers --host "${HOST}" --database "${DB_NAME}" --token "${TOKEN}" 2>/dev/null \
-  | grep -Fwq -- "database_export"; then
-  echo "Trigger 'database_export' already exists. Dropping"
-  influxdb3 delete trigger --force --host "${HOST}" --database "${DB_NAME}" --token "${TOKEN}" database_export
-fi
-
-influxdb3 create trigger \
-  --host "${HOST}" \
-  --database "${DB_NAME}" \
-  --token "${TOKEN}" \
-  --plugin-filename export_database.py \
-  --trigger-spec "request:export_database" \
-  database_export
 
 echo "InfluxDB 3 ready (database ${DB_NAME})"

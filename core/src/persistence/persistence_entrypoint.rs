@@ -1,10 +1,11 @@
 use crate::configuration::{CoreConfig, PersistenceConfig};
 use crate::messaging::offset_ledger::OffsetLedger;
 use crate::persistence::database_exporter::InfluxDbExporter;
-use crate::persistence::sensor_data_batcher::{PointBatch, SensorDataBatcher, SimplePoint};
+use crate::persistence::sensor_data_batcher::{PointBatch, SensorDataBatcher};
 use crate::persistence::sensor_data_flusher::{BatcherWiring, BatcherWiringType, InfluxDbFlusher};
 use crate::persistence::sensor_data_splitter::SensorDataSplitter;
 use crate::persistence::write_metrics::WriteMetrics;
+use crate::pipeline_stats::PipelineStats;
 use crate::processing::sensor_data_message::UnwoundSensorDataMessage;
 use crate::runtime_configuration::RetainReadTimeValue;
 use anyhow::{Context, Result, anyhow};
@@ -12,7 +13,12 @@ use compact_str::CompactString;
 use influxdb3_client::{Client, ClientConfig, RetryConfig, WriteOptions};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use std::time::Duration;
+use tracing::{info, warn};
+
+const INFLUX_CONNECT_TIMEOUT: Duration = Duration::from_secs(180);
+const INFLUX_CONNECT_INITIAL_BACKOFF: Duration = Duration::from_millis(500);
+const INFLUX_CONNECT_MAX_BACKOFF: Duration = Duration::from_secs(5);
 
 pub type SensorDataBatch = Vec<Arc<UnwoundSensorDataMessage>>;
 pub type SensorDataRx = tokio::sync::mpsc::Receiver<SensorDataBatch>;
@@ -32,6 +38,7 @@ impl PersistenceLayerEntryPoint {
         processed_data_rx: SensorDataRx,
         driver_id_holder: &'static RetainReadTimeValue<CompactString>,
         offsets: OffsetLedger,
+        stats: Arc<PipelineStats>,
     ) -> Result<Self> {
         let persistence_config = &config.persistence;
         let db_client = Arc::new(Self::create_influxdb_client(persistence_config).await?);
@@ -43,10 +50,18 @@ impl PersistenceLayerEntryPoint {
             splitter_channel_capacity,
             persistence_config,
         );
+        if splitter.is_some() {
+            info!("Splitter enabled - fast flush sensor path wired");
+        } else {
+            info!("Splitter disabled - fast flush sensor path skipped");
+        }
+
+        let race_id = config.race.race_id.clone();
         let (fast_batcher, fast_batcher_wiring) = fast_rx
             .map(|rx| {
                 Self::create_batcher(
                     rx,
+                    Arc::from(race_id.as_str()),
                     driver_id_holder,
                     persistence_config,
                     BatcherWiringType::Fast,
@@ -55,24 +70,24 @@ impl PersistenceLayerEntryPoint {
             .unzip();
         let (normal_batcher, normal_batcher_wiring) = PersistenceLayerEntryPoint::create_batcher(
             normal_rx,
+            Arc::from(race_id.as_str()),
             driver_id_holder,
             persistence_config,
             BatcherWiringType::Normal,
         );
 
-        let race_id = config.race.race_id.clone();
         let write_metrics = Arc::new(WriteMetrics::new());
         let flusher = InfluxDbFlusher::from_config(
             persistence_config,
-            race_id,
             fast_batcher_wiring,
             normal_batcher_wiring,
             Arc::clone(&db_client),
             Arc::clone(&write_metrics),
+            stats,
             offsets,
         );
 
-        let exporter = InfluxDbExporter::new(db_client, &persistence_config.export);
+        let exporter = InfluxDbExporter::new(db_client, &persistence_config.export)?;
 
         Ok(Self {
             splitter,
@@ -89,19 +104,32 @@ impl PersistenceLayerEntryPoint {
             .await
             .context("Failed to create InfluxDb client")?;
 
-        client
-            .ping()
-            .await
-            .map(|version| {
-                if version == "unknown" {
-                    return Err(anyhow!(
-                        "InfluxDB reachable, but version ping failed. Probably invalid access token"
+        // InfluxDB may still be replaying its WAL after boot or an OOM restart, so a refused
+        // ping is retried with backoff. A reachable server with a bad token is not.
+        let deadline = tokio::time::Instant::now() + INFLUX_CONNECT_TIMEOUT;
+        let mut backoff = INFLUX_CONNECT_INITIAL_BACKOFF;
+        let version = loop {
+            match client.ping().await {
+                Ok(version) => break version,
+                Err(e) if tokio::time::Instant::now() + backoff < deadline => {
+                    warn!("InfluxDb not reachable yet ({e}); retrying in {backoff:?}");
+                    tokio::time::sleep(backoff).await;
+                    backoff = (backoff * 2).min(INFLUX_CONNECT_MAX_BACKOFF);
+                }
+                Err(e) => {
+                    return Err(anyhow!(e)).context(format!(
+                        "Failed to connect to InfluxDb within {INFLUX_CONNECT_TIMEOUT:?}"
                     ));
                 }
-                info!("Connected to InfluxDb. Using version {version}");
-                Ok(client)
-            })
-            .context("Failed to connect to InfluxDb")?
+            }
+        };
+        if version == "unknown" {
+            return Err(anyhow!(
+                "InfluxDB reachable, but version ping failed. Probably invalid access token"
+            ));
+        }
+        info!("Connected to InfluxDb. Using version {version}");
+        Ok(client)
     }
 
     /// The flusher owns write concurrency, batching and retries. The client is configured so it
@@ -139,11 +167,12 @@ impl PersistenceLayerEntryPoint {
 
     fn create_batcher(
         batcher_rx: SensorDataRx,
+        race_id: Arc<str>,
         driver_id_holder: &'static RetainReadTimeValue<CompactString>,
         persistence_config: &PersistenceConfig,
         batcher_wiring_type: BatcherWiringType,
     ) -> (SensorDataBatcher, BatcherWiring) {
-        let (pool_tx, pool_rx) = tokio::sync::mpsc::channel::<Vec<SimplePoint>>(10);
+        let (pool_tx, pool_rx) = tokio::sync::mpsc::channel::<String>(10);
         let (batch_tx, batch_rx) = tokio::sync::mpsc::channel::<PointBatch>(10);
         let (batch_size, flush_interval) = match batcher_wiring_type {
             BatcherWiringType::Normal => (
@@ -162,6 +191,7 @@ impl PersistenceLayerEntryPoint {
             batcher_rx,
             batch_tx,
             pool_rx,
+            race_id,
             driver_id_holder,
             batcher_wiring_type,
         );

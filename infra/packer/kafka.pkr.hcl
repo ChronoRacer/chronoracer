@@ -15,16 +15,21 @@ source "googlecompute" "kafka" {
   image_family            = local.names.kafka_family
   image_storage_locations = [local.image_storage_location]
   image_description       = "Chronoracer Kafka. /opt/kafka plus overlay at /chronoracer."
-  tags = ["packer"]
+  tags                    = ["packer"]
 }
 
 build {
-  name = "chronoracer-kafka"
+  name    = "chronoracer-kafka"
   sources = ["source.googlecompute.kafka"]
 
   provisioner "shell" {
     execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash '{{ .Path }}'"
     script          = "scripts/install-common.sh"
+  }
+
+  provisioner "shell" {
+    execute_command = "chmod +x {{ .Path }}; sudo env {{ .Vars }} bash '{{ .Path }}'"
+    script          = "scripts/configure-timesync.sh"
   }
 
   provisioner "shell" {
@@ -108,7 +113,6 @@ build {
       "test -f /chronoracer/names.json",
       "test -f /chronoracer/platform.json",
       "test ! -e /chronoracer/default-config.yaml",
-      "test ! -d /chronoracer/influxdb-plugins",
       "test ! -d /chronoracer/redpanda",
     ]
     execute_command = "chmod +x {{ .Path }}; sudo bash '{{ .Path }}'"

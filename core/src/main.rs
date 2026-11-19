@@ -9,6 +9,7 @@ use crate::messaging::messaging_entrypoint::MessagingLayerEntrypoint;
 use crate::messaging::partial_message::SourceOffset;
 use crate::monitor::Monitor;
 use crate::persistence::persistence_entrypoint::PersistenceLayerEntryPoint;
+use crate::pipeline_stats::PipelineStats;
 use crate::processing::processing_entrypoint::ProcessingLayerEntrypoint;
 use crate::runtime_configuration::RetainReadTimeValue;
 use crate::telemetry::PreviewHub;
@@ -32,6 +33,7 @@ pub mod logger;
 pub mod messaging;
 pub mod monitor;
 pub mod persistence;
+pub mod pipeline_stats;
 pub mod processing;
 pub mod runtime_configuration;
 pub mod telemetry;
@@ -63,10 +65,7 @@ fn run() -> Result<()> {
     let config_val = CoreConfig::load_from_env()?;
     let config: &'static CoreConfig = Box::leak(Box::new(config_val));
     info!("Configuration loaded: {:#?}", config);
-    info!(
-        "Starting Core for race_id={}",
-        config.race.race_id
-    );
+    info!("Starting Core for race_id={}", config.race.race_id);
 
     // Runtime
     let tokio_runtime = tokio::runtime::Builder::new_multi_thread()
@@ -105,8 +104,11 @@ fn run() -> Result<()> {
             handler.get()
         );
 
+        let pipeline_stats = Arc::new(PipelineStats::default());
+
         // Messaging
-        let messaging_wrapper = MessagingLayerEntrypoint::init(config).await?;
+        let messaging_wrapper =
+            MessagingLayerEntrypoint::init(config, Arc::clone(&pipeline_stats)).await?;
         info!("Messaging layer initialized");
 
         // Processing
@@ -128,6 +130,7 @@ fn run() -> Result<()> {
             processing_layer.processed_data_rx,
             handler,
             messaging_wrapper.sensor_offsets.clone(),
+            Arc::clone(&pipeline_stats),
         )
         .await?;
         info!("Persistence layer initialized");
@@ -151,6 +154,7 @@ fn run() -> Result<()> {
             storage,
             pubsub,
             messaging_wrapper.sensor_offsets.clone(),
+            messaging_wrapper.sensor_hold.clone(),
             messaging_wrapper.control_offsets.clone(),
         );
 
@@ -185,6 +189,7 @@ fn run() -> Result<()> {
         let write_metrics_stop = CancellationToken::new();
         if config.gcp.enabled {
             let write_metrics = Arc::clone(&persistence_wrapper.write_metrics);
+            let pipeline_stats = Arc::clone(&pipeline_stats);
             let project_id = config.gcp.project_id.clone();
             let max_retries = config.gcp.max_retries;
             let stop = write_metrics_stop.clone();
@@ -193,6 +198,7 @@ fn run() -> Result<()> {
                     project_id,
                     max_retries,
                     write_metrics,
+                    pipeline_stats,
                     config.gcp.allow_unknown_gce_metrics,
                     stop,
                 )
@@ -552,6 +558,7 @@ async fn handle_outcome(
             let signal_cancel = CancellationToken::new();
             let ignore = tokio::spawn(ignore_signals_until_cancelled(signal_cancel.clone()));
             monitor.drain_data_pipeline().await;
+            let data_hold = monitor.hold_data_consumer();
             await_dlq_drained(&mut control_tasks, monitor.data_pipeline_drain_timeout()).await;
             monitor.commit_offsets().await;
             finalize_write_metrics(
@@ -564,6 +571,7 @@ async fn handle_outcome(
             monitor.execute_exports().await;
             // Whether the exports succeeded or not: a restart must not repeat the race end.
             monitor.commit_shutdown(shutdown_at).await;
+            data_hold.abort();
             signal_cancel.cancel();
             let _ = ignore.await;
             control_tasks.abort_all();

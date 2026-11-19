@@ -1,4 +1,4 @@
-# Chronoracer documentation
+    # Chronoracer documentation
 
 Each concept has one owner. Other docs link it. Do not copy or rephrase the same fact, instead point to the source.
 
@@ -17,7 +17,7 @@ Each concept has one owner. Other docs link it. Do not copy or rephrase the same
 | Kafka boot scripts                                                                     | [Kafka startup](../kafka/startup/README.md)                       |
 | Core layers and in-process flows                                                       | [Core](component-core.md)                                         |
 | Core boot scripts                                                                      | [Core startup](../core/startup/README.md)                         |
-| Influx tables and plugins                                                              | [InfluxDB](component-influxdb.md)                                 |
+| Influx tables, access, memory budget                                                   | [InfluxDB](component-influxdb.md)                                 |
 | Race-fleet health dashboards and datasource                                            | [Dashboard](component-dashboard.md)                               |
 | Near-real-time race preview                                                            | [Telemetry](component-telemetry.md)                               |
 | Dashboard/Telemetry split and rejected options                                         | [ADR - Dashboard](adr-dashboard.md)                               |
@@ -142,6 +142,12 @@ See graph above for connections.
 | VM types  | [ADR - VM types](adr-vm-types.md)   |
 | Dashboard | [ADR - Dashboard](adr-dashboard.md) |
 | Region    | [ADR - Region](adr-region.md)       |
+
+## Evidence
+
+| Topic      | Directory                                        |
+|------------|--------------------------------------------------|
+| Load tests | [Load test results](load-test-results/README.md) |
 
 ## Operator runbooks
 

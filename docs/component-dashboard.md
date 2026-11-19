@@ -17,8 +17,8 @@ Access: public URL, Auth0 login required. Browser OAuth is shared with
 ## Responsibility
 
 - show whether each race VM is up
-- show whole-VM CPU, memory, disk, and network, one panel per VM
-- show InfluxDB ingest throughput and write outcomes from [Core](component-core.md#cloud-monitoring-write-counters)
+- show uptime and whole-VM CPU, memory, disk, and network for Core, Kafka, and Analysis
+- show Influx write and pipeline health metrics from [Core](component-core.md#cloud-monitoring-write-counters)
 - show Telemetry Cloud Run instance, request, latency, and error health
 
 Not its responsibility:
@@ -53,28 +53,28 @@ queries from the UI.
 
 ## Dashboards
 
-Dashboards can be provided in V1 or V2 format as JSON files ([V1](/dashboard/dashboard_files/v1) and [V2](/dashboard/dashboard_files/v2)).
-Version specifications [here](https://github.com/grafana/grafana/tree/main/apps/dashboard/kinds) - copy spec to AI when generating.
+Dashboards are provisioned as V2 JSON files ([dashboard files](../dashboard/dashboard_files/v2)). The format is defined by
+[Grafana's dashboard kinds](https://github.com/grafana/grafana/tree/v13.0.2/apps/dashboard/kinds).
 
-Dashboard are loaded by entrypoint scripts (V2 requires API calls) or automatically by Grafana.
+The entrypoint imports V2 dashboards through Grafana's API.
 
-### Race fleet dashboard
+### Dashboard set
 
-Dashboard has one datasource: Google Cloud Monitoring.
+All dashboards use the Google Cloud Monitoring datasource. The home dashboard opens by default and links to each focused
+view.
 
-Provisioned as code. The current-race fleet dashboard answers “is the race infrastructure alive and keeping up?”
+| Dashboard                                                         | Signals                                                                                                                                              |
+|-------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [Race Home](../dashboard/dashboard_files/v2/race-fleet.json)      | Core, Kafka, and Analysis VM uptime; Telemetry instance count; navigation links                                                                      |
+| [Core](../dashboard/dashboard_files/v2/core.json)                 | Core uptime and host resources; Influx write counters; pipeline consumed rate, sink blocked time, unconsumed Kafka messages, and persistence latency |
+| [VM Resources](../dashboard/dashboard_files/v2/vm-resources.json) | Uptime and whole-VM CPU, memory, disk, and network for Core, Kafka, and Analysis                                                                     |
+| [Telemetry](../dashboard/dashboard_files/v2/telemetry.json)       | Cloud Run instances, request count, latency, and server errors                                                                                       |
 
-| Area      | Required signals                                                                                            |
-|-----------|-------------------------------------------------------------------------------------------------------------|
-| Kafka VM  | instance up; one whole-VM CPU, memory, disk, and network panel                                              |
-| Core VM   | instance up; one whole-VM CPU, memory, disk, and network panel                                              |
-| InfluxDB  | accepted lines/bytes rate and write outcomes from [Core](component-core.md#cloud-monitoring-write-counters) |
-| Telemetry | active instance, request count, request latency, server errors                                              |
+Native Compute and Ops Agent host panels group by `resource.label.instance_id`. Core custom metrics use that same
+instance id on the `gce_instance` resource, so reused VM names still do not merge races. Metric definitions and
+interpretation are owned by [Core](component-core.md#cloud-monitoring-write-counters).
 
-Native Compute / Ops Agent host panels group by `resource.label.instance_id`. Core write counters use the same
-instance id on the `gce_instance` resource, so reused VM names still do not merge races.
-
-Between races the race-fleet panels show no active resources. Historical Cloud Monitoring retention is operational
+Between races the VM and Telemetry panels show no active resources. Historical Cloud Monitoring retention is operational
 evidence, not finished-race sensor data.
 
 ```mermaid
@@ -90,6 +90,9 @@ flowchart LR
         CoreAgent[Ops Agent]
         Core[Core]
     end
+    subgraph analysisVm [Analysis VM]
+        AnalysisAgent[Ops Agent]
+    end
     Telemetry[Telemetry Cloud Run]
 
     Operator -->|HTTPS login| Auth0
@@ -97,11 +100,14 @@ flowchart LR
     Dash -->|ADC, read-only API| Monitoring
     KafkaAgent -->|whole-VM host metrics| Monitoring
     CoreAgent -->|whole-VM host metrics| Monitoring
+    AnalysisAgent -->|whole-VM host metrics| Monitoring
     Core -->|write counters| Monitoring
-    Monitoring -.->|native Cloud Run metrics| Telemetry
+    Telemetry -->|native Cloud Run metrics| Monitoring
 ```
 
-Ops Agent on both race VMs publishes whole-VM CPU, memory, disk, and network, and excludes the process scraper. Ingest lines, bytes, and write outcomes are custom metrics written by [Core](component-core.md#cloud-monitoring-write-counters).
+Ops Agent on all race VMs publishes whole-VM CPU, memory, disk, and network, and excludes the process scraper.
+Core publishes the custom write and pipeline metrics documented in
+[Cloud Monitoring write counters](component-core.md#cloud-monitoring-write-counters).
 
 ## Accepted risks
 

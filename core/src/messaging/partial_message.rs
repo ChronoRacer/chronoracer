@@ -16,6 +16,8 @@ pub struct PartialMessage {
     pub partition: i32,
     pub payload: Option<Box<[u8]>>,
     pub origin: MessageOrigin,
+    /// Kafka record timestamp in Unix milliseconds (producer `CreateTime`), when the record has one.
+    pub created_ms: Option<i64>,
 }
 
 /// Position of a consumed record in its source topic.
@@ -41,9 +43,15 @@ impl PartialMessage {
         Self {
             offset: borrowed_message.offset(),
             partition: borrowed_message.partition(),
-            key: borrowed_message.key().map(Box::from),
+            // Only the control path needs the key (its DLQ records and event parsing). Sensor data
+            // keys are never read, and invalid messages are rare, so allocation can be avoided.
+            key: match origin {
+                MessageOrigin::Control => borrowed_message.key().map(Box::from),
+                MessageOrigin::SensorData => None,
+            },
             payload: borrowed_message.payload().map(Box::from),
             origin,
+            created_ms: borrowed_message.timestamp().to_millis(),
         }
     }
 }

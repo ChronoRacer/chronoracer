@@ -44,7 +44,7 @@ locals {
     }
 
     ops_agent = {
-      description = "Ops Agent self-logs on kafka/core. Syslog collection is already disabled on the agent."
+      description = "Ops Agent self-logs on kafka/core. Overlay pipeline ships only service-unit journald logs."
       filter      = <<-EOT
         resource.type="gce_instance"
         (

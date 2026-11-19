@@ -60,9 +60,15 @@ impl SensorDataSplitter {
                 break;
             }
 
-            let (fast_batch, normal_batch): (Vec<_>, Vec<_>) = data_batch
-                .into_iter()
-                .partition(|data| self.fast_flush_sensor_ids.contains(data.sensor_id.as_ref()));
+            let mut fast_batch = Vec::with_capacity(data_batch.len());
+            let mut normal_batch = Vec::with_capacity(data_batch.len());
+            for data in data_batch {
+                if self.fast_flush_sensor_ids.contains(data.sensor_id.as_ref()) {
+                    fast_batch.push(data);
+                } else {
+                    normal_batch.push(data);
+                }
+            }
 
             if !fast_batch.is_empty() && self.fast_tx.send(fast_batch).await.is_err() {
                 error!("Downstream fast flush channel closed. Breaking ingestion loop");
@@ -80,6 +86,7 @@ impl SensorDataSplitter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::messaging::partial_message::SourceOffset;
     use crate::processing::sensor_data_message::{AbsoluteSensorReading, UnwoundSensorDataMessage};
     use std::sync::Arc;
     use std::time::Duration;
@@ -93,7 +100,8 @@ mod tests {
                 value: 10.0,
                 timestamp: 1_000_000_000,
             }]),
-            source: Default::default(),
+            source: SourceOffset::default(),
+            created_ms: None,
         })
     }
 
@@ -101,7 +109,8 @@ mod tests {
         let mut message = UnwoundSensorDataMessage {
             sensor_id: Arc::from(sensor_id),
             readings: Box::new([]),
-            source: Default::default(),
+            source: SourceOffset::default(),
+            created_ms: None,
         };
         message.source.partition = 2;
         message.source.offset = offset;

@@ -108,8 +108,6 @@ Resource names and ports remain owned by contract files. Cloud Run wiring belong
 
 ## Architecture
 
-[IMPORTANT!] Component not implemented - current files are a stub that should be fully replaced.
-
 Telemetry **MUST** not open multiple connections to Core, especially not one dedicated connection per user.
 It should instead have a fan-out architecture model with one, permanent and reliable connection to Core with an internal
 dedup and caching mechanism, later replaying the data to individual connected users. A monolith app is preferred over a
@@ -144,4 +142,4 @@ graph LR
 - Runtime memory disappears on Telemetry restart.
 - Core and Telemetry stream throughput must be load-tested on GCP before production use. Preview overload must lose
   preview points, never slow Core ingestion.
-- Telemetry scaling issues with a single connection (CR locked to one instance) - needs load testing (current values in Terraform for sure not enough)
+- Telemetry scaling issues with a single connection (CR locked to one instance) - needs load testing

@@ -1,9 +1,10 @@
 use super::*;
+use crate::messaging::partial_message::SourceOffset;
 use crate::processing::sensor_data_message::{AbsoluteSensorReading, UnwoundSensorDataMessage};
 use crate::runtime_configuration::RetainReadTimeValue;
-use crate::telemetry::proto::watch_response::Payload;
 use crate::telemetry::proto::telemetry_service_client::TelemetryServiceClient;
 use crate::telemetry::proto::watch_request::Selection;
+use crate::telemetry::proto::watch_response::Payload;
 use crate::telemetry::proto::{AllSensors, SensorList, WatchRequest, WatchResponse};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -47,7 +48,8 @@ fn message(sensor_id: &str, points: u64) -> Arc<UnwoundSensorDataMessage> {
     Arc::new(UnwoundSensorDataMessage {
         sensor_id: Arc::from(sensor_id),
         readings,
-        source: Default::default(),
+        source: SourceOffset::default(),
+        created_ms: None,
     })
 }
 
@@ -82,7 +84,8 @@ fn fat_batch(index: usize) -> Arc<UnwoundSensorDataMessage> {
     Arc::new(UnwoundSensorDataMessage {
         sensor_id: Arc::from(sensor_id),
         readings,
-        source: Default::default(),
+        source: SourceOffset::default(),
+        created_ms: None,
     })
 }
 
@@ -116,7 +119,10 @@ async fn connect(url: &str) -> TelemetryServiceClient<tonic::transport::Channel>
     connect_with_window(url, HTTP2_WINDOW_SIZE).await
 }
 
-async fn connect_with_window(url: &str, window: u32) -> TelemetryServiceClient<tonic::transport::Channel> {
+async fn connect_with_window(
+    url: &str,
+    window: u32,
+) -> TelemetryServiceClient<tonic::transport::Channel> {
     let channel = Endpoint::from_shared(url.to_owned())
         .unwrap()
         .initial_stream_window_size(window)

@@ -5,9 +5,12 @@ use crate::messaging::dlq_handler::{
 use crate::messaging::heartbeat_handler::HeartbeatHandler;
 use crate::messaging::kafka_exporter::KafkaExporter;
 use crate::messaging::management::ensure_all_topics_exists;
-use crate::messaging::message_sink::{BatchMessageSink, BatchSinkRx, InstantMessageSink, SinkRx};
+use crate::messaging::message_sink::{
+    BatchMessageSink, BatchSinkRx, GroupHold, InstantMessageSink, SinkRx,
+};
 use crate::messaging::offset_ledger::OffsetLedger;
 use crate::messaging::partial_message::PartialMessage;
+use crate::pipeline_stats::PipelineStats;
 use anyhow::{Context, Result, bail};
 use rdkafka::producer::FutureProducer;
 use std::sync::Arc;
@@ -15,6 +18,7 @@ use std::sync::Arc;
 pub struct MessagingLayerEntrypoint {
     pub sensor_data_sink: BatchMessageSink,
     pub sensor_offsets: OffsetLedger,
+    pub sensor_hold: GroupHold,
     pub sensor_sink_rx: BatchSinkRx,
     pub dlq_handler: DLQHandler,
     pub dlq_tx: InvalidMessageTx,
@@ -26,7 +30,10 @@ pub struct MessagingLayerEntrypoint {
 }
 
 impl MessagingLayerEntrypoint {
-    pub async fn init(config: &'static CoreConfig) -> Result<MessagingLayerEntrypoint> {
+    pub async fn init(
+        config: &'static CoreConfig,
+        stats: Arc<PipelineStats>,
+    ) -> Result<MessagingLayerEntrypoint> {
         ensure_kafka_compilation_features()?;
 
         let kafka_exporter = KafkaExporter::new(&config.race.race_id, &config.gcp, &config.kafka)
@@ -45,6 +52,7 @@ impl MessagingLayerEntrypoint {
             sensor_sink_tx,
             config.processing.message_batch_size.get(),
             config.processing.message_batch_flush_interval_ms.get(),
+            stats,
         )?;
         let (control_sink_tx, control_sink_rx) = tokio::sync::mpsc::channel::<PartialMessage>(
             config.processing.message_channel_buffer_size.get(),
@@ -55,9 +63,11 @@ impl MessagingLayerEntrypoint {
             control_sink_tx,
         )?;
         let sensor_offsets = sensor_data_sink.offsets();
+        let sensor_hold = sensor_data_sink.group_hold();
         let control_offsets = control_sink.offsets();
         let (dlq_tx, dlq_rx) = invalid_message_channel(
             config.processing.dlq_channel_buffer_size.get(),
+            config.processing.dlq_sample_every.get(),
             InvalidSettler::new(sensor_offsets.clone(), control_offsets.clone()),
         );
 
@@ -74,6 +84,7 @@ impl MessagingLayerEntrypoint {
         Ok(Self {
             sensor_data_sink,
             sensor_offsets,
+            sensor_hold,
             sensor_sink_rx,
             dlq_handler,
             dlq_tx,

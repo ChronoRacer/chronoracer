@@ -84,6 +84,7 @@ fn decode_batch(batch: Vec<PartialMessage>, dlq_tx: &InvalidMessageTx) -> Sensor
             match UnwoundSensorDataMessage::decode(
                 partial_message.payload.as_deref(),
                 source,
+                partial_message.created_ms,
                 sensor_ids,
             ) {
                 Ok(message) => processed.push(Arc::new(message)),
@@ -192,6 +193,7 @@ mod tests {
             partition: 0,
             payload: Some(write_valid_avro(schema, "test123".to_string(), 1.0).into()),
             origin: MessageOrigin::SensorData,
+            created_ms: None,
         }
     }
 
@@ -202,6 +204,7 @@ mod tests {
             partition: 1,
             payload: Some(vec![0xFF, 0xFF, 0xFF].into()),
             origin: MessageOrigin::SensorData,
+            created_ms: None,
         }
     }
 
@@ -218,7 +221,7 @@ mod tests {
 
     fn start_with(dlq_capacity: usize, preview: PreviewHub, settler: InvalidSettler) -> Harness {
         let (flush_tx, flush_rx) = mpsc::channel::<Vec<PartialMessage>>(10);
-        let (dlq_tx, dlq_rx) = invalid_message_channel(dlq_capacity, settler);
+        let (dlq_tx, dlq_rx) = invalid_message_channel(dlq_capacity, 1, settler);
         let (processed_tx, processed_rx) = mpsc::channel::<SensorDataBatch>(10);
         let mut collector =
             ReadingCollector::new(flush_rx, dlq_tx, processed_tx, build_pool().into(), preview);
@@ -254,6 +257,7 @@ mod tests {
                 first_reading_value,
             ))),
             origin: MessageOrigin::SensorData,
+            created_ms: None,
         };
         harness
             .flush_tx

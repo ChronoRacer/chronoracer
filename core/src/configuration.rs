@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, bail};
 use compact_str::CompactString;
 use config::{Config, File};
+use parquet::basic::{Compression, ZstdLevel};
 use serde::Deserialize;
 use std::num::{NonZeroU16, NonZeroU32, NonZeroUsize};
 use std::path::PathBuf;
@@ -81,6 +82,9 @@ pub struct ProcessingConfig {
     pub message_batch_size: NonZeroUsize,
     pub message_batch_flush_interval_ms: NonZeroU32,
     pub dlq_channel_buffer_size: NonZeroUsize,
+    /// Sensor data DLQ sampling: one invalid message in this many is dead-lettered, the rest are
+    /// discarded and counted. `1` keeps every message.
+    pub dlq_sample_every: NonZeroU32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,8 +95,32 @@ pub struct DatabaseExportConfig {
     /// Object-key prefix under `{raceId}/` in the race bucket (file name only after this).
     pub nested_path_in_bucket: String,
     pub max_retries: u16,
-    /// Per-attempt HTTP timeout for the `InfluxDB` export-plugin trigger.
+    /// Per-attempt wall-clock limit for exporting one table.
     pub attempt_timeout_s: NonZeroU16,
+    /// Longest time span of one export query.
+    pub query_window_s: NonZeroU32,
+    /// Rows one export query may cover, estimated from persisted Parquet file metadata. Bounds
+    /// what `InfluxDB` deduplicates and sorts per query.
+    pub max_rows_per_window: NonZeroU32,
+}
+
+impl DatabaseExportConfig {
+    /// Only ZSTD is compiled into the Parquet writer.
+    pub fn parquet_compression(&self) -> Result<Compression> {
+        if !self.compression_type.eq_ignore_ascii_case("zstd") {
+            bail!(
+                "persistence.export.compression_type must be ZSTD, got '{}'",
+                self.compression_type
+            );
+        }
+        let level = ZstdLevel::try_new(i32::from(self.compression_level)).with_context(|| {
+            format!(
+                "persistence.export.compression_level must be in 1..=22, got {}",
+                self.compression_level
+            )
+        })?;
+        Ok(Compression::ZSTD(level))
+    }
 }
 
 #[derive(Deserialize)]
@@ -259,6 +287,8 @@ impl CoreConfig {
             );
         }
 
+        persistence.export.parquet_compression()?;
+
         for sensor_id in &self.persistence.fast_flush_sensor_ids {
             if sensor_id.len() > MAX_SENSOR_ID_BYTES {
                 bail!("Sensor ID '{sensor_id}' too long. At most {MAX_SENSOR_ID_BYTES} bytes");
@@ -338,8 +368,8 @@ mod mock {
     impl KafkaConsumerConfig {
         pub fn mock_config() -> KafkaConsumerConfig {
             Self {
-                fetch_min_bytes: 32 * 1024,
-                fetch_wait_max_ms: 25,
+                fetch_min_bytes: 1,
+                fetch_wait_max_ms: 100,
                 fetch_message_max_bytes: 5 * 1024 * 1024,
                 queued_min_messages: 200_000,
                 queued_max_messages_kbytes: 256 * 1024,
@@ -355,8 +385,9 @@ mod mock {
             Self {
                 message_channel_buffer_size: NonZeroUsize::new(64).unwrap(),
                 message_batch_size: NonZeroUsize::new(1_000).unwrap(),
-                message_batch_flush_interval_ms: NonZeroU32::new(15).unwrap(),
+                message_batch_flush_interval_ms: NonZeroU32::new(5).unwrap(),
                 dlq_channel_buffer_size: NonZeroUsize::new(10_000).unwrap(),
+                dlq_sample_every: NonZeroU32::new(1).unwrap(),
             }
         }
     }
@@ -370,6 +401,8 @@ mod mock {
                 nested_path_in_bucket: "export/db".to_string(),
                 max_retries: 2,
                 attempt_timeout_s: NonZeroU16::new(600).unwrap(),
+                query_window_s: NonZeroU32::new(600).unwrap(),
+                max_rows_per_window: NonZeroU32::new(1_000_000).unwrap(),
             }
         }
     }
@@ -636,13 +669,13 @@ mod tests {
         let rendered = format!("{:?}", config.persistence);
         assert!(rendered.contains("<redacted>"));
         assert!(!rendered.contains(&config.persistence.db_password));
-        let pretty = format!("{:#?}", config);
+        let pretty = format!("{config:#?}");
         assert!(!pretty.contains(&config.persistence.db_password));
     }
 
     #[test]
     fn deserialize_rejects_zero_runtime_and_channel_values() {
-        let yaml = r#"
+        let yaml = r"
 runtime:
   rayon_threads: 0
   tokio_workers: 2
@@ -654,7 +687,7 @@ runtime:
   offset_final_commit_timeout_s: 15
   notify_shutdown_on_failed_db_export: false
   notify_shutdown_on_failed_kafka_export: true
-"#;
+";
         let result = config::Config::builder()
             .add_source(config::File::from_str(yaml, config::FileFormat::Yaml))
             .build()
@@ -668,12 +701,13 @@ runtime:
 
     #[test]
     fn deserialize_rejects_zero_processing_buffers() {
-        let yaml = r#"
+        let yaml = r"
 message_channel_buffer_size: 0
 message_batch_size: 1000
 message_batch_flush_interval_ms: 15
 dlq_channel_buffer_size: 10
-"#;
+dlq_sample_every: 1
+";
         assert!(
             config::Config::builder()
                 .add_source(config::File::from_str(yaml, config::FileFormat::Yaml))
@@ -727,6 +761,8 @@ export:
   nested_path_in_bucket: "export/db"
   max_retries: 3
   attempt_timeout_s: 600
+  query_window_s: 600
+  max_rows_per_window: 1000000
 "#;
         assert!(
             config::Config::builder()
@@ -736,6 +772,37 @@ export:
                 .try_deserialize::<crate::configuration::PersistenceConfig>()
                 .is_err()
         );
+    }
+
+    #[test]
+    fn validate_accepts_zstd_case_insensitively() {
+        let mut config = CoreConfig::mock_config();
+        for name in ["zstd", "ZSTD", "Zstd"] {
+            config.persistence.export.compression_type = CompactString::from(name);
+            assert!(config.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn validate_rejects_non_zstd_compression() {
+        let mut config = CoreConfig::mock_config();
+        config.persistence.export.compression_type = CompactString::from("SNAPPY");
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("compression_type"));
+    }
+
+    #[test]
+    fn validate_rejects_out_of_range_zstd_level() {
+        let mut config = CoreConfig::mock_config();
+        for invalid in [0, 23] {
+            config.persistence.export.compression_level = invalid;
+            let err = config.validate().unwrap_err().to_string();
+            assert!(err.contains("compression_level"));
+        }
+        for valid in [1, 22] {
+            config.persistence.export.compression_level = valid;
+            assert!(config.validate().is_ok());
+        }
     }
 
     #[test]

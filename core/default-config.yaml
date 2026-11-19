@@ -18,8 +18,8 @@ kafka:
     - localhost:9092
   group_id: "chrono-core"
   sensor_data_consumer:
-    fetch_min_bytes: 32768
-    fetch_wait_max_ms: 25
+    fetch_min_bytes: 1
+    fetch_wait_max_ms: 100
     fetch_message_max_bytes: 5242880
     queued_min_messages: 200000
     queued_max_messages_kbytes: 262144
@@ -57,8 +57,9 @@ kafka:
 processing:
   message_channel_buffer_size: 64
   message_batch_size: 1000
-  message_batch_flush_interval_ms: 15
-  dlq_channel_buffer_size: 10000
+  message_batch_flush_interval_ms: 5
+  dlq_channel_buffer_size: 1000
+  dlq_sample_every: 100
 persistence:
   db_host: "http://localhost"
   db_port: 8181
@@ -67,7 +68,7 @@ persistence:
   fast_flush_max_combined_batch_size: 3000
   fast_flush_interval_ms: 2000
   fast_flush_sensor_ids: []
-  flush_max_combined_batch_size: 7000
+  flush_max_combined_batch_size: 50000
   flush_interval_ms: 4000
   max_inflight_db_writes: 7
   write_retry_initial_backoff_ms: 200
@@ -79,6 +80,8 @@ persistence:
     nested_path_in_bucket: "export/db"
     max_retries: 3
     attempt_timeout_s: 600
+    query_window_s: 600
+    max_rows_per_window: 1000000
 gcp:
   enabled: false
   export_bucket: "chronoracer-race"

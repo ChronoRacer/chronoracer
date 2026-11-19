@@ -8,7 +8,7 @@ Responsibility:
 
 - store sensor measurements for the race
 - serve queries from Core on the same VM
-- dump tables on export (plugin) so Core can upload to GCS
+- serve export queries (Arrow Flight) to Core: [InfluxDB export](component-core.md#influxdb-export)
 
 Core owns Kafka consume and control flow. The Influx Kafka plugin is unused.
 
@@ -36,19 +36,23 @@ Dashboard ingest signals are Core write counters, not this process: [Core](compo
 
 ## Startup
 
-Boot starts InfluxDB 3 Core before the Core process: [Core startup](../core/startup/README.md). Image + plugin
-payload: [Compute images](component-images.md).
+Boot starts InfluxDB 3 Core before the Core process: [Core startup](../core/startup/README.md). Image:
+[Compute images](component-images.md). No `--plugin-dir`, so no plugins are loaded.
 
-## Plugin Python environment
+## Memory budget
 
-Core VM has no internet access. The Core image build installs all required plugin python packages before
-the image is published. It uses the Python bundled with the installed InfluxDB package to create
-`/chronoracer/influxdb-plugin-venv` and installs the package into that venv with its `pip`.
-
-The InfluxDB systemd unit sets `VIRTUAL_ENV` to this venv and disables InfluxDB bundled package manager. The venv is
-kept outside `/chronoracer/influxdb-plugins` because boot fetch replaces that directory with the current plugin
-payload. This makes the preinstalled dependency available to every fetched plugin without any boot-time package
-installation.
+[`influxdb3.service`](../core/startup/influxdb3.service) runs InfluxDB in its own cgroup: `MemoryHigh=70%`,
+`MemoryMax=80%` of RAM. Under pressure the kernel throttles and then OOM-kills only InfluxDB; `Restart=on-failure`
+restarts it and replays the WAL while Core keeps its batches and Kafka buffers. Core has `OOMScoreAdjust=-900`.
+Inside the limit: write buffer `--force-snapshot-mem-size 15%`, `--exec-mem-pool-size 20%`, `--file-cache-size 10%`
+(Core never queries at runtime), `--force-snapshot-max-age 10m`. `--wal-flush-interval 100ms` shortens write
+acknowledgement. `--snapshot-concurrency-limit` is the vCPU count minus one (at least 1), derived at boot by
+[`start-influx.sh`](../core/startup/start-influx.sh): with the default of all vCPUs, every forced snapshot starved Core
+and ingest for ~20 s. The 15% buffer halves the forced-snapshot cycle and the anonymous memory peak, at the cost of
+more overlapping Parquet files, which the export's row budget absorbs. Load-tested at 800K points/s (setting L800d):
+[Core 0.3.2 campaign](load-test-results/core-0.3.2/runs/campaign.md#periodic-spikes-at-800k-influxdb-forced-snapshots).
+Export queries run inside the same limits, one bounded window at a time:
+[InfluxDB export](component-core.md#influxdb-export).
 
 ## Tables
 
@@ -56,11 +60,13 @@ Schema: `iox` (InfluxDB default)
 
 One table per sensor, created lazily on first write. Table name = sensor id.
 
-Line protocol Core writes (`SimplePoint`):
+Line protocol Core writes (formatted by `LineWriter` in the batcher, one line per reading):
 
 ```
 {sensorId},race={raceId},driver={driverId} val={value} {timestampNanos}
 ```
+
+`value` is always written as a float (shortest round-trip form with a decimal point or exponent, for example `3.0`, `12.5`, `1e21`).
 
 | Column   | Kind      | Meaning                                                    |
 |----------|-----------|------------------------------------------------------------|
@@ -68,11 +74,3 @@ Line protocol Core writes (`SimplePoint`):
 | `driver` | tag       | driver id (may change mid-race via `CHDRV`)                |
 | `val`    | field     | measurement                                                |
 | `time`   | timestamp | nanosecond Unix time                                       |
-
-## Plugins
-
-Runtime files: [plugin directory](../core/influxdb-plugins/README.md). Payload layout: [GCS](component-gcs_buckets.md).
-
-| Plugin          | Code at                                                           |
-|-----------------|-------------------------------------------------------------------|
-| Export database | [export_database.py](../core/influxdb-plugins/export_database.py) |

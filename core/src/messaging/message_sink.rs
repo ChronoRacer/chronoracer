@@ -1,6 +1,7 @@
 use crate::configuration::KafkaConfig;
 use crate::messaging::offset_ledger::{OffsetLedger, OffsetSink, SharedTracker, lock_tracker};
 use crate::messaging::partial_message::{MessageOrigin, PartialMessage};
+use crate::pipeline_stats::{PipelineStats, SAMPLE_INTERVAL};
 use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use rdkafka::ClientContext;
@@ -8,11 +9,14 @@ use rdkafka::consumer::{
     BaseConsumer, CommitMode, Consumer, ConsumerContext, MessageStream, Rebalance, StreamConsumer,
 };
 use rdkafka::error::{KafkaError, KafkaResult, RDKafkaErrorCode};
+use rdkafka::statistics::{Statistics, Topic};
 use rdkafka::topic_partition_list::TopicPartitionList;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::mpsc::Permit;
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -39,6 +43,8 @@ struct OffsetContext {
     tracker: SharedTracker,
     /// Set while the sink holds its partitions paused: partitions assigned meanwhile are paused too.
     paused: Arc<AtomicBool>,
+    /// Receives the unconsumed count from librdkafka statistics, when they are enabled.
+    stats: Option<Arc<PipelineStats>>,
 }
 
 impl OffsetContext {
@@ -50,7 +56,32 @@ impl OffsetContext {
     }
 }
 
-impl ClientContext for OffsetContext {}
+impl ClientContext for OffsetContext {
+    fn stats(&self, statistics: Statistics) {
+        if let Some(stats) = &self.stats {
+            stats.set_unconsumed(unconsumed_messages(&statistics.topics));
+        }
+    }
+}
+
+/// Messages on the broker not yet handed to the application: high watermark minus the next
+/// offset to deliver, or minus the committed offset for a partition nothing was delivered from yet.
+/// Partition -1 is librdkafka's internal one; -1 offsets are unknown.
+fn unconsumed_messages(topics: &HashMap<String, Topic>) -> i64 {
+    topics
+        .values()
+        .flat_map(|topic| topic.partitions.values())
+        .filter(|partition| partition.partition >= 0 && partition.hi_offset >= 0)
+        .filter_map(|partition| {
+            let behind = if partition.app_offset >= 0 {
+                partition.hi_offset - partition.app_offset
+            } else {
+                partition.consumer_lag
+            };
+            (behind >= 0).then_some(behind)
+        })
+        .sum()
+}
 
 impl ConsumerContext for OffsetContext {
     fn pre_rebalance(&self, _: &BaseConsumer<Self>, rebalance: &Rebalance<'_>) {
@@ -140,6 +171,7 @@ impl ManagedConsumer {
         group_id: &str,
         kafka_config: &KafkaConfig,
         topic: &'static str,
+        stats: Option<Arc<PipelineStats>>,
         tune: impl FnOnce(&mut rdkafka::ClientConfig),
     ) -> Result<Self> {
         let tracker = SharedTracker::default();
@@ -148,6 +180,7 @@ impl ManagedConsumer {
             name,
             tracker: Arc::clone(&tracker),
             paused: Arc::clone(&paused),
+            stats,
         };
         let mut config = rdkafka::ClientConfig::new();
         config
@@ -191,15 +224,13 @@ impl ManagedConsumer {
     }
 
     fn pause(&self) {
-        self.paused.store(true, Ordering::Release);
-        match self.consumer.assignment() {
-            Ok(assignment) if assignment.count() > 0 => {
-                if let Err(error) = self.consumer.pause(&assignment) {
-                    warn!(%error, "Failed to pause partitions");
-                }
-            }
-            Ok(_) => {}
-            Err(error) => warn!(%error, "Failed to read the assignment to pause it"),
+        pause_assignment(&self.consumer, &self.paused);
+    }
+
+    fn group_hold(&self) -> GroupHold {
+        GroupHold {
+            consumer: Arc::clone(&self.consumer),
+            paused: Arc::clone(&self.paused),
         }
     }
 
@@ -214,6 +245,37 @@ impl ManagedConsumer {
             Ok(_) => {}
             Err(error) => warn!(%error, "Failed to read the assignment to resume it"),
         }
+    }
+}
+
+fn pause_assignment(consumer: &KafkaConsumer, paused: &AtomicBool) {
+    paused.store(true, Ordering::Release);
+    match consumer.assignment() {
+        Ok(assignment) if assignment.count() > 0 => {
+            if let Err(error) = consumer.pause(&assignment) {
+                warn!(%error, "Failed to pause partitions");
+            }
+        }
+        Ok(_) => {}
+        Err(error) => warn!(%error, "Failed to read the assignment to pause it"),
+    }
+}
+
+/// Keeps a consumer in its group without consuming anything more.
+#[derive(Clone)]
+pub struct GroupHold {
+    consumer: Arc<KafkaConsumer>,
+    paused: Arc<AtomicBool>,
+}
+
+impl GroupHold {
+    /// Pauses the partitions and polls until the task is aborted: rebalances are served and
+    /// `max.poll.interval.ms` cannot expire, so the member stays in the group and can still commit
+    /// after an export that outlasts that interval. Whatever is still delivered is not registered.
+    pub async fn hold(&self) {
+        pause_assignment(&self.consumer, &self.paused);
+        let mut stream = self.consumer.stream();
+        while stream.next().await.is_some() {}
     }
 }
 
@@ -233,6 +295,7 @@ pub struct BatchMessageSink {
     batch_flush_interval_ms: u32,
     lag_log_interval: Duration,
     pause_after: Duration,
+    stats: Arc<PipelineStats>,
 }
 
 impl BatchMessageSink {
@@ -242,6 +305,7 @@ impl BatchMessageSink {
         flush_tx: BatchSinkTx,
         batch_size: usize,
         batch_flush_interval_ms: u32,
+        stats: Arc<PipelineStats>,
     ) -> Result<Self> {
         let consumer_config = &kafka_config.sensor_data_consumer;
         let [topic] = topics[..] else {
@@ -252,6 +316,7 @@ impl BatchMessageSink {
             &kafka_config.data_group_id(),
             kafka_config,
             topic,
+            Some(Arc::clone(&stats)),
             |config| {
                 config
                     .set(
@@ -277,6 +342,11 @@ impl BatchMessageSink {
                     .set(
                         "socket.receive.buffer.bytes",
                         consumer_config.socket_receive_buffer_bytes.to_string(),
+                    )
+                    // Feeds the `unconsumed` metric, once per sample.
+                    .set(
+                        "statistics.interval.ms",
+                        SAMPLE_INTERVAL.as_millis().to_string(),
                     );
             },
         )?;
@@ -290,6 +360,7 @@ impl BatchMessageSink {
                 consumer_config.offset_lag_log_interval_s.get(),
             )),
             pause_after: PAUSE_AFTER,
+            stats,
         })
     }
 
@@ -297,6 +368,12 @@ impl BatchMessageSink {
     #[must_use]
     pub fn offsets(&self) -> OffsetLedger {
         self.consumer.ledger.clone()
+    }
+
+    /// Holds the consumer in its group once the sink has stopped, for the race-end export.
+    #[must_use]
+    pub fn group_hold(&self) -> GroupHold {
+        self.consumer.group_hold()
     }
 
     pub async fn ingest_with_cancellation(&self, cancel_token: CancellationToken) {
@@ -381,6 +458,7 @@ impl BatchMessageSink {
         self.consumer
             .ledger
             .register(message.partition, message.offset);
+        self.stats.add_consumed(1);
         buffer.push(message);
     }
 
@@ -395,10 +473,10 @@ impl BatchMessageSink {
         if buffer.is_empty() {
             return !self.flush_tx.is_closed();
         }
-        let permit = match tokio::time::timeout(self.pause_after, self.flush_tx.reserve()).await {
-            Ok(permit) => permit.ok(),
-            Err(_) if cancel.is_cancelled() => self.flush_tx.reserve().await.ok(),
-            Err(_) => self.reserve_while_paused(stream, buffer, cancel).await,
+        let permit = match self.flush_tx.try_reserve() {
+            Ok(permit) => Some(permit),
+            Err(TrySendError::Closed(())) => None,
+            Err(TrySendError::Full(())) => self.wait_for_room(stream, buffer, cancel).await,
         };
         let Some(permit) = permit else {
             return false;
@@ -408,6 +486,23 @@ impl BatchMessageSink {
             Vec::with_capacity(self.batch_size),
         ));
         true
+    }
+
+    /// The channel is full: the wait is backpressure and is reported as sink-blocked time.
+    async fn wait_for_room(
+        &self,
+        stream: &mut MessageStream<'_, OffsetContext>,
+        buffer: &mut MessageBatch,
+        cancel: &CancellationToken,
+    ) -> Option<Permit<'_, MessageBatch>> {
+        let waiting_since = Instant::now();
+        let permit = match tokio::time::timeout(self.pause_after, self.flush_tx.reserve()).await {
+            Ok(permit) => permit.ok(),
+            Err(_) if cancel.is_cancelled() => self.flush_tx.reserve().await.ok(),
+            Err(_) => self.reserve_while_paused(stream, buffer, cancel).await,
+        };
+        self.stats.add_sink_blocked(waiting_since.elapsed());
+        permit
     }
 
     async fn reserve_while_paused(
@@ -461,10 +556,11 @@ impl InstantMessageSink {
             &kafka_config.control_group_id(),
             kafka_config,
             topic,
+            None,
             |config| {
                 config
                     .set("fetch.min.bytes", "1")
-                    .set("fetch.wait.max.ms", "0");
+                    .set("fetch.wait.max.ms", "500");
             },
         )?;
         Ok(Self {
@@ -512,8 +608,8 @@ impl InstantMessageSink {
             "Instant message sink stopped forwarding for topics: {}",
             self.topics.join(",")
         );
-        self.consumer.pause();
-        while message_stream.next().await.is_some() {}
+        drop(message_stream);
+        self.consumer.group_hold().hold().await;
     }
 }
 
@@ -528,6 +624,7 @@ mod tests {
             partition: 0,
             payload: None,
             origin: MessageOrigin::SensorData,
+            created_ms: None,
         }
     }
 
@@ -539,13 +636,20 @@ mod tests {
 
     /// No broker needed: a consumer that never joins its group has no assignment.
     fn unconnected_consumer(name: &'static str, group: &str) -> ManagedConsumer {
-        ManagedConsumer::open(name, group, &unconnected_kafka(), "data", |_| {}).unwrap()
+        ManagedConsumer::open(name, group, &unconnected_kafka(), "data", None, |_| {}).unwrap()
     }
 
     fn unconnected_sink(capacity: usize, pause_after: Duration) -> (BatchMessageSink, BatchSinkRx) {
         let (tx, rx) = tokio::sync::mpsc::channel(capacity);
-        let mut sink =
-            BatchMessageSink::new(&unconnected_kafka(), vec!["data"], tx, 8, 15).unwrap();
+        let mut sink = BatchMessageSink::new(
+            &unconnected_kafka(),
+            vec!["data"],
+            tx,
+            8,
+            15,
+            Arc::default(),
+        )
+        .unwrap();
         sink.pause_after = pause_after;
         (sink, rx)
     }
@@ -582,6 +686,11 @@ mod tests {
 
         assert_eq!(offsets(&rx.try_recv().unwrap()), [1, 2]);
         assert!(buffer.is_empty());
+        assert_eq!(
+            sink.stats.snapshot().sink_blocked,
+            Duration::ZERO,
+            "a flush that finds room is not blocked"
+        );
     }
 
     #[tokio::test]
@@ -630,6 +739,37 @@ mod tests {
         let (paused_while_full, mut rx) = drain.await.unwrap();
         assert!(!paused_while_full);
         assert_eq!(offsets(&rx.recv().await.unwrap()), [1, 2]);
+        assert!(
+            sink.stats.snapshot().sink_blocked >= Duration::from_millis(40),
+            "the wait for room is reported"
+        );
+    }
+
+    #[test]
+    fn unconsumed_counts_what_the_broker_holds_beyond_delivery() {
+        use rdkafka::statistics::Partition;
+        let partition = |id, hi_offset, app_offset, consumer_lag| Partition {
+            partition: id,
+            hi_offset,
+            app_offset,
+            consumer_lag,
+            ..Partition::default()
+        };
+        let topic = Topic {
+            partitions: HashMap::from([
+                (0, partition(0, 100, 90, 25)),
+                (1, partition(1, 50, -1001, 7)),
+                (2, partition(2, -1, 10, -1)),
+                (3, partition(3, 10, -1001, -1)),
+                (-1, partition(-1, 500, 0, 500)),
+            ]),
+            ..Topic::default()
+        };
+        let topics = HashMap::from([("data".to_string(), topic)]);
+
+        // p0: 100 - 90; p1: nothing delivered yet, so the committed lag; p2, p3, -1: unknown.
+        assert_eq!(unconsumed_messages(&topics), 17);
+        assert_eq!(unconsumed_messages(&HashMap::new()), 0);
     }
 
     #[tokio::test]

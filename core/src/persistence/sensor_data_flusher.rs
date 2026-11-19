@@ -1,10 +1,8 @@
 use crate::configuration::PersistenceConfig;
 use crate::messaging::offset_ledger::OffsetLedger;
-use crate::persistence::sensor_data_batcher::{
-    PointBatch, PointBatchRx, SIMPLE_POINT_PROTOCOL_ESTIMATED_LENGTH, SimplePoint,
-};
+use crate::persistence::sensor_data_batcher::{PointBatch, PointBatchRx};
 use crate::persistence::write_metrics::WriteMetrics;
-use compact_str::CompactString;
+use crate::pipeline_stats::PipelineStats;
 use influxdb3_client::error::Error as InfluxError;
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hasher};
@@ -25,7 +23,7 @@ pub enum BatcherWiringType {
 
 pub struct BatcherWiring {
     pub batch_rx: PointBatchRx,
-    pub pool_tx: tokio::sync::mpsc::Sender<Vec<SimplePoint>>,
+    pub pool_tx: tokio::sync::mpsc::Sender<String>,
     pub wiring_type: BatcherWiringType,
 }
 
@@ -137,10 +135,10 @@ fn is_auth_or_config(error: &InfluxError) -> bool {
 
 struct FlushContext {
     client: Arc<influxdb3_client::Client>,
-    race_id: Arc<str>,
     permits: WritePermits,
     backoff: RetryBackoff,
     write_metrics: Arc<WriteMetrics>,
+    stats: Arc<PipelineStats>,
     offsets: OffsetLedger,
 }
 
@@ -150,21 +148,16 @@ impl FlushContext {
     /// pipeline down and the backpressure reaches Kafka instead of dropping data.
     async fn flush_batch(
         &self,
-        batch: &[SimplePoint],
+        line_protocol: &str,
+        point_count: usize,
         wiring_type: BatcherWiringType,
     ) -> FlushOutcome {
-        let mut line_protocol =
-            String::with_capacity(batch.len() * SIMPLE_POINT_PROTOCOL_ESTIMATED_LENGTH);
-        for point in batch {
-            point.write_line_protocol(&mut line_protocol, &self.race_id);
-            line_protocol.push('\n');
-        }
-        let lines = u64::try_from(batch.len()).unwrap_or(u64::MAX);
+        let lines = u64::try_from(point_count).unwrap_or(u64::MAX);
         let bytes = u64::try_from(line_protocol.len()).unwrap_or(u64::MAX);
 
         let mut retries: u32 = 0;
         loop {
-            match self.client.write(line_protocol.as_str()).await {
+            match self.client.write(line_protocol).await {
                 Ok(()) => {
                     self.write_metrics.record_success(lines, bytes);
                     if retries > 0 {
@@ -211,32 +204,26 @@ impl FlushContext {
 impl FlushContext {
     /// Writes the batch, then settles the Kafka messages it was made of. Returns the emptied point
     /// buffer for reuse.
-    async fn flush_and_settle(
-        &self,
-        batch: PointBatch,
-        wiring_type: BatcherWiringType,
-    ) -> Vec<SimplePoint> {
+    async fn flush_and_settle(&self, batch: PointBatch, wiring_type: BatcherWiringType) -> String {
+        let oldest_created = batch.oldest_created();
         let PointBatch {
-            mut points,
+            mut lines,
+            point_count,
             offsets,
+            ..
         } = batch;
         // Messages without readings have nothing to write.
-        if !points.is_empty() {
-            let outcome = self.flush_batch(&points, wiring_type).await;
-            if outcome == FlushOutcome::Written {
-                info!(
-                    "Flushed data points: batch_size={}, flush_type={:?}",
-                    points.len(),
-                    wiring_type
-                );
-            }
+        if point_count > 0 {
+            // The outcome is counted by `WriteMetrics`; failures are logged inside.
+            let _ = self.flush_batch(&lines, point_count, wiring_type).await;
         }
         // Durable point. Every line of the batch is settled, and so is every message it came
         // from (one message never spans batches); the outcome only says how.
         self.offsets.settle(&offsets);
+        self.stats.record_settled(oldest_created);
 
-        points.clear();
-        points
+        lines.clear();
+        lines
     }
 }
 
@@ -248,13 +235,14 @@ pub struct InfluxDbFlusher {
 
 impl InfluxDbFlusher {
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn from_config(
         persistence: &PersistenceConfig,
-        race_id: CompactString,
         fast_wiring: Option<BatcherWiring>,
         normal_wiring: BatcherWiring,
         client: Arc<influxdb3_client::Client>,
         write_metrics: Arc<WriteMetrics>,
+        stats: Arc<PipelineStats>,
         offsets: OffsetLedger,
     ) -> Self {
         let permits = WritePermits::new(
@@ -266,7 +254,6 @@ impl InfluxDbFlusher {
             normal_wiring,
             context: Arc::new(FlushContext {
                 client,
-                race_id: Arc::from(race_id),
                 permits,
                 backoff: RetryBackoff {
                     initial: Duration::from_millis(u64::from(
@@ -277,6 +264,7 @@ impl InfluxDbFlusher {
                     )),
                 },
                 write_metrics,
+                stats,
                 offsets,
             }),
         }
@@ -591,32 +579,24 @@ mod tests {
         .unwrap();
         FlushContext {
             client: Arc::new(client),
-            race_id: Arc::from("race"),
             permits: WritePermits::new(2, true),
             backoff: RetryBackoff {
                 initial: Duration::from_millis(2),
                 max: Duration::from_millis(4),
             },
             write_metrics,
+            stats: Arc::default(),
             offsets: detached_ledger(),
         }
     }
 
-    fn batch() -> Vec<SimplePoint> {
-        ["a", "b"]
-            .into_iter()
-            .zip([1.5, 2.0])
-            .map(|(measurement, value)| SimplePoint {
-                measurement: Arc::from(measurement),
-                driver: Arc::new(CompactString::from("drv")),
-                value,
-                timestamp_nanos: 42,
-            })
-            .collect()
-    }
-
     const EXPECTED_BODY: &str =
-        "a,race=race,driver=drv val=1.5 42\nb,race=race,driver=drv val=2 42\n";
+        "a,race=race,driver=drv val=1.5 42\nb,race=race,driver=drv val=2.0 42\n";
+    const EXPECTED_LINES: usize = 2;
+
+    fn batch() -> String {
+        EXPECTED_BODY.to_owned()
+    }
 
     #[tokio::test]
     async fn transient_failures_are_resent_until_the_write_succeeds() {
@@ -625,7 +605,7 @@ mod tests {
         let context = context_for(port, Arc::clone(&metrics)).await;
 
         let outcome = context
-            .flush_batch(&batch(), BatcherWiringType::Normal)
+            .flush_batch(&batch(), EXPECTED_LINES, BatcherWiringType::Normal)
             .await;
 
         assert_eq!(outcome, FlushOutcome::Written);
@@ -656,7 +636,7 @@ mod tests {
             let context = context_for(port, Arc::clone(&metrics)).await;
 
             let outcome = context
-                .flush_batch(&batch(), BatcherWiringType::Normal)
+                .flush_batch(&batch(), EXPECTED_LINES, BatcherWiringType::Normal)
                 .await;
 
             assert_eq!(outcome, FlushOutcome::Written, "{code}");
@@ -680,7 +660,9 @@ mod tests {
         let metrics = Arc::new(WriteMetrics::new());
         let context = context_for(port, Arc::clone(&metrics)).await;
 
-        let outcome = context.flush_batch(&batch(), BatcherWiringType::Fast).await;
+        let outcome = context
+            .flush_batch(&batch(), EXPECTED_LINES, BatcherWiringType::Fast)
+            .await;
 
         assert_eq!(outcome, FlushOutcome::Dropped);
         let snapshot = metrics.snapshot();
@@ -704,7 +686,7 @@ mod tests {
         let context = context_for(port, Arc::clone(&metrics)).await;
 
         let outcome = context
-            .flush_batch(&batch(), BatcherWiringType::Normal)
+            .flush_batch(&batch(), EXPECTED_LINES, BatcherWiringType::Normal)
             .await;
 
         assert_eq!(outcome, FlushOutcome::PartiallyWritten);
@@ -722,19 +704,17 @@ mod tests {
     }
 
     /// Registers the offsets with the context's ledger as the sink would, and pairs them with points.
-    fn point_batch(
-        context: &FlushContext,
-        offsets: &[(i32, i64)],
-        points: Vec<SimplePoint>,
-    ) -> PointBatch {
+    fn point_batch(context: &FlushContext, offsets: &[(i32, i64)], lines: String) -> PointBatch {
         let mut set = OffsetSet::default();
         for &(partition, offset) in offsets {
             context.offsets.register(partition, offset);
             set.push(partition, offset);
         }
         PointBatch {
-            points,
+            point_count: lines.matches('\n').count(),
+            lines,
             offsets: set,
+            oldest_created_ms: crate::persistence::sensor_data_batcher::NO_TIMESTAMP,
         }
     }
 
@@ -789,7 +769,7 @@ mod tests {
         .await;
 
         assert!(pending.is_err());
-        assert!(sink.stored().is_empty());
+        assert_eq!(sink.stored(), [] as [(i32, i64); 0]);
         assert_eq!(context.offsets.lag()[0].pending, 1);
     }
 
@@ -818,7 +798,8 @@ mod tests {
             .port();
         let mut context = context_for(closed_port, Arc::new(WriteMetrics::new())).await;
         let sink = recording_context(&mut context);
-        let batch = point_batch(&context, &[(0, 3)], Vec::new());
+        let mut batch = point_batch(&context, &[(0, 3)], String::new());
+        batch.oldest_created_ms = crate::pipeline_stats::unix_now_ms();
 
         timeout(
             Duration::from_secs(2),
@@ -828,6 +809,11 @@ mod tests {
         .expect("an empty batch must not write");
 
         assert_eq!(sink.stored(), [(0, 4)]);
+        assert_eq!(
+            context.stats.take_persist().count(),
+            1,
+            "settled without a write, still counted as persisted"
+        );
     }
 
     #[tokio::test]
@@ -868,7 +854,6 @@ mod tests {
         let config = PersistenceConfig::mock_config();
         let flusher = InfluxDbFlusher::from_config(
             &config,
-            CompactString::from("race"),
             None,
             BatcherWiring {
                 batch_rx,
@@ -877,6 +862,7 @@ mod tests {
             },
             context.client,
             context.write_metrics,
+            context.stats,
             context.offsets,
         );
         assert_eq!(
@@ -888,7 +874,7 @@ mod tests {
             .expect("normal-only flusher must drain and terminate");
 
         assert_eq!(sink.positions(), [(0, 2)]);
-        assert!(pool_rx.try_recv().unwrap().is_empty());
+        assert_eq!(pool_rx.try_recv().unwrap(), "");
         assert_eq!(server.join().unwrap().len(), 1);
     }
 
