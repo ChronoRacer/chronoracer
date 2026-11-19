@@ -16,7 +16,7 @@ class RunResult:
     """Value returned by ``PredictionClass.run`` when there is something to send."""
 
     def __init__(self, value: float, instruction: str):
-        self.value = value
+        self.value = round(float(value), 3) if value is not None else None
         self.instruction = instruction
 
 
@@ -79,7 +79,7 @@ class FuelPrediction(PredictionClass):
 
         if laps_left is not None and burn_per_lap is not None:
             logger.info(
-                "Fuel: {:.2f} L at end of lap {} | {:.1f} laps to empty | {:.3f} L/lap",
+                "Fuel: {:.3f} L at end of lap {} | {:.1f} laps to empty | {:.3f} L/lap",
                 float(predicted_fuel),
                 predicted_for_lap,
                 float(laps_left),
@@ -87,18 +87,18 @@ class FuelPrediction(PredictionClass):
             )
             instruction = (
                 f"{float(laps_left):.1f} laps to empty. "
-                f"Fuel at end of lap {predicted_for_lap}: {float(predicted_fuel):.2f} L "
+                f"Fuel at end of lap {predicted_for_lap}: {float(predicted_fuel):.3f} L "
                 f"({float(burn_per_lap):.3f} L/lap)"
             )
         else:
             logger.info(
-                "Fuel: {:.2f} L at end of lap {} | laps-to-empty unavailable",
+                "Fuel: {:.3f} L at end of lap {} | laps-to-empty unavailable",
                 float(predicted_fuel),
                 predicted_for_lap,
             )
             instruction = (
                 f"Fuel at end of lap {predicted_for_lap}: "
-                f"{float(predicted_fuel):.2f} L"
+                f"{float(predicted_fuel):.3f} L"
             )
 
         return RunResult(value=float(predicted_fuel), instruction=instruction)
