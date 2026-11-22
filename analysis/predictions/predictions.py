@@ -182,14 +182,17 @@ class PredictionsEngine:
         if gps_lat is None or gps_lon is None:
             logger.warning("No GPS in window - skipping lap detection")
         else:
-            lap_detector.add_track_point(gps_lon.val, gps_lat.val)
-            if not lap_detector.is_start_set():
+            start_was_set = lap_detector.is_start_set()
+            if not start_was_set:
                 lap_detector.determine_start_on_track(
                     gps_lat.val,
                     gps_lon.val,
                     gps_lat.ts_ns,
                 )
-            else:
+            if lap_detector.is_start_set():
+                # Ignore the GPS warm-up used to choose the start point.
+                lap_detector.add_track_point(gps_lon.val, gps_lat.val)
+            if start_was_set:
                 test_point = MPoint(lat=gps_lat.val, lon=gps_lon.val)
                 point = lap_detector.find_next_lap(test_point, gps_lat.ts_ns)
                 if point is not None:

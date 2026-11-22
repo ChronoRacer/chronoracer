@@ -1,4 +1,4 @@
-from analysis.shared.connector import is_backward_timestamp
+from analysis.shared.timestamp_order import is_backward_timestamp
 
 
 def test_first_point_is_never_backward():

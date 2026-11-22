@@ -44,3 +44,14 @@ def test_load_config_preserves_explicit_url_scheme_and_optional_overrides(monkey
     assert config.CORE_TELEMETRY_URL == "core.internal:50051"
     assert config.TELEMETRY_URL == "https://telemetry.internal"
     assert config.ANALYSIS_INGEST_TOKEN == "ingest-secret"
+
+
+def test_load_config_preserves_explicit_http_scheme(monkeypatch):
+    _isolate_config_environment(monkeypatch)
+    monkeypatch.setenv("CORE_TELEMETRY_URL", "core.internal:50051")
+    monkeypatch.setenv("TELEMETRY_URL", "http://telemetry.internal")
+
+    config = config_module.load_config()
+
+    assert config is not None
+    assert config.TELEMETRY_URL == "http://telemetry.internal"

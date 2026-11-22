@@ -1,4 +1,5 @@
 from analysis.predictions.predictions import PredObj, PredictionsEngine
+from analysis.predictions.prediction_models import LapDetector
 from analysis.predictions.predictions_files import PredictionClass
 
 
@@ -96,3 +97,42 @@ def test_lap_predictions_run_without_gps_once_the_lap_start_is_known():
     engine.handle_message(message, {"OIL_TEMP_C"}, FakeLapDetector(start_set=True))
 
     assert fuel.calls == 1
+
+
+def test_engine_excludes_gps_warmup_from_recorded_track():
+    engine = _engine_with([])
+    detector = LapDetector("GPS_LAT_DEG", "GPS_LON_DEG")
+
+    engine.handle_message(
+        [
+            {"sensor_id": "GPS_LAT_DEG", "ts": 10_000_000_000, "median": 52.0},
+            {"sensor_id": "GPS_LON_DEG", "ts": 10_000_000_000, "median": 21.0},
+        ],
+        {"GPS_LAT_DEG", "GPS_LON_DEG"},
+        detector,
+    )
+    assert detector.track_lon_lat == []
+
+    engine.handle_message(
+        [
+            {"sensor_id": "GPS_LAT_DEG", "ts": 11_500_000_000, "median": 52.001},
+            {"sensor_id": "GPS_LON_DEG", "ts": 11_500_000_000, "median": 21.001},
+        ],
+        {"GPS_LAT_DEG", "GPS_LON_DEG"},
+        detector,
+    )
+
+    assert detector.is_start_set()
+    assert detector.track_lon_lat == [(21.001, 52.001)]
+
+    engine.handle_message(
+        [
+            {"sensor_id": "GPS_LAT_DEG", "ts": 12_500_000_000, "median": 52.002},
+            {"sensor_id": "GPS_LON_DEG", "ts": 12_500_000_000, "median": 21.002},
+        ],
+        {"GPS_LAT_DEG", "GPS_LON_DEG"},
+        detector,
+    )
+
+    assert len(detector.track_lon_lat) == 2
+    assert detector.departed_from_start

@@ -82,3 +82,31 @@ def test_timestamp_contract_rejects_values_before_2026_utc():
             prediction_id="fuel_prediction",
             info="Missing required sensors",
         )
+
+
+def test_prediction_contract_rejects_blank_identifiers_and_titles():
+    with pytest.raises(ValidationError):
+        PredictionUnavailableJSON(
+            timestamp=MIN_TIMESTAMP_US,
+            prediction_id="",
+            info="Missing required sensors",
+        )
+
+    with pytest.raises(ValidationError):
+        PredictionRunningJSON(
+            timestamp=MIN_TIMESTAMP_US,
+            prediction_id="fuel_prediction",
+            name="",
+            refresh_rate="every lap",
+        )
+
+
+def test_alert_contract_rejects_messages_over_dashboard_limit():
+    with pytest.raises(ValidationError):
+        NewAlertJSON(
+            timestamp=MIN_TIMESTAMP_US,
+            alert_id="ENGINE_OIL_TEMPERATURE",
+            sensors=[{"sensor_id": "OIL_TEMP_C", "value": 100.0}],
+            analysis_message="x" * 256,
+            analysis_reason="Sustained high readings",
+        )

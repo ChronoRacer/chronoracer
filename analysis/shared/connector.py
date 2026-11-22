@@ -4,14 +4,11 @@ import pathway as pw
 import grpc
 from analysis.shared.config import Config
 from analysis.shared.sensor_map import load_physical_to_business_with_retry, to_business_id
+from analysis.shared.timestamp_order import is_backward_timestamp
 from loguru import logger
 
 from analysis.shared.proto import telemetry_v1_pb2_grpc
 from analysis.shared.proto import  telemetry_v1_pb2
-
-
-def is_backward_timestamp(timestamp_nano: int, last_accepted_nano: int | None) -> bool:
-    return last_accepted_nano is not None and timestamp_nano < last_accepted_nano
 
 
 class GRPCSensorStream(pw.io.python.ConnectorSubject):
