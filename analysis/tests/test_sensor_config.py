@@ -64,6 +64,20 @@ def test_load_sensor_config_reports_missing_blob():
         load_sensor_config(client)
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        '{" ": "physical_speed"}',
+        '{"CAR_SPEED_KMH": "  "}',
+        '{"CAR_SPEED_KMH": null}',
+        '{"CAR_SPEED_KMH": 123}',
+    ),
+)
+def test_load_sensor_config_rejects_blank_or_non_string_mapping_entries(text):
+    with pytest.raises(ValueError):
+        load_sensor_config(FakeClient(FakeBlob(text)))
+
+
 def test_load_physical_to_business_retries_until_sensor_config_exists():
     class DelayedBlob(FakeBlob):
         def __init__(self):

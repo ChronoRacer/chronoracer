@@ -134,7 +134,8 @@ def main():
     pw.io.python.write(pred_sensor,BatchedSensorObserver(pub_socket,TOPIC_SENSOR_PRED))
 
     logger.info("Data stream running")
-    pw.run()
+    # The default monitor takes over the terminal and hides the other local-dev logs.
+    pw.run(monitoring_level=pw.MonitoringLevel.NONE)
 
 if __name__ == '__main__':
     main()

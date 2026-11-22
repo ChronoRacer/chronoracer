@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 START_TIME_NS = 1_500_000_000
 RADIUS_M = 8.0
 EXIT_RADIUS_M = 20.0
+MIN_LAP_DISTANCE_M = 3.0 * EXIT_RADIUS_M
 EARTH_RADIUS_M = 6_371_000.0
 
 
@@ -51,6 +52,7 @@ class LapDetector:
         self.start_collection_ts_ns: int | None = None
         self.previous_point: MPoint | None = None
         self.departed_from_start = False
+        self.distance_since_lap_start_m = 0.0
         self.track_lon_lat = []
         self.track : LineString | None =  None
         self.p25 = None
@@ -98,6 +100,7 @@ class LapDetector:
         self.previous_point = MPoint(lat=gps_lat, lon=gps_lon)
         self.lap_start_ts_ns = gps_ts_ns
         self.lap_time = 0.0
+        self.distance_since_lap_start_m = 0.0
         self.curr_lap_num = 1
         return True
 
@@ -139,6 +142,9 @@ class LapDetector:
             self.lap_time = elapsed_s
             return None
 
+        segment_north_m, segment_east_m = self._local_xy(previous_point, test_point)
+        self.distance_since_lap_start_m += math.hypot(segment_north_m, segment_east_m)
+
         north_m, east_m = self._local_xy(start_point, test_point)
         if not self.departed_from_start:
             if math.hypot(north_m, east_m) >= EXIT_RADIUS_M:
@@ -148,9 +154,16 @@ class LapDetector:
 
         if self._segment_reaches_start(start_point, previous_point, test_point):
             self.departed_from_start = False
+            if self.distance_since_lap_start_m < MIN_LAP_DISTANCE_M:
+                # A short excursion beyond EXIT_RADIUS_M and back is not a lap.
+                self.distance_since_lap_start_m = 0.0
+                self.lap_start_ts_ns = ts_ns
+                self.lap_time = 0.0
+                return None
             self.lap_time = elapsed_s
             self.lap_start_ts_ns = ts_ns
             self.curr_lap_num += 1
+            self.distance_since_lap_start_m = 0.0
             return test_point
 
         self.lap_time = elapsed_s
@@ -343,7 +356,9 @@ class LackOfFuelPred:
         if a_lap >= 0:
             return None, None
         target_lap = -(b + a_speed * mean_speed) / a_lap
-        return max(0.0, target_lap - curr_lap), abs(a_lap)
+        # target_lap is the lap whose end reaches zero. The current lap is
+        # already in progress, so it still counts as one lap remaining.
+        return max(0.0, target_lap - curr_lap + 1.0), abs(a_lap)
 
     def fill(self, is_finish_line_crossed: bool, curr_lap: int, fuel: float, speed: float):
         if self.start_point is None:
@@ -406,6 +421,7 @@ class LapTimePred:
 
     def __init__(self, min_split_laps: int = 2):
         self.track: LineString | None = None
+        self.project_to_meters = None
         self.point25: MPoint | None = None
         self.point50: MPoint | None = None
         self.point75: MPoint | None = None
@@ -424,8 +440,9 @@ class LapTimePred:
             for s in self.SPLITS
         }
 
-    def set_track(self, track):
+    def set_track(self, track, project_to_meters):
         self.track = track
+        self.project_to_meters = project_to_meters
 
     def set_points(self, p25, p50, p75):
         self.point25 = p25
@@ -438,7 +455,8 @@ class LapTimePred:
         total_distance = self.track.length
         if total_distance <= 0:
             return None
-        perc = int((self.track.project(Point(lon, lat)) / total_distance) * 100)
+        x_m, y_m = self.project_to_meters.transform(lon, lat)
+        perc = int((self.track.project(Point(x_m, y_m)) / total_distance) * 100)
         return max(0, min(perc, 100))
 
     def _split_at(self, raw: int) -> int | None:
@@ -491,7 +509,7 @@ class LapTimePred:
 
 
 class TyreWearPred:
-    def __init__(self, good_tyre_laps: int = 3, steer_angle: float = 0.25, min_fit_sample : int = 25,trend_window : int = 3):
+    def __init__(self, good_tyre_laps: int = 3, steer_angle: float = 5.0, min_fit_sample : int = 25,trend_window : int = 3):
         self.laps_with_good_tyre = good_tyre_laps
         self.steer_angle: float = steer_angle
         self.min_fit_sample : int = min_fit_sample
@@ -569,7 +587,7 @@ class TyreWearPred:
         self.retention_history.append((self.lap_num,retention_finished))
         window = self.retention_history[-self.trend_window:]
         if len(window) < self.trend_window:
-            return float(np.clip(retention_finished,0.0,100.0))
+            return None
 
         x, y = zip(*window)
         slope, intercept = np.polyfit(x, y, 1)
@@ -675,7 +693,7 @@ class BrakeFadePred:
         self.brake_fade_history.append((self.lap_num, brake_fade_finished))
         window = self.brake_fade_history[-self.trend_window:]
         if len(window) < self.trend_window:
-            return float(np.clip(brake_fade_finished, 0.0, 100.0))
+            return None
         x, y = zip(*window)
         slope, intercept = np.polyfit(x, y, 1)
         predicted = slope * (self.lap_num + 1) + intercept
@@ -1065,11 +1083,15 @@ class LapComparePred:
             self.curr_brakes_count += 1
         self._brake_active = hard
 
-    def _reset_lap_accumulators(self, hv_soc: float) -> None:
+    def _reset_lap_accumulators(self, hv_soc: float | None) -> None:
         self._speed_partial_lst.clear()
         self.curr_brakes_count = 0
         self._brake_active = False
         self._hv_soc_start = hv_soc
+
+    def skip_lap(self) -> None:
+        """Discard a lap whose finish window lacked required comparison sensors."""
+        self._reset_lap_accumulators(None)
 
     def _lap_score_func(
             self,

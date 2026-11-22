@@ -124,18 +124,19 @@ class LapTimePrediction(PredictionClass):
             logger.warning("HV SOC or RPM signal missing, skipping lap time prediction")
             return None
 
-        track = lap_ctx.get("track")
+        track = lap_ctx.get("track_meters")
+        project_to_meters = lap_ctx.get("project_to_meters")
         p25 = lap_ctx.get("p25")
         p50 = lap_ctx.get("p50")
         p75 = lap_ctx.get("p75")
-        if track is None or p25 is None or p50 is None or p75 is None:
+        if track is None or project_to_meters is None or p25 is None or p50 is None or p75 is None:
             return None
         if gps_lon is None or gps_lat is None or speed is None:
             return None
 
         if self.need_prepare():
             self.model.set_points(p25, p50, p75)
-            self.model.set_track(track)
+            self.model.set_track(track, project_to_meters)
             self.is_prepared = True
 
         lap_time = lap_ctx["lap_time"]
@@ -167,7 +168,7 @@ class LapTimePrediction(PredictionClass):
 class TyreWearPrediction(PredictionClass):
     def __init__(self):
         super().__init__(
-            name="CURRENT LAP - PROJECTED TYRE GRIP RETENTION VS FRESH BASELINE",
+            name="TYRE GRIP RETENTION VS FRESH BASELINE",
             sensors={
                 "STEER_ANGLE_DEG",
                 "CAR_SPEED_KMH",
@@ -196,6 +197,7 @@ class TyreWearPrediction(PredictionClass):
             or accel_lat is None
             or speed is None
         ):
+            self.model.process_data(bool(lap_ctx["is_finish_line_crossed"]))
             logger.warning("Tyre wear signals missing, skipping tyre wear prediction")
             return None
 
@@ -211,10 +213,7 @@ class TyreWearPrediction(PredictionClass):
             return None
 
         curr_lap = lap_ctx["curr_lap"]
-        if len(self.model.retention_history) >= self.model.trend_window:
-            instruction = f"Projected tyre grip on lap {curr_lap}: {float(result):.1f}% of fresh"
-        else:
-            instruction = f"Tyre grip on lap {curr_lap - 1}: {float(result):.1f}% of fresh (measured)"
+        instruction = f"Projected tyre grip on lap {curr_lap}: {float(result):.1f}% of fresh"
         logger.info("Tyre grip: {}", instruction)
         return RunResult(value=float(result), instruction=instruction)
 
@@ -222,7 +221,7 @@ class TyreWearPrediction(PredictionClass):
 class BrakeFadePrediction(PredictionClass):
     def __init__(self):
         super().__init__(
-            name="CURRENT LAP - PROJECTED BRAKE PERFORMANCE VS FRESH BASELINE",
+            name="BRAKE PERFORMANCE VS FRESH BASELINE",
             sensors={
                 "STEER_ANGLE_DEG",
                 "CAR_SPEED_KMH",
@@ -251,6 +250,7 @@ class BrakeFadePrediction(PredictionClass):
             or hv_soc is None
             or ambient_temp is None
         ):
+            self.model.process_data(bool(lap_ctx["is_finish_line_crossed"]))
             logger.warning("Brake fade sensors missing, skipping brake fade prediction")
             return None
 
@@ -266,10 +266,7 @@ class BrakeFadePrediction(PredictionClass):
             return None
 
         curr_lap = lap_ctx["curr_lap"]
-        if len(self.model.brake_fade_history) >= self.model.trend_window:
-            instruction = f"Projected brake performance on lap {curr_lap}: {float(result):.1f}% of fresh"
-        else:
-            instruction = f"Brake performance on lap {curr_lap - 1}: {float(result):.1f}% of fresh (measured)"
+        instruction = f"Projected brake performance on lap {curr_lap}: {float(result):.1f}% of fresh"
         logger.info("Brake fade: {}", instruction)
         return RunResult(value=float(result), instruction=instruction)
 
@@ -458,6 +455,8 @@ class LapComparePrediction(PredictionClass):
         hv_soc = signals.get("STATE_OF_CHARGE_PERC")
 
         if speed is None or brake_prs is None or hv_soc is None:
+            if lap_ctx.get("is_finish_line_crossed"):
+                self.model.skip_lap()
             logger.warning("Lap compare sensors missing, skipping lap compare prediction")
             return None
 

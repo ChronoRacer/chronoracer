@@ -58,7 +58,7 @@ The optional BLACK thresholds are not configured for `12V_BATTERY_VOLTAGE` or `I
 
 The prediction process detects laps from GPS position. A window without GPS lat/lon skips only the lap-detector update; it does not stop predictions. Predictions marked as lap-based (`needs_lap` in the registry) run only after the lap start is set; the others (oil and coolant forecasts) run on every window whose declared inputs are present. A missing input such as `CAR_SPEED_KMH` skips only the predictions that declare it. It records the first valid GPS timestamp, then sets the start point using a later GPS position once 1.5 seconds have elapsed. Elapsed time comes from GPS timestamps, not from a presumed sample rate.
 
-A lap is armed after the car moves 20 m from the start. It completes when the segment between consecutive GPS points comes within 8 m of the start, which prevents a sparse GPS stream from skipping the start between samples.
+A lap is armed after the car moves 20 m from the start. It completes when the segment between consecutive GPS points comes within 8 m of the start and at least 60 m of GPS path distance has accumulated since the previous start. This rejects short excursions out of and back into the start radius while preserving sparse-segment crossing detection. A GPS gap can still hide one or more crossings because the missing path cannot be reconstructed.
 
 The implementation in [`prediction_models.py`](../analysis/predictions/prediction_models.py) is authoritative.
 
@@ -68,13 +68,13 @@ The [prediction registry and output formatting](../analysis/predictions/predicti
 
 | Prediction ID | Meaning and current behavior |
 |---|---|
-| `fuel_prediction` | Projects fuel remaining at the end of the current lap and, once enough lap observations exist, estimates laps to empty and fuel use per lap. It learns from completed laps and their average speed. |
-| `lap_time_prediction` | Projects the full lap time near the quarter-, halfway-, and three-quarter-distance track splits. The detector records the track until `track_ready_lap` (default 2). The model publishes nothing at a split until `min_split_laps` (default 2) finished laps have been recorded there. |
-| `tyre_wear_prediction` | Projects tyre grip retention at the end of the lap relative to a learned fresh-tyre baseline. It builds that baseline from early-lap cornering data. |
-| `brake_fade_prediction` | Projects brake performance at the end of the lap relative to a learned fresh-brake baseline, using selected straight-line braking samples. |
+| `fuel_prediction` | Projects fuel remaining at the end of the current lap and, once enough lap observations exist, estimates laps to empty and fuel use per lap. Laps to empty includes the current lap in progress. It learns from completed laps and their average speed. |
+| `lap_time_prediction` | Projects the full lap time near the quarter-, halfway-, and three-quarter-distance track splits measured along the projected track in metres. Track recording starts when the GPS start point is established, excluding the preceding GPS warm-up. The detector records the track until `track_ready_lap` (default 2). The model publishes nothing at a split until `min_split_laps` (default 2) finished laps have been recorded there; with defaults, the first result is at a split on lap 4. |
+| `tyre_wear_prediction` | Projects tyre grip retention at the end of the next lap relative to a learned fresh-tyre baseline. It builds that baseline from early-lap cornering data with steering angle of at least 5 degrees. It publishes only after three post-baseline lap measurements are available; those measurements are not shown as predictions. |
+| `brake_fade_prediction` | Projects brake performance at the end of the next lap relative to a learned fresh-brake baseline, using selected straight-line braking samples. It publishes only after three post-baseline lap measurements are available; those measurements are not shown as predictions. |
 | `car_fluids_prediction` | Forecasts engine oil temperature over the configured forward horizon (display name: oil temperature forecast). The prediction ID keeps the historical `car_fluids` label. |
 | `coolant_temp_prediction` | Forecasts coolant temperature 60 seconds ahead from recent coolant/oil temperatures and current driving conditions. |
-| `lap_compare_prediction` | After each finished lap (from the second lap onward), compares that lap with the previous and best lap and publishes a composite lap score plus a comparison summary (lap time deltas, average speed, hard braking, HV SoC use). |
+| `lap_compare_prediction` | After each finished lap (from the second lap onward), compares that lap with the previous and best lap and publishes a composite lap score plus a comparison summary (lap time deltas, average speed, hard braking, HV SoC use). If required comparison sensors are missing at the finish crossing, that lap's partial samples are discarded so they cannot be merged into the next lap. |
 
 The table lists the predictions currently registered in the engine. `SpeedOnTurnsPrediction` is implemented in code but its registration is commented out, so `speed_on_turns_prediction` is not published. The active prediction classes use in-process models; the engine's ONNX download helper is not called by these registered predictions.
 

@@ -29,3 +29,7 @@ python -m analysis.rules.test.rule_test
 ```
 
 For local rule and sensor files, see the options in [`rule_test.py`](rules/test/rule_test.py).
+
+## Local end-to-end run
+
+See the [local run guide](dev/README.md) for starting Core, Analysis, Telemetry, and delayed synthetic track data.
