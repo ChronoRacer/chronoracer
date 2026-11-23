@@ -3,8 +3,9 @@ export type ZoneId = 'driving' | 'engine' | 'map' | 'vehicle' | 'service' | 'hid
 export type Zone = { id: ZoneId; title: string; sensors: readonly string[] };
 
 /**
- * Dashboard zones in screen order. Each contract sensor belongs to exactly one zone. `hidden` sensors are received
- * but not shown: GPS quality and duplicates of what the map and the speed gauge already say.
+ * Dashboard zones in screen order. Each contract sensor belongs to exactly one zone. `hidden` sensors have no LIVE
+ * instrument (GPS quality and duplicates of what the map and the speed gauge already say); like every sensor without a
+ * MAIN chart, they are charted on CHARTS → OTHER.
  */
 export const ZONES: readonly Zone[] = [
   {
@@ -47,7 +48,7 @@ export const ZONES: readonly Zone[] = [
   },
   {
     id: 'hidden',
-    title: 'NOT SHOWN',
+    title: 'NOT ON LIVE',
     sensors: ['gps_sats', 'gps_pdop', 'gps_speed', 'gps_alt', 'baro'],
   },
 ];
@@ -56,8 +57,35 @@ export const STATUS_LABELS: Readonly<Record<string, Readonly<Record<number, stri
   gps_fix: { 0: 'NO FIX', 2: '2D', 3: '3D' },
 };
 
-/** Live sensors that no zone places; shown as generic cards on the CHARTS tab. */
+/** Sensors charted on CHARTS → MAIN (`ServiceZone`), in no particular order. */
+export const MAIN_CHARTS: readonly string[] = [
+  'coolant_temp',
+  'oil_temp',
+  'intake_temp',
+  'maf',
+  'ign_timing',
+  'lambda',
+  'lambda_cmd',
+  'stft',
+  'ltft',
+  'o2_current',
+];
+
+export type ChartGroup = { title: string; sensors: readonly string[] };
+
+/** Live sensors that no zone places; charted on CHARTS → OTHER. */
 export function unknownSensors(liveIds: readonly string[]): readonly string[] {
   const placed = new Set(ZONES.flatMap((zone) => zone.sensors));
   return liveIds.filter((id) => !placed.has(id)).sort();
+}
+
+/** CHARTS → OTHER: per zone, every sensor without a MAIN chart, then live sensors missing from the contract. */
+export function otherChartGroups(liveIds: readonly string[]): readonly ChartGroup[] {
+  const main = new Set(MAIN_CHARTS);
+  const groups: ChartGroup[] = ZONES.map((zone) => ({
+    title: zone.title,
+    sensors: zone.sensors.filter((id) => !main.has(id)),
+  })).filter((group) => group.sensors.length > 0);
+  const unknown = unknownSensors(liveIds);
+  return unknown.length > 0 ? [...groups, { title: 'NOT IN CONTRACT', sensors: unknown }] : groups;
 }

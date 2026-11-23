@@ -124,7 +124,7 @@ Unknown keys are ignored.
 Responses: `204` accepted, `400` invalid JSON or schema with the failing field paths, `401` wrong or missing token,
 `413` body too large, `422` a new `prediction_id` beyond the cap of 200, `503` ingest not configured.
 
-One `prediction_id` is one card in the UI:
+One `prediction_id` is one row in the UI:
 
 - `running` sets the title and refresh rate; a prediction or `running` with a `timestamp` at or after the
   `unavailable` one clears it.

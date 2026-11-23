@@ -4,12 +4,16 @@ import { formatTimeUs } from '../lib/analysis-format';
 
 const SHOW_MS = 6000;
 
-type Props = { alerts: Alert[] };
+type Props = {
+  alerts: Alert[];
+  /** The alert list is on screen: new alerts count as seen and get no popup. */
+  muted: boolean;
+};
 
 type Toast = { key: string; alert: Alert };
 
-/** Corner popup only when a new alert arrives — not a replay of the full history. */
-export function AlertToast({ alerts }: Props) {
+/** Corner popup only when a new alert arrives — not a replay of the full history, not while the alert list is shown. */
+export function AlertToast({ alerts, muted }: Props) {
   const seen = useRef(new Set<string>());
   const primed = useRef(false);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -18,28 +22,33 @@ export function AlertToast({ alerts }: Props) {
     if (alerts.length === 0) {
       return;
     }
+    const fresh = alerts.filter((a) => !seen.current.has(alertKey(a)));
+    // The list keeps only the newest alerts; one that dropped out never comes back.
+    seen.current = new Set(alerts.map(alertKey));
     if (!primed.current) {
-      for (const a of alerts) {
-        seen.current.add(alertKey(a));
-      }
       primed.current = true;
       return;
     }
-    const fresh = alerts.filter((a) => !seen.current.has(alertKey(a)));
-    for (const a of alerts) {
-      seen.current.add(alertKey(a));
-    }
     const newest = fresh.at(-1);
-    if (!newest) {
+    if (newest && !muted) {
+      setToast({ key: alertKey(newest), alert: newest });
+    }
+  }, [alerts, muted]);
+
+  useEffect(() => {
+    if (muted) {
+      setToast(null);
+    }
+  }, [muted]);
+
+  // Keyed on the toast itself, so a resync snapshot that replaces `alerts` cannot cancel the hide.
+  useEffect(() => {
+    if (!toast) {
       return;
     }
-    const key = alertKey(newest);
-    setToast({ key, alert: newest });
-    const clear = window.setTimeout(() => {
-      setToast((cur) => (cur?.key === key ? null : cur));
-    }, SHOW_MS);
-    return () => window.clearTimeout(clear);
-  }, [alerts]);
+    const hide = window.setTimeout(() => setToast(null), SHOW_MS);
+    return () => window.clearTimeout(hide);
+  }, [toast]);
 
   if (!toast) {
     return null;

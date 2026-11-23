@@ -1,16 +1,17 @@
 import type { TelemetryState } from '../hooks/useTelemetrySocket';
 import { CAR } from '../sensors/catalog';
 import { ConnectionStatus } from './ConnectionStatus';
-import { DriverPanel } from './DriverPanel';
+import { DriverDots } from './DriverPanel';
 import { GapMarkers } from './GapMarkers';
 import { cx } from './instruments';
 
-export type Tab = 'live' | 'charts' | 'analysis';
+export type Tab = 'live' | 'charts' | 'analysis' | 'driver';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'live', label: 'LIVE' },
   { id: 'charts', label: 'CHARTS' },
   { id: 'analysis', label: 'ANALYSIS' },
+  { id: 'driver', label: 'DRIVER' },
 ];
 
 type Props = {
@@ -19,11 +20,10 @@ type Props = {
   onTab: (tab: Tab) => void;
   /** Alerts that arrived since ANALYSIS was last open. */
   unseenAlerts: number;
-  onDriver: () => void;
 };
 
-/** One row: brand, tabs, connection and gaps, driver radio, logout. */
-export function TopBar({ state, tab, onTab, unseenAlerts, onDriver }: Props) {
+/** One row: brand, tabs, connection and gaps, logout. */
+export function TopBar({ state, tab, onTab, unseenAlerts }: Props) {
   return (
     <header className="topbar">
       <div className="brand" title={CAR}>
@@ -48,18 +48,12 @@ export function TopBar({ state, tab, onTab, unseenAlerts, onDriver }: Props) {
                 {unseenAlerts}
               </span>
             ) : null}
+            {t.id === 'driver' ? <DriverDots active={state.driverActive} /> : null}
           </button>
         ))}
       </nav>
       <ConnectionStatus connection={state.connection} coreConnected={state.coreConnected} hello={state.hello} />
       <GapMarkers gaps={state.gaps} />
-      <DriverPanel
-        enabled={state.driverEnabled}
-        messages={state.driverMessages}
-        active={state.driverActive}
-        variant="strip"
-        onExpand={onDriver}
-      />
       <a className="logout" href="/auth/logout">
         LOG OUT
       </a>

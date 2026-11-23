@@ -9,8 +9,8 @@ type ZoneProps = { store: SeriesStore };
 
 const SERIES_COLORS = { primary: '#22d3ee', secondary: '#fbbf24', reference: '#8792a6' } as const;
 
-/** CHARTS tab: one 60 s chart per card, sized to fill the stage. */
-export function ServiceZone({ store, extraIds = [] }: ZoneProps & { extraIds?: readonly string[] }) {
+/** CHARTS → MAIN: one 60 s chart per card, sized to fill the stage. Its sensors are `MAIN_CHARTS`. */
+export function ServiceZone({ store }: ZoneProps) {
   return (
     <section className="charts" aria-label="Service charts">
       <TempCard store={store} id="coolant_temp" title="COOLANT" />
@@ -21,9 +21,6 @@ export function ServiceZone({ store, extraIds = [] }: ZoneProps & { extraIds?: r
       <LambdaCard store={store} />
       <TrimsCard store={store} />
       <SensorCard store={store} id="o2_current" title="O₂ SENSOR CURRENT" digits={2} />
-      {extraIds.map((id) => (
-        <SensorCard key={id} store={store} id={id} />
-      ))}
     </section>
   );
 }
@@ -112,17 +109,18 @@ function TrimsCard({ store }: ZoneProps) {
   );
 }
 
-/** Generic card: readout and 60 s chart. Also used for sensors outside the contract. */
+/** Generic card: readout and 60 s chart. Every CHARTS → OTHER card, including sensors outside the contract. */
 export function SensorCard({
   store,
   id,
   title = id.toUpperCase(),
   digits,
-}: ZoneProps & { id: string; title?: string; digits?: number }) {
+  note = id,
+}: ZoneProps & { id: string; title?: string; digits?: number; note?: string }) {
   const r = useSensor(store, id);
   const [min, max] = rangeOf(r);
   return (
-    <Card title={title} aside={<span className="card-unit">{id}</span>}>
+    <Card title={title} aside={<span className="card-unit">{note}</span>}>
       <Readout r={r} digits={digits} className="big" />
       <SensorChart store={store} series={[{ id, color: SERIES_COLORS.primary }]} min={min} max={max} />
     </Card>
