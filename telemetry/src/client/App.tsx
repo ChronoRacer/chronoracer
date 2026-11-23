@@ -1,21 +1,21 @@
 import { useEffect, useState } from 'react';
 import { AlertToast } from './components/AlertToast';
 import { AlertsPanel } from './components/AlertsPanel';
-import { Drawer } from './components/Drawer';
+import { ChartsView, type ChartsSet } from './components/ChartsView';
 import { DriverPanel } from './components/DriverPanel';
 import { LiveView } from './components/LiveView';
 import { PredictionsPanel } from './components/PredictionsPanel';
-import { ServiceZone } from './components/ServiceZone';
 import { TopBar, type Tab } from './components/TopBar';
 import { useTelemetrySocket } from './hooks/useTelemetrySocket';
 import { FanoutTick } from './lib/fanout-tick';
-import { unknownSensors } from './sensors/layout';
 
 export function App() {
   const state = useTelemetrySocket();
-  const other = unknownSensors(state.sensorIds);
   const [tab, setTab] = useState<Tab>('live');
-  const [driverOpen, setDriverOpen] = useState(false);
+  const [chartsSet, setChartsSet] = useState<ChartsSet>('main');
+  const [chartsPage, setChartsPage] = useState(0);
+  // The alert list is on screen: its alerts count as seen and need no toast.
+  const alertsVisible = tab === 'analysis';
   const newestAlertUs = state.alerts.reduce((max, a) => Math.max(max, a.timestampUs), 0);
   // Like the toast, the history in the first snapshot counts as seen.
   const [seenAlertUs, setSeenAlertUs] = useState<number>();
@@ -23,48 +23,42 @@ export function App() {
     seenAlertUs === undefined ? 0 : state.alerts.filter((a) => a.timestampUs > seenAlertUs).length;
 
   useEffect(() => {
-    if (tab === 'analysis' || (seenAlertUs === undefined && newestAlertUs > 0)) {
+    if (alertsVisible || (seenAlertUs === undefined && newestAlertUs > 0)) {
       setSeenAlertUs(newestAlertUs);
     }
-  }, [tab, newestAlertUs, seenAlertUs]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setDriverOpen(false);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [alertsVisible, newestAlertUs, seenAlertUs]);
 
   return (
     <FanoutTick value={state.tickMs}>
       <div className="dash">
-        <TopBar
-          state={state}
-          tab={tab}
-          onTab={setTab}
-          unseenAlerts={unseenAlerts}
-          onDriver={() => setDriverOpen(true)}
-        />
+        <TopBar state={state} tab={tab} onTab={setTab} unseenAlerts={unseenAlerts} />
 
         <main className="stage">
           {tab === 'live' ? <LiveView store={state.store} /> : null}
-          {tab === 'charts' ? <ServiceZone store={state.store} extraIds={other} /> : null}
+          {tab === 'charts' ? (
+            <ChartsView
+              store={state.store}
+              sensorIds={state.sensorIds}
+              set={chartsSet}
+              onSet={setChartsSet}
+              page={chartsPage}
+              onPage={setChartsPage}
+            />
+          ) : null}
           {tab === 'analysis' ? (
             <div className="analysis">
               <PredictionsPanel predictions={state.predictions} />
               <AlertsPanel alerts={state.alerts} />
             </div>
           ) : null}
-
-          <Drawer open={driverOpen} title="DRIVER RADIO" onClose={() => setDriverOpen(false)}>
-            <DriverPanel enabled={state.driverEnabled} messages={state.driverMessages} active={state.driverActive} />
-          </Drawer>
+          {tab === 'driver' ? (
+            <div className="driver-view">
+              <DriverPanel enabled={state.driverEnabled} messages={state.driverMessages} active={state.driverActive} />
+            </div>
+          ) : null}
         </main>
 
-        <AlertToast alerts={state.alerts} />
+        <AlertToast alerts={state.alerts} muted={alertsVisible} />
       </div>
     </FanoutTick>
   );

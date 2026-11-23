@@ -74,7 +74,7 @@ telemetry/
     client/                   # Vite React app
       sensors/
         catalog.ts            # import of the sensor contract
-        layout.ts             # dashboard zones (incl. hidden sensors), status labels, sensors missing from the contract
+        layout.ts             # dashboard zones (incl. hidden sensors), CHARTS MAIN/OTHER sets, status labels, sensors missing from the contract
         tones.ts              # color thresholds and nominal bands (UI judgement, not contract)
       lib/
         series-store.ts       # per-sensor series, change notifications, chart window edge, sample pairing
@@ -87,20 +87,20 @@ telemetry/
         useSensor.ts          # one sensor's newest value, age, staleness, range check, tone
         useSmoothedNumber.ts  # MotionValue glide + DOM binders (no per-frame React); wrap-aware heading
       components/
-        TopBar.tsx            # one row: brand, tabs, connection, gaps, driver strip, logout
+        TopBar.tsx            # one row: brand, tabs, connection, gaps, logout
         ConnectionStatus.tsx  GapMarkers.tsx
         LiveView.tsx          # LIVE grid
         DrivingZone.tsx       # speed dial, pedals, steering, wheel speeds, g-force
         PowertrainZone.tsx    # rpm dial, EV/engine mode, throttle and load
         VehicleZone.tsx       # energy (HV SOC, fuel, 12 V) and temperatures
         GpsTrack.tsx          # OpenStreetMap track map: car, heading, trail, follow
-        ServiceZone.tsx       # CHARTS tab: temperatures, mixture, trims, MAF, ignition; generic sensor card
+        ChartsView.tsx        # CHARTS tab: MAIN / OTHER switch; OTHER pages and pager
+        ServiceZone.tsx       # CHARTS → MAIN: temperatures, mixture, trims, MAF, ignition; generic sensor card
         instruments.tsx       # shared card, readout, bars, temperature bar
-        PredictionsPanel.tsx  # ANALYSIS cards per prediction_id
+        PredictionsPanel.tsx  # ANALYSIS row per prediction_id
         AlertsPanel.tsx       # ANALYSIS alert list
-        AlertToast.tsx        # corner popup for a new alert
-        DriverPanel.tsx       # top-bar strip; drawer: active list, flag toggles, time, composer, history
-        Drawer.tsx            # stage overlay for driver radio (Escape closes)
+        AlertToast.tsx        # corner popup for a new alert while the alert list is not on screen
+        DriverPanel.tsx       # DRIVER tab: on display, time, flags | message, history; active dots for its tab
         SensorChart.tsx       # one uPlot per card, one or more sensors: shared window and cursor
 ```
 
@@ -147,25 +147,27 @@ as decimal strings. Do not expose gRPC-web.
 ## UI
 
 A dark, single-viewport dashboard: `100dvh`, no page scroll down to ~1000 px wide; below 820 px cards stack and the
-page scrolls. One top bar, then the stage with three tabs; every card's main visual takes the height that is left, so
-the stage has no empty bands. Driver radio opens as an overlay drawer with its own scroll; Escape closes it.
+page scrolls. One top bar, then the stage with four tabs; every card's main visual takes the height that is left, so
+the stage has no empty bands. Only the DRIVER tab scrolls, inside the stage.
 
 Sensor names, units, ranges, and descriptions come from
 [`infra/contract/sensors.json`](../infra/contract/sensors.json), imported at build time. Which zone shows which
 sensor is [`src/client/sensors/layout.ts`](src/client/sensors/layout.ts); a test fails when a contract sensor is in no
-zone or in two. Its `hidden` zone lists sensors that are received but not shown, because the operator does not act
-on them: `gps_sats`, `gps_pdop`, `gps_alt`, `baro`, and `gps_speed` (the speed dial shows `speed`).
+zone or in two, or not charted exactly once across CHARTS MAIN and OTHER. Its `hidden` zone lists sensors with no LIVE
+instrument, because the operator does not act on them: `gps_sats`, `gps_pdop`, `gps_alt`, `baro`, and `gps_speed` (the
+speed dial shows `speed`); they are charted on CHARTS → OTHER.
 
 UI copy is English (CAPS labels where they fit); driver presets are the message text and stay in the driver's
 language.
 
 | Region       | Contents                                                                                                   |
 |--------------|------------------------------------------------------------------------------------------------------------|
-| Top bar      | brand, tabs `LIVE` / `CHARTS` / `ANALYSIS` (ANALYSIS counts unseen alerts), connection + race, gaps chip (only after a gap), driver strip, logout |
+| Top bar      | brand, tabs `LIVE` / `CHARTS` / `ANALYSIS` / `DRIVER` (ANALYSIS counts unseen alerts, DRIVER shows a dot per active type), connection + `RACE` id from Core's `hello`, gaps chip (only after a gap), logout |
 | LIVE         | speed and rpm dials with mode, throttle, load · pedals · steering · g-force · wheel speeds │ track map │ energy (HV SOC, fuel, 12 V) · temperatures |
-| CHARTS       | 60 s chart per card filling the stage; unknown sensors after them                                          |
-| ANALYSIS     | prediction cards │ alert list                                                                              |
-| Alert toast  | corner popup only when a **new** alert arrives                                                             |
+| CHARTS       | `MAIN`: service charts, one 60 s chart per card filling the stage · `OTHER`: a 60 s chart for every other sensor in zone order, each card naming its zone, then sensors missing from the contract; pages of 10 that fill the stage, with a pager instead of scrolling; the page survives a tab switch |
+| ANALYSIS     | prediction rows │ alert list                                                                               |
+| DRIVER       | driver radio, below                                                                                        |
+| Alert toast  | corner popup only when a **new** alert arrives and the ANALYSIS alert list is not on screen                |
 
 - Track map: OpenStreetMap standard tiles (zoom ≤ 19 native) with the car as a heading arrow and the trail driven
   since the page opened, kept outside the component so a tab switch does not lose it. The map follows the car at zoom
@@ -187,17 +189,18 @@ language.
   hole in the chart.
 - A sensor without points shows `—`. A sensor with no point for 5 s (arrival time in the browser) is dimmed. Hovering
   any value shows its sensor id, contract description, and the age of its last point.
-- Live sensors missing from the contract appear on the CHARTS tab.
-- ANALYSIS: a prediction card is *LIVE* (green), *WAITING* (orange), or *UNAVAILABLE* (red) with analysis' `info`.
+- Live sensors missing from the contract appear on CHARTS → OTHER.
+- ANALYSIS: one full-width row per prediction, sorted by title: name and refresh rate │ result │ sensors │ status and
+  time. Status is *LIVE* (green), *WAITING* (orange), or *UNAVAILABLE* (red) with analysis' `info`.
   Instruction/description type is emphasized; numeric results use a simpler mono motif. Alerts show time, message,
-  reason, and sensor values with contract units. Analysis text is shown as sent. New alerts also fire a corner toast
-  (history is not replayed as toasts).
+  reason, and sensor values with contract units. Analysis text is shown as sent. New alerts also fire a corner toast,
+  except while the ANALYSIS alert list is on screen (history is not replayed as toasts).
 - Sensors in `STATUS_LABELS` (today `gps_fix`) show a state label instead of a number.
-- Driver strip → drawer. The strip shows a colour dot per active type and the latest action. The drawer has, top to
-  bottom: the active list (*ON DISPLAY*, seconds left or *UNTIL CLEARED*, *CLEAR* each, *CLEAR ALL*); one latching
-  button per flag, filled while the flag is active; the time for the next send; the composer (type, text, *SHOW*);
-  presets; the action history. A preset fills the composer; only Enter or *SHOW* sends. Presets are UI copy in
-  [`src/client/lib/driver.ts`](src/client/lib/driver.ts). A control waits while an action of its type is unacknowledged.
+- DRIVER tab: titled sections, each with a one-line hint of what its controls do. *ON DISPLAY* (seconds left or
+  *UNTIL CLEARED*, *CLEAR* each, *CLEAR ALL*); *TIME ON DISPLAY*, applied to the next flag or message; then side by
+  side *FLAGS*, one latching button per flag that shows it at once and is filled while the flag is active, and
+  *MESSAGE*, the composer (type, text, *SHOW*) with presets; then *HISTORY*. A preset fills the composer; only Enter
+  or *SHOW* sends. Presets are UI copy in [`src/client/lib/driver.ts`](src/client/lib/driver.ts). A control waits while an action of its type is unacknowledged.
   Status is *SENDING…*, *SENT* (Kafka ack, not a read receipt), or *FAILED*. Without Kafka configuration sending is
   disabled. Type colours follow the car display backgrounds.
 - The browser subscribes to all sensors. Buckets and newest samples go to a per-sensor store, not React state, so an instrument

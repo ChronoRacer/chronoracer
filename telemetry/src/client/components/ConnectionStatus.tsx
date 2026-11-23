@@ -32,7 +32,12 @@ export function ConnectionStatus(props: Props) {
     <div className={`conn conn-${dot}`} title={hello ? `${detail}\nrace ${hello.raceId} · stream ${hello.streamId}` : detail}>
       <span className={`dot ${dot}`} />
       <span className="conn-label">{label}</span>
-      {hello ? <span className="conn-race">{hello.raceId}</span> : null}
+      {hello ? (
+        <span className="conn-race">
+          <span className="conn-race-label">RACE</span>
+          <span className="conn-race-id">{hello.raceId}</span>
+        </span>
+      ) : null}
     </div>
   );
 }

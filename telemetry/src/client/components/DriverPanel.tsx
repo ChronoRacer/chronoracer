@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
   DRIVER_ALL,
   DRIVER_DURATION_DEFAULT_S,
@@ -21,9 +21,6 @@ type Props = {
   messages: DriverMessage[];
   /** Oldest first. */
   active: DriverActive[];
-  /** Compact strip in the chrome; flags, composer, active list and history go in the drawer. */
-  variant?: 'strip' | 'full';
-  onExpand?: () => void;
 };
 
 const STATUS_LABEL = { sending: 'SENDING…', delivered: 'SENT', failed: 'FAILED' } as const;
@@ -40,37 +37,22 @@ const formatTime = (ms: number) => new Date(ms).toLocaleTimeString('en-GB');
 const sendingTypes = (messages: DriverMessage[]) =>
   new Set<DriverTarget>(messages.filter((m) => m.status === 'sending').map((m) => m.type));
 
-export function DriverPanel({ enabled, messages, active, variant = 'full', onExpand }: Props) {
-  const latest = messages.at(-1);
-
-  if (variant === 'strip') {
-    return (
-      <button type="button" className="meta-strip" onClick={onExpand} aria-label="Expand driver radio">
-        <span className="zone-title">DRIVER</span>
-        {active.length > 0 ? (
-          <span className="driver-dots" aria-label={`${active.length} active on the driver's display`}>
-            {active.map((a) => (
-              <TypeSwatch key={a.type} type={a.type} />
-            ))}
-          </span>
-        ) : null}
-        {latest ? (
-          <span className="meta-latest">
-            <span className="alert-time">{formatTime(latest.sentAtMs)}</span>
-            <span className="alert-message">{summary(latest)}</span>
-            <StatusChip message={latest} />
-          </span>
-        ) : (
-          <span className="hint">{enabled ? 'SEND MESSAGE' : 'DISABLED'}</span>
-        )}
-      </button>
-    );
+/** One colour dot per type on the driver's display; shown on the DRIVER tab button. */
+export function DriverDots({ active }: { active: DriverActive[] }) {
+  if (active.length === 0) {
+    return null;
   }
-
-  return <FullPanel enabled={enabled} messages={messages} active={active} />;
+  return (
+    <span className="driver-dots" aria-label={`${active.length} active on the driver's display`}>
+      {active.map((a) => (
+        <TypeSwatch key={a.type} type={a.type} />
+      ))}
+    </span>
+  );
 }
 
-function FullPanel({ enabled, messages, active }: Omit<Props, 'variant' | 'onExpand'>) {
+/** DRIVER tab: on display, time, flags | message, history. */
+export function DriverPanel({ enabled, messages, active }: Props) {
   const [durationS, setDurationS] = useState<number | undefined>(DRIVER_DURATION_DEFAULT_S);
   const [error, setError] = useState<string>();
   const sending = sendingTypes(messages);
@@ -94,17 +76,59 @@ function FullPanel({ enabled, messages, active }: Omit<Props, 'variant' | 'onExp
         </div>
       )}
       <ActiveList enabled={enabled} active={active} sending={sending} send={send} />
-      <div className="driver-compose">
-        <Flags enabled={enabled} active={active} sending={sending} durationS={durationS} send={send} />
+      <Box title="TIME ON DISPLAY" hint="applies to the next flag or message you send" className="driver-time">
         <Duration enabled={enabled} onChange={setDurationS} />
-        <Composer enabled={enabled} durationS={durationS} send={send} />
-        {error ? (
-          <div className="driver-error" role="alert">
-            NOT SENT: {error}
-          </div>
-        ) : null}
+      </Box>
+      <div className="driver-send-grid">
+        <Box
+          title="FLAGS"
+          hint="one click shows the flag on the driver's display at once; click a lit flag to clear it"
+          className="driver-flags-box"
+        >
+          <Flags enabled={enabled} active={active} sending={sending} durationS={durationS} send={send} />
+        </Box>
+        <Box
+          title="MESSAGE"
+          hint="write your own text, pick its type, then SHOW or Enter; a preset only fills the box"
+          className="driver-message-box"
+        >
+          <Composer enabled={enabled} durationS={durationS} send={send} />
+        </Box>
       </div>
-      <History messages={messages} />
+      {error ? (
+        <div className="driver-error" role="alert">
+          NOT SENT: {error}
+        </div>
+      ) : null}
+      <Box title="HISTORY" hint="every operator's actions, newest first">
+        <History messages={messages} />
+      </Box>
+    </section>
+  );
+}
+
+/** A titled DRIVER section; `hint` says in one line what its controls do. */
+function Box({
+  title,
+  hint,
+  aside,
+  className,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  aside?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className={cx('driver-box', className)} aria-label={title}>
+      <header className="driver-box-head">
+        <h3 className="zone-title">{title}</h3>
+        {hint ? <span className="hint">{hint}</span> : null}
+        {aside}
+      </header>
+      {children}
     </section>
   );
 }
@@ -124,10 +148,11 @@ function ActiveList({
 }) {
   const now = useNow(active.some((a) => a.expiresAtMs !== null));
   return (
-    <section className="driver-active" aria-label="Active on the driver's display">
-      <header className="driver-active-head">
-        <h3 className="zone-title">ON DISPLAY</h3>
-        <span className="hint">operators' view; the car sends no receipt</span>
+    <Box
+      title="ON DISPLAY"
+      hint="operators' view; the car sends no receipt"
+      className="driver-active"
+      aside={
         <button
           type="button"
           className="driver-clear"
@@ -136,7 +161,8 @@ function ActiveList({
         >
           CLEAR ALL
         </button>
-      </header>
+      }
+    >
       {active.length === 0 ? (
         <p className="empty-note">NOTHING ACTIVE</p>
       ) : (
@@ -163,7 +189,7 @@ function ActiveList({
           ))}
         </ul>
       )}
-    </section>
+    </Box>
   );
 }
 
@@ -183,7 +209,7 @@ function Flags({
 }) {
   const on = new Set(active.map((a) => a.type));
   return (
-    <div className="driver-keys" role="group" aria-label="Flags">
+    <div className="driver-flags" role="group" aria-label="Flags">
       {DRIVER_FLAG_TYPES.map((type) => {
         const pressed = on.has(type);
         return (
@@ -214,7 +240,6 @@ function Duration({ enabled, onChange }: { enabled: boolean; onChange: (duration
 
   return (
     <div className="driver-keys" role="radiogroup" aria-label="Time on the driver's display">
-      <span className="card-unit">TIME</span>
       {DRIVER_DURATIONS.map(({ value, label }) => (
         <button
           key={value}
@@ -296,6 +321,7 @@ function Composer({ enabled, durationS, send }: { enabled: boolean; durationS: n
   return (
     <form className="driver-form" onSubmit={submit}>
       <div className="driver-keys" role="radiogroup" aria-label="Message type">
+        <span className="card-unit">TYPE</span>
         {DRIVER_TYPES.map((t) => (
           <button
             key={t}
@@ -329,7 +355,8 @@ function Composer({ enabled, durationS, send }: { enabled: boolean; durationS: n
           {pending ? 'SENDING…' : `SHOW ${DRIVER_LABEL[type]}`}
         </button>
       </div>
-      <div className="driver-presets" aria-label="Preset messages">
+      <div className="driver-presets" role="group" aria-label="Preset messages">
+        <span className="card-unit">PRESETS</span>
         {DRIVER_PRESETS.map((p) => (
           <button
             key={`${p.type}:${p.text}`}
@@ -376,13 +403,6 @@ function History({ messages }: { messages: DriverMessage[] }) {
       ))}
     </ul>
   );
-}
-
-function summary(m: DriverMessage): string {
-  if (m.action === 'clear') {
-    return `CLEAR ${DRIVER_LABEL[m.type]}`;
-  }
-  return m.text === undefined ? DRIVER_LABEL[m.type] : `${DRIVER_LABEL[m.type]}: ${m.text}`;
 }
 
 function TypeSwatch({ type }: { type: DriverTarget }) {
