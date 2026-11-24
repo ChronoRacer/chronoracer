@@ -104,7 +104,7 @@ variable "core_boot_disk_size_gb" {
 variable "analysis_machine_type" {
   type        = string
   description = "Analysis VM placeholder. Changing mid-race is forbidden."
-  default     = "e2-micro"
+  default     = "e2-highcpu-2"
 }
 
 variable "analysis_boot_disk_type" {

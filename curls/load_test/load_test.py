@@ -299,11 +299,22 @@ def build_producer_config(config):
             "sasl.oauthbearer.token.endpoint.url": oauth["token_endpoint_url"],
             "sasl.oauthbearer.extensions": f"audience={oauth['extension_audience']}",
         })
-        # The wheel's OIDC client defaults to its build host's CA path (absent on Debian/Ubuntu)
-        # and ignores `probe`; use this host's OpenSSL bundle when one exists.
-        ca_file = ssl.get_default_verify_paths().cafile
-        if ca_file:
+        # The wheel's OIDC client defaults to its build host's CA path (often absent on the host)
+        # and ignores `probe`; point it at a bundle that exists (see campaign.md ready-check).
+        paths = ssl.get_default_verify_paths()
+        ca_file = paths.cafile or paths.openssl_cafile
+        if not ca_file or not os.path.isfile(ca_file):
+            for candidate in (
+                "/etc/ssl/certs/ca-bundle.crt",
+                "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
+                "/etc/pki/tls/certs/ca-bundle.crt",
+            ):
+                if os.path.isfile(candidate):
+                    ca_file = candidate
+                    break
+        if ca_file and os.path.isfile(ca_file):
             producer_config["https.ca.location"] = ca_file
+            producer_config["ssl.ca.location"] = ca_file
 
     return producer_config
 
