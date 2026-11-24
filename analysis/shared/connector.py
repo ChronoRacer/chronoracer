@@ -56,7 +56,7 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
                                         avg_latency, max_latency, min_latency, len(points),
                                     )
                                 else:
-                                    logger.debug(
+                                    logger.info(
                                         "Ingested point_batch ({} points) from Core, latency: avg={:.1f}ms, max={:.1f}ms",
                                         len(points), avg_latency, max_latency,
                                     )
@@ -74,7 +74,7 @@ class GRPCSensorStream(pw.io.python.ConnectorSubject):
                                 point.timestamp_nanos,
                                 self._last_accepted_ns.get(business_id),
                             ):
-                                logger.debug(
+                                logger.info(
                                     "Dropping backward point sensor_id={} ts={} last_accepted={}",
                                     business_id,
                                     point.timestamp_nanos,

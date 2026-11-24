@@ -8,6 +8,7 @@ Type=simple
 UMask=0077
 WorkingDirectory=/chronoracer
 Environment=PYTHONPATH=/chronoracer
+Environment=LOGURU_LEVEL=INFO
 EnvironmentFile=/chronoracer/analysis.env
 ExecStart=/chronoracer/analysis-venv/bin/python -m analysis.predictions.predictions
 Restart=on-failure
