@@ -53,11 +53,13 @@ class PredObj:
         self.is_available = is_available
         self.pred_class = pred_class
         self.state_announced = False
+        self.missing_sensors_since: float | None = None
 
 
 TELEMETRY_PREDICTIONS_ENDPOINT = "/analysis/v1/predictions"
 TELEMETRY_RUNNING_PREDICTIONS_ENDPOINT = "/analysis/v1/predictions/running"
 TELEMETRY_UNAVAILABLE_PREDICTIONS_ENDPOINT = "/analysis/v1/predictions/unavailable"
+MISSING_SENSORS_GRACE_SECONDS = 3.0
 
 
 class PredictionsEngine:
@@ -164,8 +166,18 @@ class PredictionsEngine:
         return signals
 
     def handle_message(self, message, sensors: set[str], lap_detector: LapDetector):
+        now = time.monotonic()
         for pred in self.predictions:
-            available = pred.pred_class.sensors.issubset(sensors)
+            sensors_present = pred.pred_class.sensors.issubset(sensors)
+            if sensors_present:
+                pred.missing_sensors_since = None
+                available = True
+            else:
+                if pred.missing_sensors_since is None:
+                    pred.missing_sensors_since = now
+                if now - pred.missing_sensors_since < MISSING_SENSORS_GRACE_SECONDS:
+                    continue
+                available = False
             if available == pred.is_available and pred.state_announced:
                 continue
             pred.is_available = available
